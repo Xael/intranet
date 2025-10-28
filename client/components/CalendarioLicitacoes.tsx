@@ -1,5 +1,6 @@
 
-import React, { useState, useRef, FormEvent, useEffect } from 'react';
+
+import React, { useState, useRef, FormEvent } from 'react';
 import { EventoCalendarioDetalhado, DetalhesEvento } from '../types';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
