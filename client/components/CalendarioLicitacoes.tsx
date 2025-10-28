@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, FormEvent } from 'react';
+import React, { useState, FormEvent } from 'react';
 import { EventoCalendarioDetalhado, DetalhesEvento } from '../types';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
@@ -229,7 +229,6 @@ const CalendarioLicitacoes: React.FC<CalendarioLicitacoesProps> = ({ events, set
             right: 'dayGridMonth'
           }}
           hiddenDays={[0, 6]} // Hide Sunday and Saturday
-          // FIX: Pass events directly. FullCalendar handles extendedProps automatically, which resolves the type error.
           events={events}
           selectable={true}
           editable={true}
