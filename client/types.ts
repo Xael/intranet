@@ -99,6 +99,14 @@ export interface SimulacaoSalva {
   itens: SimulacaoItem[];
 }
 
+// FIX: Add User interface for user management in Configuracoes.tsx.
+export interface User {
+  id: string;
+  name: string;
+  username: string;
+  createdAt: string; // ISO string
+}
+
 // FIX: Add missing types for legacy ControleEstoque component.
 export interface InventoryItem {
   id: string;
@@ -164,13 +172,4 @@ export interface EventoCalendarioDetalhado extends DetalhesEvento {
   id: string;
   start: string; // YYYY-MM-DD date string
   title: string;
-}
-
-// Type for User Management
-export interface User {
-  id: string;
-  username: string;
-  name: string;
-  createdAt: string;
-  updatedAt: string;
 }
