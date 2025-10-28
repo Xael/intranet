@@ -10,7 +10,7 @@ declare global {
 // Define a URL base da sua API.
 // Em produção, isso virá de uma variável de ambiente injetada pelo processo de build.
 // Em desenvolvimento, ele usará o valor padrão.
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://intranet-intranet.dke42d.easypanel.host/';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://intranet-intranetnode.dke42d.easypanel.host/';
 
 const getAuthToken = (): string | null => {
   return localStorage.getItem('authToken');
