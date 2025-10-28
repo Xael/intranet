@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { Municipio, Edital, Empenho, ArquivoAnexado } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
 import { TrashIcon } from './icons/TrashIcon';
@@ -13,6 +13,7 @@ const fileToBase64 = (file: File): Promise<string> =>
     reader.readAsDataURL(file);
     reader.onload = () => {
         const result = reader.result as string;
+        // Retorna apenas a parte base64 dos dados
         resolve(result.split(',')[1]);
     }
     reader.onerror = (error) => reject(error);
@@ -44,6 +45,7 @@ const formatDate = (dateString?: string) => {
       return dateString;
     }
 };
+
 
 // --- COMPONENTE DE ADMINISTRAÇÃO ---
 const AdminPanel: React.FC<{
