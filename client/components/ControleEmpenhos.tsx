@@ -1,6 +1,5 @@
-
 import React, { useState, useMemo, useCallback } from 'react';
-import { Municipio, Edital, Empenho, ArquivoAnexado } from '../types';
+import { Municipio, Empenho, ArquivoAnexado } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { CheckCircleIcon } from './icons/CheckCircleIcon';
