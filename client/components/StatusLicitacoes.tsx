@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useRef, FormEvent } from 'react';
+
+import React, { useState, FormEvent } from 'react';
 import { LicitacaoDetalhada, StatusLicitacaoDetalhada } from '../types';
 import { api } from '../utils/api';
-
-declare var Sortable: any;
 
 // Helper Functions
 const getStatusStyles = (status: StatusLicitacaoDetalhada) => {
@@ -96,7 +95,7 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
       }
       closeModal();
     } catch (error) {
-        alert(`Falha ao salvar licitação: ${error.message}`);
+        alert(`Falha ao salvar licitação: ${(error as Error).message}`);
     }
   };
 
@@ -106,7 +105,7 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
         await api.delete(`/api/licitacoes/${bidId}`);
         setBids(currentBids => currentBids.filter(b => b.id !== bidId));
       } catch (error) {
-          alert(`Falha ao excluir licitação: ${error.message}`);
+          alert(`Falha ao excluir licitação: ${(error as Error).message}`);
       }
     }
   };
