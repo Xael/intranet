@@ -1,16 +1,4 @@
-// FIX: Manually define types for import.meta.env as the /// <reference> directive for 'vite/client' was failing.
-declare global {
-    interface ImportMeta {
-        readonly env: {
-            readonly VITE_API_URL?: string;
-        };
-    }
-}
-
-// Define a URL base da sua API.
-// Em produção, isso virá de uma variável de ambiente injetada pelo processo de build.
-// Em desenvolvimento, ele usará o valor padrão.
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://intranet-intranetnode.dke42d.easypanel.host/';
+const API_BASE_URL = 'https://intranet-intranetnode.dke42d.easypanel.host/';
 
 const getAuthToken = (): string | null => {
   return localStorage.getItem('authToken');
@@ -33,18 +21,18 @@ const request = async (endpoint: string, options: RequestInit = {}) => {
   };
 
   try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+    const url = `${API_BASE_URL.replace(/\/$/, '')}${endpoint}`;
+    const response = await fetch(url, config);
     if (!response.ok) {
-      // Se o status for 401 ou 403, pode ser um token expirado.
       if (response.status === 401 || response.status === 403) {
-        // Opcional: Deslogar o usuário automaticamente.
-        // window.location.href = '/login'; // Força o redirecionamento
+        // Deslogar o usuário em caso de token inválido ou expirado.
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('userData');
+        window.location.href = '/';
       }
-      // Tenta extrair uma mensagem de erro do corpo da resposta
       const errorData = await response.json().catch(() => null);
       throw new Error(errorData?.error || `HTTP error! status: ${response.status}`);
     }
-    // Se a resposta não tiver corpo (ex: status 204), retorna null.
     if (response.status === 204) {
       return null;
     }
