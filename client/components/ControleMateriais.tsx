@@ -84,7 +84,7 @@ const EstoqueView: React.FC<{
             if (!isNaN(novoValor) && novoValor >= 0) {
                 const updatedEdital = {
                     ...edital,
-                    itens: edital.itens.map((it, idx) => idx === itemIndex ? { ...it, quantidade: novoValor } : it)
+                    itens: edital.itens.map((it, idx) => idx === itemIndex ? { ...it, quantidade: novoValor, valorTotal: novoValor * it.valorUnitario } : it)
                 };
                 updateEditalBackend(updatedEdital);
             } else {
@@ -334,7 +334,6 @@ const SaidasView: React.FC<{ edital: Edital, onUpdate: () => void }> = ({ edital
     );
 };
 
-// View para a Aba de Simulação
 const SimulacaoView: React.FC<{
     edital: Edital;
     simulacaoItens: SimulacaoItem[];
@@ -556,13 +555,11 @@ const ImportarView: React.FC<{
                 let municipio = data.find(m => m.nome.toLowerCase() === munNome.trim().toLowerCase());
                 if (!municipio) {
                     municipio = await api.post('/api/municipios', { nome: munNome.trim() });
-                    municipio.editais = [];
                 }
     
                 let edital = municipio.editais.find(e => e.nome.toLowerCase() === edNome.trim().toLowerCase());
                 if (!edital) {
                     edital = await api.post(`/api/municipios/${municipio.id}/editais`, { nome: edNome.trim() });
-                    edital.itens = [];
                 }
 
                 const updatedEdital = {
