@@ -561,6 +561,10 @@ const ImportarView: React.FC<{
                     municipio = { ...newMunicipio, editais: [] }; 
                 }
 
+                if (!municipio) {
+                    throw new Error("Município não pôde ser encontrado ou criado. A importação foi cancelada.");
+                }
+
                 // Passo 2: Encontra ou cria o Edital
                 let edital: Edital | undefined = municipio.editais.find(e => e.nome.toLowerCase() === edNome.trim().toLowerCase());
                 if (!edital) {
@@ -569,6 +573,10 @@ const ImportarView: React.FC<{
                         throw new Error("Falha ao criar o edital. O servidor não retornou um objeto válido.");
                     }
                     edital = { ...newEdital, itens: [], saidas: [], empenhos: [] };
+                }
+
+                if (!edital) {
+                    throw new Error("Edital não pôde ser encontrado ou criado. A importação foi cancelada.");
                 }
 
                 // Passo 3: Atualiza o Edital com os novos itens
