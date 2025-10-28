@@ -37,19 +37,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const login = useCallback(async (username: string, pass: string): Promise<boolean> => {
     try {
-      const response = await fetch(`${api.getBaseUrl()}/api/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ username, password: pass }),
-      });
+      const data = await api.post('/api/auth/login', { username, password: pass });
 
-      if (!response.ok) {
-        return false;
-      }
-
-      const data = await response.json();
       if (data.token && data.user) {
         localStorage.setItem('authToken', data.token);
         localStorage.setItem('userData', JSON.stringify(data.user));
