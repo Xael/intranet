@@ -1,4 +1,5 @@
 
+
 import React, { useState, useRef, FormEvent } from 'react';
 import { EPIEntrega } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
@@ -126,7 +127,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas }) => {
 
       } catch (error) {
         console.error("Erro ao importar arquivo:", error);
-        alert(`Ocorreu um erro ao importar o arquivo: ${error.message}`);
+        alert(`Ocorreu um erro ao importar o arquivo: ${(error as Error).message}`);
       } finally {
         if(importRef.current) importRef.current.value = '';
       }
