@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Municipio, Edital, EstoqueItem, SaidaItem, SimulacaoItem, SimulacaoSalva } from '../types';
 import { SearchIcon } from './icons/SearchIcon';
@@ -483,10 +482,9 @@ const SimulacoesSalvasView: React.FC<{
 
 // View para a Aba de Importar
 const ImportarView: React.FC<{
-    data: Municipio[],
     setData: React.Dispatch<React.SetStateAction<Municipio[]>>,
     setFiltros: (munIdx: string, edIdx: string) => void
-}> = ({ data, setData, setFiltros }) => {
+}> = ({ setData, setFiltros }) => {
     const importFileRef = useRef<HTMLInputElement>(null);
     const [target, setTarget] = useState({ munNome: '', edNome: ''});
     
@@ -539,7 +537,7 @@ const ImportarView: React.FC<{
                     return newData;
                 });
             } catch (error) {
-                alert(`Erro ao importar: ${error.message}`);
+                alert(`Erro ao importar: ${(error as Error).message}`);
             }
         };
         reader.readAsBinaryString(file);
@@ -701,7 +699,7 @@ const AdminPanel: React.FC<{data: Municipio[], setData: React.Dispatch<React.Set
                     throw new Error("Formato de arquivo inválido.");
                 }
             } catch (error) {
-                alert(`Erro ao restaurar backup: ${error}`);
+                alert(`Erro ao restaurar backup: ${(error as Error).message}`);
             }
         };
         reader.readAsText(file);
@@ -898,9 +896,9 @@ const ControleMateriais: React.FC<ControleMateriaisProps> = ({ data, setData, si
         {!editalAtual && <div className="text-center py-10 text-gray-500">Selecione um município e edital para ver os dados.</div>}
         {editalAtual && activeTab === 'estoque' && <EstoqueView edital={editalAtual} updateEditalData={updateEditalData} data={data} setData={setData} />}
         {editalAtual && activeTab === 'saidas' && <SaidasView edital={editalAtual} updateEditalData={updateEditalData} />}
-        {editalAtual && activeTab === 'simulacao' && <SimulacaoView edital={editalAtual} municipioNome={municipioAtual.nome} simulacaoItens={simulacaoItens} setSimulacaoItens={setSimulacaoItens} updateEditalData={updateEditalData} salvarSimulacao={salvarSimulacao} />}
+        {editalAtual && municipioAtual && activeTab === 'simulacao' && <SimulacaoView edital={editalAtual} municipioNome={municipioAtual.nome} simulacaoItens={simulacaoItens} setSimulacaoItens={setSimulacaoItens} updateEditalData={updateEditalData} salvarSimulacao={salvarSimulacao} />}
         {activeTab === 'simulacoesSalvas' && <SimulacoesSalvasView simulacoesSalvas={simulacoesSalvas} setSimulacoesSalvas={setSimulacoesSalvas} restaurarSimulacao={restaurarSimulacao}/>}
-        {activeTab === 'importar' && <ImportarView data={data} setData={setData} setFiltros={(m,e) => {setFiltroMunicipioIdx(m); setFiltroEditalIdx(e); setActiveTab('estoque')}} />}
+        {activeTab === 'importar' && <ImportarView setData={setData} setFiltros={(m,e) => {setFiltroMunicipioIdx(m); setFiltroEditalIdx(e); setActiveTab('estoque')}} />}
         {activeTab === 'relatorios' && <RelatoriosView data={data} />}
       </div>
     </div>
