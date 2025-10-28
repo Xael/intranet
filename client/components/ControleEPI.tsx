@@ -1,9 +1,8 @@
-
-
 import React, { useState, useRef, FormEvent } from 'react';
 import { EPIEntrega } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
 import { TrashIcon } from './icons/TrashIcon';
+import { api } from '../utils/api';
 
 declare var XLSX: any;
 
@@ -28,7 +27,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas }) => {
     setNewEntrega(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleAddEntrega = (e: FormEvent) => {
+  const handleAddEntrega = async (e: FormEvent) => {
     e.preventDefault();
     const quantidadeNum = parseInt(newEntrega.quantidade, 10);
     if (!newEntrega.funcionario.trim() || !newEntrega.item.trim() || isNaN(quantidadeNum) || quantidadeNum <= 0) {
@@ -36,27 +35,38 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas }) => {
       return;
     }
 
-    const newEntry: EPIEntrega = {
-      id: Date.now().toString(),
+    const newEntry: Omit<EPIEntrega, 'id'> = {
       funcionario: newEntrega.funcionario.trim(),
       item: newEntrega.item.trim(),
       quantidade: quantidadeNum,
       dataEntrega: newEntrega.dataEntrega,
     };
 
-    setEntregas(prev => [newEntry, ...prev].sort((a,b) => new Date(b.dataEntrega).getTime() - new Date(a.dataEntrega).getTime()));
-    setNewEntrega({ funcionario: '', item: '', quantidade: '1', dataEntrega: today });
-    setShowForm(false);
-  };
-
-  const handleRemoveEntrega = (id: string) => {
-    if (window.confirm("Tem certeza que deseja remover este registro de entrega?")) {
-      setEntregas(prev => prev.filter(e => e.id !== id));
+    try {
+        const savedEntrega = await api.post('/api/epi', newEntry);
+        setEntregas(prev => [savedEntrega, ...prev].sort((a,b) => new Date(b.dataEntrega).getTime() - new Date(a.dataEntrega).getTime()));
+        setNewEntrega({ funcionario: '', item: '', quantidade: '1', dataEntrega: today });
+        setShowForm(false);
+    } catch(error) {
+        alert(`Falha ao registrar entrega: ${error.message}`);
     }
   };
 
+  const handleRemoveEntrega = async (id: string) => {
+    if (window.confirm("Tem certeza que deseja remover este registro de entrega?")) {
+      try {
+        await api.delete(`/api/epi/${id}`);
+        setEntregas(prev => prev.filter(e => e.id !== id));
+      } catch (error) {
+        alert(`Falha ao remover entrega: ${error.message}`);
+      }
+    }
+  };
+
+  // Funções de backup/restore e exportar/importar permanecem locais por enquanto.
   const handleClear = () => {
     if (window.confirm("ATENÇÃO: Isso limpará TODOS os registros de entrega de EPI. Deseja continuar?")) {
+      // TODO: Implementar chamada de API para limpar todos os EPIs se necessário
       setEntregas([]);
     }
   };
@@ -121,6 +131,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas }) => {
         });
         
         if (window.confirm(`Foram encontrados ${newEntregas.length} registros. Deseja substituir os dados atuais por estes?`)) {
+            // TODO: Implementar chamada de API para importação em massa
             setEntregas(newEntregas.sort((a,b) => new Date(b.dataEntrega).getTime() - new Date(a.dataEntrega).getTime()));
             alert('Dados de EPI importados com sucesso!');
         }
