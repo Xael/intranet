@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, FormEvent } from 'react';
 import { EPIEntrega } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
@@ -48,7 +49,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas }) => {
         setNewEntrega({ funcionario: '', item: '', quantidade: '1', dataEntrega: today });
         setShowForm(false);
     } catch(error) {
-        alert(`Falha ao registrar entrega: ${error.message}`);
+        alert(`Falha ao registrar entrega: ${(error as Error).message}`);
     }
   };
 
@@ -58,7 +59,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas }) => {
         await api.delete(`/api/epi/${id}`);
         setEntregas(prev => prev.filter(e => e.id !== id));
       } catch (error) {
-        alert(`Falha ao remover entrega: ${error.message}`);
+        alert(`Falha ao remover entrega: ${(error as Error).message}`);
       }
     }
   };
