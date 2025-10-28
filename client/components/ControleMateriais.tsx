@@ -70,7 +70,7 @@ const EstoqueView: React.FC<{
 
     const updateEditalBackend = async (updatedEdital: Edital) => {
         try {
-            await api.put(`/editais/${updatedEdital.id}`, updatedEdital);
+            await api.put(`/api/editais/${updatedEdital.id}`, updatedEdital);
             onUpdate(); // Re-fetches all data
         } catch (error) {
             alert(`Erro ao atualizar edital: ${(error as Error).message}`);
@@ -232,7 +232,7 @@ const SaidasView: React.FC<{ edital: Edital, onUpdate: () => void }> = ({ edital
 
     const updateEditalBackend = async (updatedEdital: Edital) => {
         try {
-            await api.put(`/editais/${updatedEdital.id}`, updatedEdital);
+            await api.put(`/api/editais/${updatedEdital.id}`, updatedEdital);
             onUpdate();
         } catch (error) {
             alert(`Erro ao atualizar saídas: ${(error as Error).message}`);
@@ -379,7 +379,7 @@ const SimulacaoView: React.FC<{
     
     const updateEditalBackend = async (updatedEdital: Edital) => {
         try {
-            await api.put(`/editais/${updatedEdital.id}`, updatedEdital);
+            await api.put(`/api/editais/${updatedEdital.id}`, updatedEdital);
             onUpdate();
         } catch (error) {
             alert(`Erro ao confirmar saídas: ${(error as Error).message}`);
@@ -483,7 +483,7 @@ const SimulacoesSalvasView: React.FC<{
     const handleExcluir = async (id: string) => {
         if(window.confirm("Deseja excluir esta simulação salva?")) {
             try {
-                await api.delete(`/simulacoes/${id}`);
+                await api.delete(`/api/simulacoes/${id}`);
                 setSimulacoesSalvas(prev => prev.filter(s => s.id !== id));
             } catch (error) {
                 alert(`Erro ao excluir simulação: ${(error as Error).message}`);
@@ -554,29 +554,21 @@ const ImportarView: React.FC<{
                 // Passo 1: Encontra ou cria o Município
                 let municipio: Municipio | undefined = data.find(m => m.nome.toLowerCase() === munNome.trim().toLowerCase());
                 if (!municipio) {
-                    const newMunicipio = await api.post('/municipios', { nome: munNome.trim() });
+                    const newMunicipio = await api.post('/api/municipios', { nome: munNome.trim() });
                     if (!newMunicipio || !newMunicipio.id) {
                         throw new Error("Falha ao criar o município. O servidor não retornou um objeto válido.");
                     }
-                    municipio = { ...newMunicipio, editais: [] };
-                }
-
-                if (!municipio) {
-                    throw new Error("Município não pôde ser encontrado ou criado.");
+                    municipio = { ...newMunicipio, editais: [] }; 
                 }
 
                 // Passo 2: Encontra ou cria o Edital
                 let edital: Edital | undefined = municipio.editais.find(e => e.nome.toLowerCase() === edNome.trim().toLowerCase());
                 if (!edital) {
-                    const newEdital = await api.post(`/municipios/${municipio.id}/editais`, { nome: edNome.trim() });
+                    const newEdital = await api.post(`/api/municipios/${municipio.id}/editais`, { nome: edNome.trim() });
                     if (!newEdital || !newEdital.id) {
                         throw new Error("Falha ao criar o edital. O servidor não retornou um objeto válido.");
                     }
                     edital = { ...newEdital, itens: [], saidas: [], empenhos: [] };
-                }
-                
-                if (!edital) {
-                    throw new Error("Edital não pôde ser encontrado ou criado.");
                 }
 
                 // Passo 3: Atualiza o Edital com os novos itens
@@ -586,7 +578,7 @@ const ImportarView: React.FC<{
                     municipioId: municipio.id,
                 };
                 
-                await api.put(`/editais/${edital.id}`, updatedEditalPayload);
+                await api.put(`/api/editais/${edital.id}`, updatedEditalPayload);
 
                 alert(`${novosItens.length} itens importados com sucesso para ${munNome} / ${edNome}!`);
                 onUpdate();
@@ -690,7 +682,7 @@ const AdminPanel: React.FC<{
     const nome = prompt("Nome do novo município:");
     if (nome && nome.trim()) {
       try {
-        const newMunicipio = await api.post('/municipios', { nome: nome.trim() });
+        const newMunicipio = await api.post('/api/municipios', { nome: nome.trim() });
         setData(prev => [...prev, { ...newMunicipio, editais: [] }]);
       } catch (error) {
         alert(`Erro ao adicionar município: ${(error as Error).message}`);
@@ -701,7 +693,7 @@ const AdminPanel: React.FC<{
   const handleRemoveMunicipio = async (id: string, nome: string) => {
     if (window.confirm(`Tem certeza que deseja remover "${nome}" e todos os seus editais?`)) {
       try {
-        await api.delete(`/municipios/${id}`);
+        await api.delete(`/api/municipios/${id}`);
         setData(prev => prev.filter(m => m.id !== id));
       } catch (error) {
         alert(`Erro ao remover município: ${(error as Error).message}`);
@@ -713,7 +705,7 @@ const AdminPanel: React.FC<{
     const nome = prompt("Nome do novo edital:");
     if (nome && nome.trim()) {
       try {
-        const newEdital = await api.post(`/municipios/${munId}/editais`, { nome: nome.trim() });
+        const newEdital = await api.post(`/api/municipios/${munId}/editais`, { nome: nome.trim() });
         setData(prev => prev.map(mun => {
           if (mun.id === munId) {
             return { ...mun, editais: [...mun.editais, newEdital] };
@@ -729,7 +721,7 @@ const AdminPanel: React.FC<{
   const handleRemoveEdital = async (editalId: string, editalNome: string) => {
     if (window.confirm(`Tem certeza que deseja remover o edital "${editalNome}"?`)) {
       try {
-        await api.delete(`/editais/${editalId}`);
+        await api.delete(`/api/editais/${editalId}`);
         setData(prev => prev.map(mun => ({
           ...mun,
           editais: mun.editais.filter(ed => ed.id !== editalId)
@@ -764,7 +756,7 @@ const AdminPanel: React.FC<{
         const restoredData = JSON.parse(e.target?.result as string);
         if (Array.isArray(restoredData)) {
           if (window.confirm("Isso irá substituir TODOS os dados de materiais. Continuar?")) {
-            await api.post('/materiais/restore', restoredData);
+            await api.post('/api/materiais/restore', restoredData);
             setData(restoredData); // Optimistic update
             alert("Backup restaurado com sucesso! Os dados serão atualizados.");
           }
@@ -830,7 +822,7 @@ const ControleMateriais: React.FC<ControleMateriaisProps> = ({ data, setData, si
   const [simulacaoItens, setSimulacaoItens] = useState<SimulacaoItem[]>([]);
 
   const onUpdate = useCallback(() => {
-    api.get('/materiais').then(setData).catch(e => alert("Falha ao recarregar dados: " + e.message));
+    api.get('/api/materiais').then(setData).catch(e => alert("Falha ao recarregar dados: " + e.message));
   }, [setData]);
 
   const municipioAtual = useMemo(() => {
@@ -884,7 +876,7 @@ const ControleMateriais: React.FC<ControleMateriaisProps> = ({ data, setData, si
           itens: simulacaoItens,
       };
       try {
-        const savedSimulacao = await api.post('/simulacoes', novaSimulacaoPayload);
+        const savedSimulacao = await api.post('/api/simulacoes', novaSimulacaoPayload);
         setSimulacoesSalvas(prev => [savedSimulacao, ...prev]);
         alert("Simulação salva com sucesso!");
       } catch (error) {

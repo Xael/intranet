@@ -35,11 +35,11 @@ const MainPlatform: React.FC = () => {
           epiRes,
           simulacoesRes
         ] = await Promise.all([
-          api.get('/licitacoes'),
-          api.get('/events'),
-          api.get('/materiais'),
-          api.get('/epi'),
-          api.get('/simulacoes')
+          api.get('/api/licitacoes'),
+          api.get('/api/events'),
+          api.get('/api/materiais'),
+          api.get('/api/epi'),
+          api.get('/api/simulacoes')
         ]);
 
         if (licitacoesRes) setLicitacoes(licitacoesRes);
