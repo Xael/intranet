@@ -1,6 +1,6 @@
-
 import React, { useState, useEffect, useRef, FormEvent } from 'react';
 import { LicitacaoDetalhada, StatusLicitacaoDetalhada } from '../types';
+import { api } from '../utils/api';
 
 declare var Sortable: any;
 
@@ -41,8 +41,11 @@ const getDateHighlightClass = (bid: LicitacaoDetalhada): string => {
 
 const formatDate = (dateString: string): string => {
   if (!dateString) return 'N/A';
-  const [year, month, day] = dateString.split('-');
-  return `${day}/${month}/${year}`;
+  try {
+    return new Date(dateString).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+  } catch {
+    return dateString;
+  }
 };
 
 const formatDateTime = (isoString: string): string => {
@@ -60,35 +63,7 @@ interface StatusLicitacoesProps {
 const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBid, setEditingBid] = useState<LicitacaoDetalhada | null>(null);
-  const restoreInputRef = useRef<HTMLInputElement>(null);
-  const bidsContainerRef = useRef<HTMLDivElement>(null);
-
-  // Initialize Drag and Drop
-  useEffect(() => {
-    let sortableInstance: any = null;
-    if (bidsContainerRef.current) {
-        sortableInstance = new Sortable(bidsContainerRef.current, {
-            animation: 150,
-            ghostClass: 'opacity-50',
-            onEnd: (evt: any) => {
-                if (evt.oldIndex === evt.newIndex) return;
-                setBids(currentBids => {
-                    const newBids = Array.from(currentBids);
-                    const [movedItem] = newBids.splice(evt.oldIndex, 1);
-                    newBids.splice(evt.newIndex, 0, movedItem);
-                    return newBids;
-                });
-            },
-        });
-    }
-    return () => {
-        if(sortableInstance) {
-            sortableInstance.destroy();
-        }
-    }
-  }, []);
-
-
+  
   const showModal = (bid: LicitacaoDetalhada | null) => {
     setEditingBid(bid);
     setIsModalOpen(true);
@@ -99,101 +74,48 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
     setEditingBid(null);
   };
 
-  const handleFormSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const handleFormSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const bidData = Object.fromEntries(formData.entries()) as Omit<LicitacaoDetalhada, 'id' | 'lastUpdated'>;
     
     const now = new Date().toISOString();
 
-    if (editingBid) {
-      const updatedBid = { ...editingBid, ...bidData, lastUpdated: now };
-      setBids(currentBids => currentBids.map(b => (b.id === editingBid.id ? updatedBid : b)));
-    } else {
-      const newBid: LicitacaoDetalhada = {
-        ...bidData,
-        id: Date.now().toString(),
-        lastUpdated: now,
-      };
-      setBids(currentBids => [...currentBids, newBid]);
+    try {
+      if (editingBid) {
+        const updatedBid = { ...editingBid, ...bidData, lastUpdated: now };
+        const savedBid = await api.put(`/api/licitacoes/${editingBid.id}`, updatedBid);
+        setBids(currentBids => currentBids.map(b => (b.id === editingBid.id ? savedBid : b)));
+      } else {
+        const newBid: Omit<LicitacaoDetalhada, 'id'> = {
+          ...bidData,
+          lastUpdated: now,
+        };
+        const savedBid = await api.post('/api/licitacoes', newBid);
+        setBids(currentBids => [...currentBids, savedBid]);
+      }
+      closeModal();
+    } catch (error) {
+        alert(`Falha ao salvar licitação: ${error.message}`);
     }
-    closeModal();
   };
 
-  const handleDelete = (bidId: string) => {
+  const handleDelete = async (bidId: string) => {
     if (window.confirm('Tem certeza que deseja excluir esta licitação?')) {
-      setBids(currentBids => currentBids.filter(b => b.id !== bidId));
+      try {
+        await api.delete(`/api/licitacoes/${bidId}`);
+        setBids(currentBids => currentBids.filter(b => b.id !== bidId));
+      } catch (error) {
+          alert(`Falha ao excluir licitação: ${error.message}`);
+      }
     }
   };
   
-  const handleBackup = () => {
-    if (bids.length === 0) {
-        alert('Não há dados para fazer backup.');
-        return;
-    }
-
-    const dataStr = JSON.stringify({ bids }, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(dataBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    const date = new Date().toISOString().slice(0, 10);
-    a.download = `backup_licitacoes_${date}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const handleRestoreClick = () => {
-      restoreInputRef.current?.click();
-  };
-
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (file.type !== 'application/json') {
-      alert('Por favor, selecione um arquivo de backup .json válido.');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        try {
-            const text = e.target?.result as string;
-            const data = JSON.parse(text);
-
-            if (!data.bids || !Array.isArray(data.bids)) {
-                throw new Error('Formato do arquivo de backup inválido.');
-            }
-
-            if (window.confirm('Restaurar este backup irá substituir TODOS os dados atuais. Deseja continuar?')) {
-                setBids(data.bids);
-                alert('Backup restaurado com sucesso!');
-            }
-        } catch (error) {
-            console.error('Erro ao restaurar backup:', error);
-            alert('Ocorreu um erro ao ler o arquivo de backup.');
-        } finally {
-            if(restoreInputRef.current) restoreInputRef.current.value = '';
-        }
-    };
-    reader.readAsText(file);
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap justify-between items-center gap-4">
         <h2 className="text-3xl font-bold text-gray-800">Andamento das Licitações</h2>
         <div className="flex items-center gap-2">
-            <button onClick={handleBackup} className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700 transition-colors">
-                Fazer Backup
-            </button>
-            <button onClick={handleRestoreClick} className="px-4 py-2 bg-gray-600 text-white rounded-lg shadow hover:bg-gray-700 transition-colors">
-                Restaurar Backup
-            </button>
-            <input type="file" ref={restoreInputRef} onChange={handleFileSelect} accept=".json" className="hidden" />
             <button onClick={() => showModal(null)} className="px-4 py-2 bg-primary text-white rounded-lg shadow hover:bg-secondary transition-colors">
                 Nova Licitação
             </button>
@@ -206,7 +128,7 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
             <p className="text-gray-500 mt-2">Clique em "Nova Licitação" para começar a organizar seus processos.</p>
         </div>
       ) : (
-        <div ref={bidsContainerRef} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {bids.map(bid => (
                 <LicitacaoCard key={bid.id} bid={bid} onEdit={() => showModal(bid)} onDelete={() => handleDelete(bid.id)} />
             ))}
@@ -224,7 +146,7 @@ const LicitacaoCard: React.FC<{ bid: LicitacaoDetalhada, onEdit: () => void, onD
     const highlightClass = getDateHighlightClass(bid);
     
     return (
-        <div className={`bg-white rounded-lg shadow-md p-5 flex flex-col gap-3 border-l-4 transition-all hover:shadow-xl hover:-translate-y-1 cursor-grab ${statusStyles.border} ${highlightClass} ${bid.status === StatusLicitacaoDetalhada.DESCLASSIFICADA ? 'grayscale opacity-70' : ''}`}>
+        <div className={`bg-white rounded-lg shadow-md p-5 flex flex-col gap-3 border-l-4 transition-all hover:shadow-xl hover:-translate-y-1 ${statusStyles.border} ${highlightClass} ${bid.status === StatusLicitacaoDetalhada.DESCLASSIFICADA ? 'grayscale opacity-70' : ''}`}>
            <div className="flex justify-between items-start">
                <div>
                     <h3 className="font-bold text-lg text-gray-800">{bid.bidNumber}</h3>
@@ -287,7 +209,7 @@ const LicitacaoModal: React.FC<{ bid: LicitacaoDetalhada | null, onClose: () => 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                              <div className="form-group">
                                 <label htmlFor="realizationDate" className="block text-sm font-medium text-gray-700">Data de Realização</label>
-                                <input type="date" id="realizationDate" name="realizationDate" defaultValue={bid?.realizationDate} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm" />
+                                <input type="date" id="realizationDate" name="realizationDate" defaultValue={bid?.realizationDate?.split('T')[0]} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm" />
                             </div>
                              <div className="form-group">
                                 <label htmlFor="status" className="block text-sm font-medium text-gray-700">Status</label>
@@ -314,6 +236,5 @@ const LicitacaoModal: React.FC<{ bid: LicitacaoDetalhada | null, onClose: () => 
         </div>
     );
 };
-
 
 export default StatusLicitacoes;
