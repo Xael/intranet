@@ -1,4 +1,4 @@
-const API_BASE_URL = 'https://intranet-intranetnode.dke42d.easypanel.host/';
+const API_BASE_URL = 'https://intranet-intranetnode.dke42d.easypanel.host';
 
 const getAuthToken = (): string | null => {
   return localStorage.getItem('authToken');
@@ -21,7 +21,7 @@ const request = async (endpoint: string, options: RequestInit = {}) => {
   };
 
   try {
-    const url = `${API_BASE_URL.replace(/\/$/, '')}${endpoint}`;
+    const url = `${API_BASE_URL}${endpoint}`;
     const response = await fetch(url, config);
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) {
