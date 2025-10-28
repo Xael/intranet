@@ -558,7 +558,11 @@ const ImportarView: React.FC<{
                     if (!newMunicipio || !newMunicipio.id) {
                         throw new Error("Falha ao criar o município. O servidor não retornou um objeto válido.");
                     }
-                    municipio = { ...newMunicipio, editais: [] }; 
+                    municipio = { ...newMunicipio, editais: [] };
+                }
+
+                if (!municipio) {
+                    throw new Error("Município não pôde ser encontrado ou criado.");
                 }
 
                 // Passo 2: Encontra ou cria o Edital
@@ -569,6 +573,10 @@ const ImportarView: React.FC<{
                         throw new Error("Falha ao criar o edital. O servidor não retornou um objeto válido.");
                     }
                     edital = { ...newEdital, itens: [], saidas: [], empenhos: [] };
+                }
+                
+                if (!edital) {
+                    throw new Error("Edital não pôde ser encontrado ou criado.");
                 }
 
                 // Passo 3: Atualiza o Edital com os novos itens
