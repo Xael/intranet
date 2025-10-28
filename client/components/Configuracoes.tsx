@@ -27,14 +27,14 @@ const UserModal: React.FC<{
 
         try {
             if (isNew) {
-                await api.post('/api/users', formData);
+                await api.post('/users', formData);
             } else {
                 // Only include password if it's being changed
                 const payload: any = { name: formData.name, username: formData.username };
                 if (formData.password) {
                     payload.password = formData.password;
                 }
-                await api.put(`/api/users/${user!.id}`, payload);
+                await api.put(`/users/${user!.id}`, payload);
             }
             onSave();
             onClose();
@@ -85,7 +85,7 @@ const Configuracoes: React.FC = () => {
     const fetchUsers = async () => {
         try {
             setIsLoading(true);
-            const data = await api.get('/api/users');
+            const data = await api.get('/users');
             setUsers(data);
         } catch (error) {
             alert('Falha ao carregar usuários.');
@@ -115,7 +115,7 @@ const Configuracoes: React.FC = () => {
         }
         if (window.confirm(`Tem certeza que deseja excluir o usuário "${username}"?`)) {
             try {
-                await api.delete(`/api/users/${userId}`);
+                await api.delete(`/users/${userId}`);
                 fetchUsers();
             } catch (error) {
                 alert(`Erro ao excluir usuário: ${(error as Error).message}`);
