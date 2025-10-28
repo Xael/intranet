@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, FormEvent } from 'react';
 import { EPIEntrega } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
@@ -44,7 +43,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas }) => {
     };
 
     try {
-        const savedEntrega = await api.post('/api/epi', newEntry);
+        const savedEntrega = await api.post('/epi', newEntry);
         setEntregas(prev => [savedEntrega, ...prev].sort((a,b) => new Date(b.dataEntrega).getTime() - new Date(a.dataEntrega).getTime()));
         setNewEntrega({ funcionario: '', item: '', quantidade: '1', dataEntrega: today });
         setShowForm(false);
@@ -56,7 +55,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas }) => {
   const handleRemoveEntrega = async (id: string) => {
     if (window.confirm("Tem certeza que deseja remover este registro de entrega?")) {
       try {
-        await api.delete(`/api/epi/${id}`);
+        await api.delete(`/epi/${id}`);
         setEntregas(prev => prev.filter(e => e.id !== id));
       } catch (error) {
         alert(`Falha ao remover entrega: ${(error as Error).message}`);
