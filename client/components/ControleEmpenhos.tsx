@@ -57,7 +57,7 @@ const AdminPanel: React.FC<{
     const nome = prompt("Nome do novo município:");
     if (nome && nome.trim()) {
       try {
-        const newMunicipio = await api.post('/api/municipios', { nome: nome.trim() });
+        const newMunicipio = await api.post('/municipios', { nome: nome.trim() });
         setData(prev => [...prev, { ...newMunicipio, editais: [] }]);
       } catch (error) {
         alert(`Erro ao adicionar município: ${(error as Error).message}`);
@@ -68,7 +68,7 @@ const AdminPanel: React.FC<{
   const handleRemoveMunicipio = async (id: string, nome: string) => {
     if (window.confirm(`Tem certeza que deseja remover "${nome}" e todos os seus editais?`)) {
       try {
-        await api.delete(`/api/municipios/${id}`);
+        await api.delete(`/municipios/${id}`);
         setData(prev => prev.filter(m => m.id !== id));
       } catch (error) {
         alert(`Erro ao remover município: ${(error as Error).message}`);
@@ -80,7 +80,7 @@ const AdminPanel: React.FC<{
     const nome = prompt("Nome do novo edital:");
     if (nome && nome.trim()) {
       try {
-        const newEdital = await api.post(`/api/municipios/${munId}/editais`, { nome: nome.trim() });
+        const newEdital = await api.post(`/municipios/${munId}/editais`, { nome: nome.trim() });
         setData(prev => prev.map(mun => {
           if (mun.id === munId) {
             return { ...mun, editais: [...mun.editais, newEdital] };
@@ -96,7 +96,7 @@ const AdminPanel: React.FC<{
   const handleRemoveEdital = async (editalId: string, editalNome: string) => {
     if (window.confirm(`Tem certeza que deseja remover o edital "${editalNome}"?`)) {
       try {
-        await api.delete(`/api/editais/${editalId}`);
+        await api.delete(`/editais/${editalId}`);
         setData(prev => prev.map(mun => ({
           ...mun,
           editais: mun.editais.filter(ed => ed.id !== editalId)
@@ -163,7 +163,7 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
   
   const updateEditalBackend = async (edital: Edital) => {
       try {
-          const updatedEdital = await api.put(`/api/editais/${edital.id}`, edital);
+          const updatedEdital = await api.put(`/editais/${edital.id}`, edital);
           setData(prevData => prevData.map(mun => {
               if (mun.id === municipioAtual?.id) {
                   return {
