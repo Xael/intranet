@@ -519,12 +519,11 @@ const SimulacoesSalvasView: React.FC<{
 // View para a Aba de Importar
 const ImportarView: React.FC<{
     data: Municipio[],
-    onUpdate: () => void,
-    setFiltros: (munIdx: string, edIdx: string) => void
-}> = ({ data, onUpdate, setFiltros }) => {
+    onUpdate: () => void
+}> = ({ data, onUpdate }) => {
     const importFileRef = useRef<HTMLInputElement>(null);
-    const [target, setTarget] = useState({ munNome: '', edNome: ''});
-    
+    const [target, setTarget] = useState({ munNome: '', edNome: '' });
+
     const handleImportar = async () => {
         const file = importFileRef.current?.files?.[0];
         const { munNome, edNome } = target;
@@ -540,38 +539,46 @@ const ImportarView: React.FC<{
                 const sheetName = workbook.SheetNames[0];
                 const sheet = workbook.Sheets[sheetName];
                 const importedItems: any[] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-                
+
                 const novosItens: Omit<EstoqueItem, 'id'>[] = importedItems.slice(1).map((row, i) => {
                     const [descricao, marca, unidade, quantidade, valorUnitario] = row;
                     const qtdNum = parseFloat(quantidade);
                     const valorNum = parseFloat(valorUnitario);
-                    if(!descricao || !unidade || isNaN(qtdNum) || isNaN(valorNum)) throw new Error(`Linha ${i+2} inválida.`);
+                    if (!descricao || !unidade || isNaN(qtdNum) || isNaN(valorNum)) throw new Error(`Linha ${i + 2} da planilha está inválida.`);
                     return {
                         descricao, marca: marca || '', unidade, quantidade: qtdNum, valorUnitario: valorNum,
                         valorTotal: qtdNum * valorNum,
                     };
                 });
-                
+
+                // Passo 1: Encontra ou cria o Município
                 let municipio = data.find(m => m.nome.toLowerCase() === munNome.trim().toLowerCase());
                 if (!municipio) {
-                    municipio = await api.post('/api/municipios', { nome: munNome.trim() });
-                }
-    
-                let edital = municipio.editais.find(e => e.nome.toLowerCase() === edNome.trim().toLowerCase());
-                if (!edital) {
-                    edital = await api.post(`/api/municipios/${municipio.id}/editais`, { nome: edNome.trim() });
+                    const newMunicipio = await api.post('/api/municipios', { nome: munNome.trim() });
+                    if (!newMunicipio) throw new Error("Falha ao criar o município.");
+                    municipio = { ...newMunicipio, editais: [] };
                 }
 
-                const updatedEdital = {
+                // Passo 2: Encontra ou cria o Edital
+                let edital = municipio.editais.find(e => e.nome.toLowerCase() === edNome.trim().toLowerCase());
+                if (!edital) {
+                    const newEdital = await api.post(`/api/municipios/${municipio.id}/editais`, { nome: edNome.trim() });
+                    if (!newEdital) throw new Error("Falha ao criar o edital.");
+                    edital = { ...newEdital, itens: [], saidas: [], empenhos: [] };
+                }
+
+                // Passo 3: Atualiza o Edital com os novos itens
+                const updatedEditalPayload = {
                     ...edital,
-                    itens: [...(edital.itens || []), ...novosItens.map(item => ({...item, id: `new-${Date.now()}`}))],
+                    itens: [...(edital.itens || []), ...novosItens.map(item => ({ ...item, id: `new-${Date.now()}` }))],
                     municipioId: municipio.id,
                 };
 
-                await api.put(`/api/editais/${edital.id}`, updatedEdital);
+                await api.put(`/api/editais/${edital.id}`, updatedEditalPayload);
 
                 alert(`${novosItens.length} itens importados com sucesso para ${munNome} / ${edNome}!`);
                 onUpdate();
+
             } catch (error) {
                 alert(`Erro ao importar: ${(error as Error).message}`);
             }
@@ -932,7 +939,7 @@ const ControleMateriais: React.FC<ControleMateriaisProps> = ({ data, setData, si
         {editalAtual && activeTab === 'saidas' && <SaidasView edital={editalAtual} onUpdate={onUpdate} />}
         {editalAtual && municipioAtual && activeTab === 'simulacao' && <SimulacaoView edital={editalAtual} municipioNome={municipioAtual.nome} simulacaoItens={simulacaoItens} setSimulacaoItens={setSimulacaoItens} onUpdate={onUpdate} salvarSimulacao={salvarSimulacao} />}
         {activeTab === 'simulacoesSalvas' && <SimulacoesSalvasView simulacoesSalvas={simulacoesSalvas} setSimulacoesSalvas={setSimulacoesSalvas} restaurarSimulacao={restaurarSimulacao}/>}
-        {activeTab === 'importar' && <ImportarView data={data} onUpdate={onUpdate} setFiltros={(m,e) => {setFiltroMunicipioIdx(m); setFiltroEditalIdx(e); setActiveTab('estoque')}} />}
+        {activeTab === 'importar' && <ImportarView data={data} onUpdate={onUpdate} />}
         {activeTab === 'relatorios' && <RelatoriosView data={data} />}
       </div>
       <AdminPanel data={data} setData={setData} />
