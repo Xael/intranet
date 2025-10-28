@@ -519,7 +519,7 @@ const SimulacoesSalvasView: React.FC<{
 // View para a Aba de Importar
 const ImportarView: React.FC<{
     data: Municipio[],
-    onUpdate: () => void
+    onUpdate: () => void;
 }> = ({ data, onUpdate }) => {
     const importFileRef = useRef<HTMLInputElement>(null);
     const [target, setTarget] = useState({ munNome: '', edNome: '' });
@@ -552,18 +552,22 @@ const ImportarView: React.FC<{
                 });
 
                 // Passo 1: Encontra ou cria o Município
-                let municipio = data.find(m => m.nome.toLowerCase() === munNome.trim().toLowerCase());
+                let municipio: Municipio | undefined = data.find(m => m.nome.toLowerCase() === munNome.trim().toLowerCase());
                 if (!municipio) {
                     const newMunicipio = await api.post('/api/municipios', { nome: munNome.trim() });
-                    if (!newMunicipio) throw new Error("Falha ao criar o município.");
-                    municipio = { ...newMunicipio, editais: [] };
+                    if (!newMunicipio || !newMunicipio.id) {
+                        throw new Error("Falha ao criar o município. O servidor não retornou um objeto válido.");
+                    }
+                    municipio = { ...newMunicipio, editais: [] }; 
                 }
 
                 // Passo 2: Encontra ou cria o Edital
-                let edital = municipio.editais.find(e => e.nome.toLowerCase() === edNome.trim().toLowerCase());
+                let edital: Edital | undefined = municipio.editais.find(e => e.nome.toLowerCase() === edNome.trim().toLowerCase());
                 if (!edital) {
                     const newEdital = await api.post(`/api/municipios/${municipio.id}/editais`, { nome: edNome.trim() });
-                    if (!newEdital) throw new Error("Falha ao criar o edital.");
+                    if (!newEdital || !newEdital.id) {
+                        throw new Error("Falha ao criar o edital. O servidor não retornou um objeto válido.");
+                    }
                     edital = { ...newEdital, itens: [], saidas: [], empenhos: [] };
                 }
 
@@ -573,7 +577,7 @@ const ImportarView: React.FC<{
                     itens: [...(edital.itens || []), ...novosItens.map(item => ({ ...item, id: `new-${Date.now()}` }))],
                     municipioId: municipio.id,
                 };
-
+                
                 await api.put(`/api/editais/${edital.id}`, updatedEditalPayload);
 
                 alert(`${novosItens.length} itens importados com sucesso para ${munNome} / ${edNome}!`);
