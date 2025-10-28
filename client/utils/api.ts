@@ -24,7 +24,7 @@ const request = async (endpoint: string, options: RequestInit = {}) => {
   };
 
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+    (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
   }
 
   const config: RequestInit = {
