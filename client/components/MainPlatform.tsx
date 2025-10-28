@@ -7,11 +7,12 @@ import StatusLicitacoes from './StatusLicitacoes';
 import ControleMateriais from './ControleMateriais';
 import ControleEPI from './ControleEPI';
 import ControleEmpenhos from './ControleEmpenhos';
+import Configuracoes from './Configuracoes';
 import { LicitacaoDetalhada, EventoCalendarioDetalhado, Municipio, EPIEntrega, SimulacaoSalva } from '../types';
 import { api } from '../utils/api';
 
 
-export type ViewType = 'dashboard' | 'calendario' | 'status' | 'materiais' | 'empenhos' | 'epi';
+export type ViewType = 'dashboard' | 'calendario' | 'status' | 'materiais' | 'empenhos' | 'epi' | 'configuracoes';
 
 const MainPlatform: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('dashboard');
@@ -86,6 +87,8 @@ const MainPlatform: React.FC = () => {
       case 'epi':
          // NOTE: You will need to update this component to use API calls instead of direct state setters for CUD operations.
         return <ControleEPI entregas={epiData} setEntregas={setEpiData} />;
+      case 'configuracoes':
+        return <Configuracoes />;
       default:
         return <Dashboard bids={licitacoes} events={eventos} materiaisData={materiaisData} epiData={epiData} />;
     }

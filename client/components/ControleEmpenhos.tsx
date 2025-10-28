@@ -1,9 +1,10 @@
-import React, { useState, useMemo, useCallback } from 'react';
-import { Municipio, Empenho, ArquivoAnexado } from '../types';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
+import { Municipio, Edital, Empenho, ArquivoAnexado } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { CheckCircleIcon } from './icons/CheckCircleIcon';
 import { ExclamationCircleIcon } from './icons/ExclamationCircleIcon';
+import { api } from '../utils/api';
 
 // --- FUNÇÕES HELPER ---
 const fileToBase64 = (file: File): Promise<string> =>
@@ -12,7 +13,6 @@ const fileToBase64 = (file: File): Promise<string> =>
     reader.readAsDataURL(file);
     reader.onload = () => {
         const result = reader.result as string;
-        // Retorna apenas a parte base64 dos dados
         resolve(result.split(',')[1]);
     }
     reader.onerror = (error) => reject(error);
@@ -38,8 +38,102 @@ const formatarMoeda = (valor?: number) => {
 
 const formatDate = (dateString?: string) => {
     if (!dateString) return 'N/A';
-    const [year, month, day] = dateString.split('-');
-    return `${day}/${month}/${year}`;
+    try {
+      return new Date(dateString).toLocaleDateString('pt-BR', {timeZone: 'UTC'});
+    } catch {
+      return dateString;
+    }
+};
+
+// --- COMPONENTE DE ADMINISTRAÇÃO ---
+const AdminPanel: React.FC<{
+  data: Municipio[];
+  setData: React.Dispatch<React.SetStateAction<Municipio[]>>;
+}> = ({ data, setData }) => {
+
+  const handleAddMunicipio = async () => {
+    const nome = prompt("Nome do novo município:");
+    if (nome && nome.trim()) {
+      try {
+        const newMunicipio = await api.post('/api/municipios', { nome: nome.trim() });
+        setData(prev => [...prev, { ...newMunicipio, editais: [] }]);
+      } catch (error) {
+        alert(`Erro ao adicionar município: ${(error as Error).message}`);
+      }
+    }
+  };
+
+  const handleRemoveMunicipio = async (id: string, nome: string) => {
+    if (window.confirm(`Tem certeza que deseja remover "${nome}" e todos os seus editais?`)) {
+      try {
+        await api.delete(`/api/municipios/${id}`);
+        setData(prev => prev.filter(m => m.id !== id));
+      } catch (error) {
+        alert(`Erro ao remover município: ${(error as Error).message}`);
+      }
+    }
+  }
+
+  const handleAddEdital = async (munId: string) => {
+    const nome = prompt("Nome do novo edital:");
+    if (nome && nome.trim()) {
+      try {
+        const newEdital = await api.post(`/api/municipios/${munId}/editais`, { nome: nome.trim() });
+        setData(prev => prev.map(mun => {
+          if (mun.id === munId) {
+            return { ...mun, editais: [...mun.editais, newEdital] };
+          }
+          return mun;
+        }));
+      } catch (error) {
+        alert(`Erro ao adicionar edital: ${(error as Error).message}`);
+      }
+    }
+  };
+
+  const handleRemoveEdital = async (editalId: string, editalNome: string) => {
+    if (window.confirm(`Tem certeza que deseja remover o edital "${editalNome}"?`)) {
+      try {
+        await api.delete(`/api/editais/${editalId}`);
+        setData(prev => prev.map(mun => ({
+          ...mun,
+          editais: mun.editais.filter(ed => ed.id !== editalId)
+        })));
+      } catch (error) {
+        alert(`Erro ao remover edital: ${(error as Error).message}`);
+      }
+    }
+  };
+
+  return (
+    <div className="bg-gray-50 p-4 rounded-lg shadow-md mt-8">
+      <h2 className="text-xl font-semibold text-gray-800 mb-4">Administrar Municípios e Editais</h2>
+      <div className="space-y-4">
+        {data.map((mun) => (
+          <div key={mun.id} className="p-3 bg-white border rounded-md">
+            <div className="flex justify-between items-center">
+              <h3 className="font-bold">{mun.nome}</h3>
+              <div className="space-x-2">
+                <button onClick={() => handleAddEdital(mun.id)} className="text-xs text-green-600 hover:text-green-800">Adicionar Edital</button>
+                <button onClick={() => handleRemoveMunicipio(mun.id, mun.nome)} className="text-xs text-red-600 hover:text-red-800">Remover Município</button>
+              </div>
+            </div>
+            <ul className="mt-2 space-y-1 text-sm">
+              {mun.editais.map((ed) => (
+                <li key={ed.id} className="flex justify-between items-center bg-gray-50 p-2 rounded">
+                  <span>{ed.nome}</span>
+                  <button onClick={() => handleRemoveEdital(ed.id, ed.nome)} className="text-xs text-red-500 hover:text-red-700">Remover</button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+        <button onClick={handleAddMunicipio} className="w-full px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">
+          Adicionar Município
+        </button>
+      </div>
+    </div>
+  );
 };
 
 
@@ -65,48 +159,45 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
     return !isNaN(munIdx) && !isNaN(edIdx) && data[munIdx]?.editais[edIdx] ? data[munIdx].editais[edIdx] : null;
   }, [data, filtroMunicipioIdx, filtroEditalIdx]);
   
+  const updateEditalBackend = async (edital: Edital) => {
+      try {
+          const updatedEdital = await api.put(`/api/editais/${edital.id}`, edital);
+          setData(prevData => prevData.map(mun => {
+              if (mun.id === municipioAtual?.id) {
+                  return {
+                      ...mun,
+                      editais: mun.editais.map(ed => ed.id === edital.id ? updatedEdital : ed)
+                  };
+              }
+              return mun;
+          }));
+      } catch (error) {
+          alert(`Erro ao atualizar empenhos: ${(error as Error).message}`);
+      }
+  };
+  
   const handleSaveEmpenho = useCallback(async (formData: Omit<Empenho, 'id'>) => {
-    const munIdx = parseInt(filtroMunicipioIdx, 10);
-    const edIdx = parseInt(filtroEditalIdx, 10);
-    if (isNaN(munIdx) || isNaN(edIdx)) return;
+    if (!editalAtual) return;
 
-    const newEmpenho = { ...formData, id: Date.now().toString() };
+    const newEmpenho = { ...formData, id: `new-${Date.now()}` };
+    const updatedEdital = {
+        ...editalAtual,
+        empenhos: [...(editalAtual.empenhos || []), newEmpenho]
+    };
 
-    setData(prevData =>
-      prevData.map((mun, mIdx) => {
-        if (mIdx !== munIdx) return mun;
-        return {
-          ...mun,
-          editais: mun.editais.map((ed, eIdx) => {
-            if (eIdx !== edIdx) return ed;
-            const existingEmpenhos = ed.empenhos || [];
-            return { ...ed, empenhos: [...existingEmpenhos, newEmpenho] };
-          })
-        };
-      })
-    );
-  }, [filtroMunicipioIdx, filtroEditalIdx, setData]);
+    await updateEditalBackend(updatedEdital);
+  }, [editalAtual, setData, municipioAtual]);
 
-  const handleRemoveEmpenho = useCallback((empenhoId: string) => {
-    if(!window.confirm("Tem certeza que deseja remover este empenho?")) return;
-    const munIdx = parseInt(filtroMunicipioIdx, 10);
-    const edIdx = parseInt(filtroEditalIdx, 10);
-    if (isNaN(munIdx) || isNaN(edIdx)) return;
+  const handleRemoveEmpenho = useCallback(async (empenhoId: string) => {
+    if(!window.confirm("Tem certeza que deseja remover este empenho?") || !editalAtual) return;
+    
+    const updatedEdital = {
+        ...editalAtual,
+        empenhos: (editalAtual.empenhos || []).filter(emp => emp.id !== empenhoId)
+    };
 
-     setData(prevData =>
-      prevData.map((mun, mIdx) => {
-        if (mIdx !== munIdx) return mun;
-        return {
-          ...mun,
-          editais: mun.editais.map((ed, eIdx) => {
-            if (eIdx !== edIdx) return ed;
-            const updatedEmpenhos = (ed.empenhos || []).filter(emp => emp.id !== empenhoId);
-            return { ...ed, empenhos: updatedEmpenhos };
-          })
-        };
-      })
-    );
-  }, [filtroMunicipioIdx, filtroEditalIdx, setData]);
+    await updateEditalBackend(updatedEdital);
+  }, [editalAtual, setData, municipioAtual]);
 
   return (
     <div className="space-y-6">
@@ -164,13 +255,15 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
                             </td>
                         </tr>
                     ))}
-                    {!editalAtual?.empenhos?.length && <tr><td colSpan={7} className="text-center py-6 text-gray-500">Nenhum empenho registrado para este edital.</td></tr>}
+                    {(!editalAtual?.empenhos || editalAtual.empenhos.length === 0) && <tr><td colSpan={7} className="text-center py-6 text-gray-500">Nenhum empenho registrado para este edital.</td></tr>}
                 </tbody>
             </table>
         </div>
       </div>
 
       {isModalOpen && <EmpenhoModal onClose={() => setIsModalOpen(false)} onSave={handleSaveEmpenho} />}
+      
+      <AdminPanel data={data} setData={setData} />
     </div>
   );
 };

@@ -5,6 +5,7 @@ import { PlusIcon } from './icons/PlusIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { EditIcon } from './icons/EditIcon';
 import { Chart } from 'chart.js/auto';
+import { api } from '../utils/api';
 
 
 // --- DECLARAÇÕES GLOBAIS ---
@@ -33,55 +34,59 @@ const parseDataBR = (dateString: string): Date | null => {
 // View para a Aba de Estoque
 const EstoqueView: React.FC<{ 
     edital: Edital, 
-    updateEditalData: (updater: (edital: Edital) => Edital) => void,
-    data: Municipio[],
-    setData: React.Dispatch<React.SetStateAction<Municipio[]>>
-}> = ({ edital, updateEditalData, data, setData }) => {
+    onUpdate: () => void
+}> = ({ edital, onUpdate }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [showAddItemForm, setShowAddItemForm] = useState(false);
     const [newItem, setNewItem] = useState({ descricao: '', marca: '', unidade: '', quantidade: '', valorUnitario: ''});
 
     const saidasPorItem = useMemo(() => {
         const map = new Map<number, number>();
-        edital.saidas.forEach(saida => {
-            const index = typeof saida.itemIndex === 'string' ? parseInt(saida.itemIndex, 10) : saida.itemIndex;
-            if (!isNaN(index)) {
-              map.set(index, (map.get(index) || 0) + saida.quantidade);
-            }
+        (edital.saidas || []).forEach(saida => {
+            map.set(saida.itemIndex, (map.get(saida.itemIndex) || 0) + saida.quantidade);
         });
         return map;
     }, [edital.saidas]);
 
     const itensComSaldo = useMemo(() => {
-        return edital.itens.map((item, index) => {
+        return (edital.itens || []).map((item, index) => {
             const qtdSaida = saidasPorItem.get(index) || 0;
-            // A quantidade inicial é a que está no objeto item. A restante é calculada.
             const qtdRestante = item.quantidade - qtdSaida;
             return {
                 ...item,
                 itemIndex: index,
-                qtdInicial: item.quantidade, // A quantidade armazenada é a inicial total.
+                qtdInicial: item.quantidade,
                 qtdSaida,
                 qtdRestante,
                 valorTotalRestante: qtdRestante * item.valorUnitario
             };
         }).filter(item => 
             item.descricao.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            item.marca.toLowerCase().includes(searchTerm.toLowerCase())
+            (item.marca || '').toLowerCase().includes(searchTerm.toLowerCase())
         );
     }, [edital.itens, saidasPorItem, searchTerm]);
     
     const totalEstoque = useMemo(() => itensComSaldo.reduce((acc, item) => acc + item.valorTotalRestante, 0), [itensComSaldo]);
 
+    const updateEditalBackend = async (updatedEdital: Edital) => {
+        try {
+            await api.put(`/api/editais/${updatedEdital.id}`, updatedEdital);
+            onUpdate(); // Re-fetches all data
+        } catch (error) {
+            alert(`Erro ao atualizar edital: ${(error as Error).message}`);
+        }
+    };
+
     const handleEditQuantidadeInicial = (itemIndex: number, valorAtual: number) => {
         const novoValorStr = prompt("Digite a nova quantidade TOTAL (inicial) do item:", valorAtual.toString());
         if (novoValorStr) {
-            const novoValor = parseInt(novoValorStr, 10);
+            const novoValor = parseFloat(novoValorStr);
             if (!isNaN(novoValor) && novoValor >= 0) {
-                updateEditalData(ed => ({
-                    ...ed,
-                    itens: ed.itens.map((it, idx) => idx === itemIndex ? { ...it, quantidade: novoValor } : it)
-                }));
+                const updatedEdital = {
+                    ...edital,
+                    itens: edital.itens.map((it, idx) => idx === itemIndex ? { ...it, quantidade: novoValor } : it)
+                };
+                updateEditalBackend(updatedEdital);
             } else {
                 alert("Valor inválido.");
             }
@@ -90,7 +95,11 @@ const EstoqueView: React.FC<{
     
     const handleRemoveItem = (itemIndex: number) => {
         if (window.confirm(`Tem certeza que deseja remover o item "${edital.itens[itemIndex].descricao}"?`)) {
-            updateEditalData(ed => ({...ed, itens: ed.itens.filter((_, idx) => idx !== itemIndex)}));
+            const updatedEdital = {
+                ...edital,
+                itens: edital.itens.filter((_, idx) => idx !== itemIndex)
+            };
+            updateEditalBackend(updatedEdital);
         }
     }
     
@@ -105,18 +114,21 @@ const EstoqueView: React.FC<{
             return;
         }
 
-        const novoItem: Omit<EstoqueItem, 'id' | 'valorTotal'> = {
+        const novoItem: EstoqueItem = {
+            id: `new-${Date.now()}`,
             descricao: descricao.trim(),
             marca: marca.trim(),
             unidade: unidade.trim(),
             quantidade: qtdNum,
             valorUnitario: valorNum,
+            valorTotal: qtdNum * valorNum
         };
 
-        updateEditalData(ed => ({
-            ...ed,
-            itens: [...ed.itens, { ...novoItem, id: Date.now().toString(), valorTotal: qtdNum * valorNum }]
-        }));
+        const updatedEdital = {
+            ...edital,
+            itens: [...edital.itens, novoItem]
+        };
+        updateEditalBackend(updatedEdital);
         
         setNewItem({ descricao: '', marca: '', unidade: '', quantidade: '', valorUnitario: ''});
         setShowAddItemForm(false);
@@ -185,14 +197,12 @@ const EstoqueView: React.FC<{
                     </form>
                 )}
             </div>
-
-            <AdminPanel data={data} setData={setData} />
         </div>
     );
 };
 
 // View para a Aba de Saídas
-const SaidasView: React.FC<{ edital: Edital, updateEditalData: (updater: (edital: Edital) => Edital) => void }> = ({ edital, updateEditalData }) => {
+const SaidasView: React.FC<{ edital: Edital, onUpdate: () => void }> = ({ edital, onUpdate }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [showForm, setShowForm] = useState(false);
     
@@ -200,7 +210,7 @@ const SaidasView: React.FC<{ edital: Edital, updateEditalData: (updater: (edital
     const [newSaida, setNewSaida] = useState({ itemIndex: '', quantidade: '', notaFiscal: '', data: today });
 
     const saidasOrdenadas = useMemo(() => {
-        return [...edital.saidas].sort((a,b) => {
+        return [...(edital.saidas || [])].sort((a,b) => {
             const dateA = parseDataBR(a.data);
             const dateB = parseDataBR(b.data);
             if (!dateA || !dateB) return 0;
@@ -220,6 +230,15 @@ const SaidasView: React.FC<{ edital: Edital, updateEditalData: (updater: (edital
         setNewSaida(prev => ({ ...prev, [name]: value }));
     };
 
+    const updateEditalBackend = async (updatedEdital: Edital) => {
+        try {
+            await api.put(`/api/editais/${updatedEdital.id}`, updatedEdital);
+            onUpdate();
+        } catch (error) {
+            alert(`Erro ao atualizar saídas: ${(error as Error).message}`);
+        }
+    };
+
     const handleAddSaida = (e: React.FormEvent) => {
         e.preventDefault();
         const itemIndex = parseInt(newSaida.itemIndex, 10);
@@ -231,7 +250,8 @@ const SaidasView: React.FC<{ edital: Edital, updateEditalData: (updater: (edital
         }
 
         const itemSelecionado = edital.itens[itemIndex];
-        const novaSaida: Omit<SaidaItem, 'id'> = {
+        const novaSaida: SaidaItem = {
+            id: `new-${Date.now()}`,
             itemIndex: itemIndex,
             descricao: itemSelecionado.descricao,
             marca: itemSelecionado.marca,
@@ -241,15 +261,18 @@ const SaidasView: React.FC<{ edital: Edital, updateEditalData: (updater: (edital
             data: newSaida.data.split('-').reverse().join('/'),
             notaFiscal: newSaida.notaFiscal.trim(),
         };
+        
+        const updatedEdital = { ...edital, saidas: [...(edital.saidas || []), novaSaida] };
+        updateEditalBackend(updatedEdital);
 
-        updateEditalData(ed => ({ ...ed, saidas: [...ed.saidas, { ...novaSaida, id: Date.now().toString() }] }));
         setNewSaida({ itemIndex: '', quantidade: '', notaFiscal: '', data: today });
         setShowForm(false);
     };
     
     const handleRemoveSaida = (saidaId: string) => {
         if(window.confirm("Tem certeza que deseja remover este registro de saída?")){
-            updateEditalData(ed => ({...ed, saidas: ed.saidas.filter(s => s.id !== saidaId)}));
+            const updatedEdital = { ...edital, saidas: (edital.saidas || []).filter(s => s.id !== saidaId) };
+            updateEditalBackend(updatedEdital);
         }
     };
 
@@ -311,16 +334,15 @@ const SaidasView: React.FC<{ edital: Edital, updateEditalData: (updater: (edital
     );
 };
 
-// ... (Outras Views como Simulacao, Relatorios, etc., serão adicionadas aqui)
 // View para a Aba de Simulação
 const SimulacaoView: React.FC<{
     edital: Edital;
     simulacaoItens: SimulacaoItem[];
     setSimulacaoItens: React.Dispatch<React.SetStateAction<SimulacaoItem[]>>;
-    updateEditalData: (updater: (edital: Edital) => Edital) => void;
+    onUpdate: () => void;
     salvarSimulacao: (municipio: string, editalNome: string) => void;
     municipioNome: string;
-}> = ({ edital, simulacaoItens, setSimulacaoItens, updateEditalData, salvarSimulacao, municipioNome }) => {
+}> = ({ edital, simulacaoItens, setSimulacaoItens, onUpdate, salvarSimulacao, municipioNome }) => {
     
     const [selectedItemIndex, setSelectedItemIndex] = useState<string>('');
     const [simulacaoQtd, setSimulacaoQtd] = useState<string>('1');
@@ -356,6 +378,15 @@ const SimulacaoView: React.FC<{
         setSimulacaoItens(prev => prev.filter((_, i) => i !== index));
     };
     
+    const updateEditalBackend = async (updatedEdital: Edital) => {
+        try {
+            await api.put(`/api/editais/${updatedEdital.id}`, updatedEdital);
+            onUpdate();
+        } catch (error) {
+            alert(`Erro ao confirmar saídas: ${(error as Error).message}`);
+        }
+    };
+
     const handleConfirmarSimulacao = () => {
         if(simulacaoItens.length === 0) {
             alert("Nenhum item na simulação.");
@@ -378,7 +409,8 @@ const SimulacaoView: React.FC<{
             notaFiscal,
         }));
         
-        updateEditalData(ed => ({ ...ed, saidas: [...ed.saidas, ...novasSaidas]}));
+        const updatedEdital = { ...edital, saidas: [...(edital.saidas || []), ...novasSaidas]};
+        updateEditalBackend(updatedEdital);
         setSimulacaoItens([]);
         alert("Saídas registradas com sucesso a partir da simulação!");
     };
@@ -449,9 +481,14 @@ const SimulacoesSalvasView: React.FC<{
     restaurarSimulacao: (simulacao: SimulacaoSalva) => void
 }> = ({ simulacoesSalvas, setSimulacoesSalvas, restaurarSimulacao }) => {
     
-    const handleExcluir = (id: string) => {
+    const handleExcluir = async (id: string) => {
         if(window.confirm("Deseja excluir esta simulação salva?")) {
-            setSimulacoesSalvas(prev => prev.filter(s => s.id !== id));
+            try {
+                await api.delete(`/api/simulacoes/${id}`);
+                setSimulacoesSalvas(prev => prev.filter(s => s.id !== id));
+            } catch (error) {
+                alert(`Erro ao excluir simulação: ${(error as Error).message}`);
+            }
         }
     }
     
@@ -482,13 +519,14 @@ const SimulacoesSalvasView: React.FC<{
 
 // View para a Aba de Importar
 const ImportarView: React.FC<{
-    setData: React.Dispatch<React.SetStateAction<Municipio[]>>,
+    data: Municipio[],
+    onUpdate: () => void,
     setFiltros: (munIdx: string, edIdx: string) => void
-}> = ({ setData, setFiltros }) => {
+}> = ({ data, onUpdate, setFiltros }) => {
     const importFileRef = useRef<HTMLInputElement>(null);
     const [target, setTarget] = useState({ munNome: '', edNome: ''});
     
-    const handleImportar = () => {
+    const handleImportar = async () => {
         const file = importFileRef.current?.files?.[0];
         const { munNome, edNome } = target;
         if (!file || !munNome.trim() || !edNome.trim()) {
@@ -497,45 +535,46 @@ const ImportarView: React.FC<{
         }
 
         const reader = new FileReader();
-        reader.onload = (e) => {
+        reader.onload = async (e) => {
             try {
                 const workbook = XLSX.read(e.target?.result, { type: 'binary' });
                 const sheetName = workbook.SheetNames[0];
                 const sheet = workbook.Sheets[sheetName];
                 const importedItems: any[] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
                 
-                const novosItens: EstoqueItem[] = importedItems.slice(1).map((row, i) => {
+                const novosItens: Omit<EstoqueItem, 'id'>[] = importedItems.slice(1).map((row, i) => {
                     const [descricao, marca, unidade, quantidade, valorUnitario] = row;
                     const qtdNum = parseFloat(quantidade);
                     const valorNum = parseFloat(valorUnitario);
                     if(!descricao || !unidade || isNaN(qtdNum) || isNaN(valorNum)) throw new Error(`Linha ${i+2} inválida.`);
                     return {
-                        id: `import-${Date.now()}-${i}`,
                         descricao, marca: marca || '', unidade, quantidade: qtdNum, valorUnitario: valorNum,
                         valorTotal: qtdNum * valorNum,
                     };
                 });
+                
+                let municipio = data.find(m => m.nome.toLowerCase() === munNome.trim().toLowerCase());
+                if (!municipio) {
+                    municipio = await api.post('/api/municipios', { nome: munNome.trim() });
+                    municipio.editais = [];
+                }
+    
+                let edital = municipio.editais.find(e => e.nome.toLowerCase() === edNome.trim().toLowerCase());
+                if (!edital) {
+                    edital = await api.post(`/api/municipios/${municipio.id}/editais`, { nome: edNome.trim() });
+                    edital.itens = [];
+                }
 
-                setData(prevData => {
-                    const newData = JSON.parse(JSON.stringify(prevData));
-                    let munIdx = newData.findIndex((m: Municipio) => m.nome.toLowerCase() === munNome.trim().toLowerCase());
-                    if (munIdx === -1) {
-                        newData.push({ id: `mun-${Date.now()}`, nome: munNome.trim(), editais: [] });
-                        munIdx = newData.length - 1;
-                    }
-                    
-                    let edIdx = newData[munIdx].editais.findIndex((ed: Edital) => ed.nome.toLowerCase() === edNome.trim().toLowerCase());
-                    if (edIdx === -1) {
-                        newData[munIdx].editais.push({ id: `ed-${Date.now()}`, nome: edNome.trim(), itens: novosItens, saidas: [] });
-                        edIdx = newData[munIdx].editais.length - 1;
-                    } else {
-                        newData[munIdx].editais[edIdx].itens.push(...novosItens);
-                    }
-                    
-                    alert(`${novosItens.length} itens importados com sucesso para ${munNome} / ${edNome}!`);
-                    setTimeout(() => setFiltros(munIdx.toString(), edIdx.toString()), 100);
-                    return newData;
-                });
+                const updatedEdital = {
+                    ...edital,
+                    itens: [...(edital.itens || []), ...novosItens.map(item => ({...item, id: `new-${Date.now()}`}))],
+                    municipioId: municipio.id,
+                };
+
+                await api.put(`/api/editais/${edital.id}`, updatedEdital);
+
+                alert(`${novosItens.length} itens importados com sucesso para ${munNome} / ${edNome}!`);
+                onUpdate();
             } catch (error) {
                 alert(`Erro ao importar: ${(error as Error).message}`);
             }
@@ -568,9 +607,9 @@ const RelatoriosView: React.FC<{ data: Municipio[] }> = ({ data }) => {
 
         data.forEach(mun => {
             if(!porMunicipio[mun.nome]) porMunicipio[mun.nome] = { totalInicial: 0, totalEntregue: 0 };
-            mun.editais.forEach(ed => {
-                const totalInicialEdital = ed.itens.reduce((sum, item) => sum + item.quantidade * item.valorUnitario, 0);
-                const totalEntregueEdital = ed.saidas.reduce((sum, s) => sum + s.valorTotal, 0);
+            (mun.editais || []).forEach(ed => {
+                const totalInicialEdital = (ed.itens || []).reduce((sum, item) => sum + item.valorTotal, 0);
+                const totalEntregueEdital = (ed.saidas || []).reduce((sum, s) => sum + s.valorTotal, 0);
                 
                 geral.totalInicial += totalInicialEdital;
                 geral.totalEntregue += totalEntregueEdital;
@@ -624,122 +663,140 @@ const RelatoriosView: React.FC<{ data: Municipio[] }> = ({ data }) => {
     );
 };
 
-// Componente de Administração
-const AdminPanel: React.FC<{data: Municipio[], setData: React.Dispatch<React.SetStateAction<Municipio[]>>}> = ({ data, setData }) => {
-    const restoreBackupRef = useRef<HTMLInputElement>(null);
+// --- COMPONENTE DE ADMINISTRAÇÃO ---
+const AdminPanel: React.FC<{
+  data: Municipio[];
+  setData: React.Dispatch<React.SetStateAction<Municipio[]>>;
+}> = ({ data, setData }) => {
+  const restoreBackupRef = useRef<HTMLInputElement>(null);
 
-    const handleAddMunicipio = () => {
-        const nome = prompt("Nome do novo município:");
-        if (nome && nome.trim()) {
-            if (data.some(m => m.nome.toLowerCase() === nome.trim().toLowerCase())) {
-                alert("Município já existe!");
-                return;
-            }
-            setData(prev => [...prev, { id: Date.now().toString(), nome: nome.trim(), editais: [] }]);
-        }
-    };
-
-    const handleRemoveMunicipio = (index: number) => {
-        if (window.confirm(`Tem certeza que deseja remover "${data[index].nome}" e todos os seus editais?`)) {
-            setData(prev => prev.filter((_, i) => i !== index));
-        }
+  const handleAddMunicipio = async () => {
+    const nome = prompt("Nome do novo município:");
+    if (nome && nome.trim()) {
+      try {
+        const newMunicipio = await api.post('/api/municipios', { nome: nome.trim() });
+        setData(prev => [...prev, { ...newMunicipio, editais: [] }]);
+      } catch (error) {
+        alert(`Erro ao adicionar município: ${(error as Error).message}`);
+      }
     }
+  };
 
-    const handleAddEdital = (munIndex: number) => {
-        const nome = prompt("Nome do novo edital:");
-        if (nome && nome.trim()) {
-            if (data[munIndex].editais.some(e => e.nome.toLowerCase() === nome.trim().toLowerCase())) {
-                alert("Edital já existe neste município!");
-                return;
-            }
-            setData(prev => prev.map((mun, i) => {
-                if (i === munIndex) {
-                    return { ...mun, editais: [...mun.editais, { id: Date.now().toString(), nome: nome.trim(), itens: [], saidas: [] }] };
-                }
-                return mun;
-            }));
+  const handleRemoveMunicipio = async (id: string, nome: string) => {
+    if (window.confirm(`Tem certeza que deseja remover "${nome}" e todos os seus editais?`)) {
+      try {
+        await api.delete(`/api/municipios/${id}`);
+        setData(prev => prev.filter(m => m.id !== id));
+      } catch (error) {
+        alert(`Erro ao remover município: ${(error as Error).message}`);
+      }
+    }
+  }
+
+  const handleAddEdital = async (munId: string) => {
+    const nome = prompt("Nome do novo edital:");
+    if (nome && nome.trim()) {
+      try {
+        const newEdital = await api.post(`/api/municipios/${munId}/editais`, { nome: nome.trim() });
+        setData(prev => prev.map(mun => {
+          if (mun.id === munId) {
+            return { ...mun, editais: [...mun.editais, newEdital] };
+          }
+          return mun;
+        }));
+      } catch (error) {
+        alert(`Erro ao adicionar edital: ${(error as Error).message}`);
+      }
+    }
+  };
+
+  const handleRemoveEdital = async (editalId: string, editalNome: string) => {
+    if (window.confirm(`Tem certeza que deseja remover o edital "${editalNome}"?`)) {
+      try {
+        await api.delete(`/api/editais/${editalId}`);
+        setData(prev => prev.map(mun => ({
+          ...mun,
+          editais: mun.editais.filter(ed => ed.id !== editalId)
+        })));
+      } catch (error) {
+        alert(`Erro ao remover edital: ${(error as Error).message}`);
+      }
+    }
+  };
+
+  const handleBackup = () => {
+    if (data.length === 0) {
+      alert("Não há dados de materiais para fazer backup.");
+      return;
+    }
+    const dataStr = JSON.stringify(data, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `backup_materiais_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleRestore = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const restoredData = JSON.parse(e.target?.result as string);
+        if (Array.isArray(restoredData)) {
+          if (window.confirm("Isso irá substituir TODOS os dados de materiais. Continuar?")) {
+            await api.post('/api/materiais/restore', restoredData);
+            setData(restoredData); // Optimistic update
+            alert("Backup restaurado com sucesso! Os dados serão atualizados.");
+          }
+        } else {
+          throw new Error("Formato de arquivo inválido.");
         }
+      } catch (error) {
+        alert(`Erro ao restaurar backup: ${(error as Error).message}`);
+      }
     };
+    reader.readAsText(file);
+    if (event.target) event.target.value = '';
+  };
 
-    const handleRemoveEdital = (munIndex: number, edIndex: number) => {
-        if (window.confirm(`Tem certeza que deseja remover o edital "${data[munIndex].editais[edIndex].nome}"?`)) {
-            setData(prev => prev.map((mun, i) => {
-                if (i === munIndex) {
-                    return { ...mun, editais: mun.editais.filter((_, j) => j !== edIndex) };
-                }
-                return mun;
-            }));
-        }
-    };
-
-    const handleBackup = () => {
-        const dataStr = JSON.stringify(data, null, 2);
-        const blob = new Blob([dataStr], {type: 'application/json'});
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `backup_materiais_${new Date().toISOString().slice(0,10)}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-    };
-
-    const handleRestore = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const restoredData = JSON.parse(e.target?.result as string);
-                if (Array.isArray(restoredData) && restoredData.every(m => 'nome' in m && 'editais' in m)) {
-                    if (window.confirm("Isso irá substituir TODOS os dados de materiais. Continuar?")) {
-                        setData(restoredData);
-                        alert("Backup restaurado com sucesso!");
-                    }
-                } else {
-                    throw new Error("Formato de arquivo inválido.");
-                }
-            } catch (error) {
-                alert(`Erro ao restaurar backup: ${(error as Error).message}`);
-            }
-        };
-        reader.readAsText(file);
-        if(event.target) event.target.value = '';
-    };
-
-    return (
-        <div className="bg-gray-50 p-4 rounded-lg shadow-md mt-8">
-            <h2 className="text-xl font-semibold text-gray-800 mb-4">Administrar Municípios e Editais</h2>
-            <div className="space-y-4">
-                {data.map((mun, munIndex) => (
-                    <div key={mun.id} className="p-3 bg-white border rounded-md">
-                        <div className="flex justify-between items-center">
-                            <h3 className="font-bold">{mun.nome}</h3>
-                            <div className="space-x-2">
-                                <button onClick={() => handleAddEdital(munIndex)} className="text-xs text-green-600 hover:text-green-800">Adicionar Edital</button>
-                                <button onClick={() => handleRemoveMunicipio(munIndex)} className="text-xs text-red-600 hover:text-red-800">Remover Município</button>
-                            </div>
-                        </div>
-                        <ul className="mt-2 space-y-1 text-sm">
-                            {mun.editais.map((ed, edIndex) => (
-                                <li key={ed.id} className="flex justify-between items-center bg-gray-50 p-2 rounded">
-                                    <span>{ed.nome}</span>
-                                    <button onClick={() => handleRemoveEdital(munIndex, edIndex)} className="text-xs text-red-500 hover:text-red-700">Remover</button>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                ))}
-                <button onClick={handleAddMunicipio} className="w-full px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">
-                    Adicionar Município
-                </button>
+  return (
+    <div className="bg-gray-50 p-4 rounded-lg shadow-md mt-8">
+      <h2 className="text-xl font-semibold text-gray-800 mb-4">Administração</h2>
+      <div className="space-y-4">
+        {data.map((mun) => (
+          <div key={mun.id} className="p-3 bg-white border rounded-md">
+            <div className="flex justify-between items-center">
+              <h3 className="font-bold">{mun.nome}</h3>
+              <div className="space-x-2">
+                <button onClick={() => handleAddEdital(mun.id)} className="text-xs text-green-600 hover:text-green-800">Adicionar Edital</button>
+                <button onClick={() => handleRemoveMunicipio(mun.id, mun.nome)} className="text-xs text-red-600 hover:text-red-800">Remover Município</button>
+              </div>
             </div>
-            <div className="mt-6 border-t pt-4 flex gap-2">
-                <button onClick={handleBackup} className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700">Backup Completo</button>
-                <button onClick={() => restoreBackupRef.current?.click()} className="px-4 py-2 bg-gray-600 text-white rounded-lg shadow hover:bg-gray-700">Restaurar Backup</button>
-                <input type="file" ref={restoreBackupRef} onChange={handleRestore} accept=".json" className="hidden" />
-            </div>
-        </div>
-    );
+            <ul className="mt-2 space-y-1 text-sm">
+              {mun.editais.map((ed) => (
+                <li key={ed.id} className="flex justify-between items-center bg-gray-50 p-2 rounded">
+                  <span>{ed.nome}</span>
+                  <button onClick={() => handleRemoveEdital(ed.id, ed.nome)} className="text-xs text-red-500 hover:text-red-700">Remover</button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+        <button onClick={handleAddMunicipio} className="w-full px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">
+          Adicionar Município
+        </button>
+      </div>
+      <div className="mt-6 border-t pt-4 flex gap-2">
+        <button onClick={handleBackup} className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700">Backup Completo</button>
+        <button onClick={() => restoreBackupRef.current?.click()} className="px-4 py-2 bg-gray-600 text-white rounded-lg shadow hover:bg-gray-700">Restaurar Backup</button>
+        <input type="file" ref={restoreBackupRef} onChange={handleRestore} accept=".json" className="hidden" />
+      </div>
+    </div>
+  );
 };
 
 
@@ -756,6 +813,10 @@ const ControleMateriais: React.FC<ControleMateriaisProps> = ({ data, setData, si
   const [filtroEditalIdx, setFiltroEditalIdx] = useState<string>('');
   const [simulacaoItens, setSimulacaoItens] = useState<SimulacaoItem[]>([]);
 
+  const onUpdate = useCallback(() => {
+    api.get('/api/materiais').then(setData).catch(e => alert("Falha ao recarregar dados: " + e.message));
+  }, [setData]);
+
   const municipioAtual = useMemo(() => {
     const idx = parseInt(filtroMunicipioIdx, 10);
     return !isNaN(idx) && data[idx] ? data[idx] : null;
@@ -769,10 +830,9 @@ const ControleMateriais: React.FC<ControleMateriaisProps> = ({ data, setData, si
 
   const resumoFinanceiro = useMemo(() => {
     if (!editalAtual) return null;
-    const totalInicial = editalAtual.itens.reduce((sum, item) => sum + item.quantidade * item.valorUnitario, 0);
-    const totalEntregue = editalAtual.saidas.reduce((sum, s) => sum + s.valorTotal, 0);
+    const totalInicial = (editalAtual.itens || []).reduce((sum, item) => sum + item.valorTotal, 0);
+    const totalEntregue = (editalAtual.saidas || []).reduce((sum, s) => sum + s.valorTotal, 0);
     
-    // O valor em estoque é o valor inicial menos o que foi entregue
     const restante = totalInicial - totalEntregue;
     const percEntregue = totalInicial > 0 ? Math.round((totalEntregue / totalInicial) * 100) : 0;
     
@@ -781,62 +841,39 @@ const ControleMateriais: React.FC<ControleMateriaisProps> = ({ data, setData, si
 
 
   useEffect(() => {
-    const ultimoFiltro = localStorage.getItem('ultimoFiltroMateriais');
-    if (ultimoFiltro) {
-        try {
-            const { municipio, edital } = JSON.parse(ultimoFiltro);
-            if (data[municipio] && data[municipio].editais[edital]) {
-                setFiltroMunicipioIdx(municipio);
-                setFiltroEditalIdx(edital);
-            }
-        } catch (e) { console.error("Erro ao carregar filtro salvo", e); }
-    } else if (data.length > 0 && data[0].editais.length > 0){
+    if (data.length > 0 && (!filtroMunicipioIdx || !filtroEditalIdx)) {
         setFiltroMunicipioIdx('0');
         setFiltroEditalIdx('0');
     }
-  }, [data]);
+  }, [data, filtroMunicipioIdx, filtroEditalIdx]);
 
   const handleMunicipioChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setFiltroMunicipioIdx(e.target.value);
     setFiltroEditalIdx('');
-    localStorage.removeItem('ultimoFiltroMateriais');
   };
   
   const handleEditalChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-      const editalIndex = e.target.value;
-      setFiltroEditalIdx(editalIndex);
-      if(filtroMunicipioIdx && editalIndex){
-          localStorage.setItem('ultimoFiltroMateriais', JSON.stringify({municipio: filtroMunicipioIdx, edital: editalIndex}));
-      }
+      setFiltroEditalIdx(e.target.value);
   }
 
-  const updateEditalData = useCallback((updater: (edital: Edital) => Edital) => {
-    const munIdx = parseInt(filtroMunicipioIdx, 10);
-    const edIdx = parseInt(filtroEditalIdx, 10);
-    if (isNaN(munIdx) || isNaN(edIdx)) return;
-
-    setData(prevData => 
-        prevData.map((mun, mIdx) => {
-            if (mIdx !== munIdx) return mun;
-            return { ...mun, editais: mun.editais.map((ed, eIdx) => eIdx === edIdx ? updater(ed) : ed) }
-        })
-    );
-  }, [filtroMunicipioIdx, filtroEditalIdx, setData]);
-  
-  const salvarSimulacao = (municipio: string, editalNome: string) => {
+  const salvarSimulacao = async (municipio: string, editalNome: string) => {
       if(simulacaoItens.length === 0) {
           alert("Adicione itens à simulação para poder salvar.");
           return;
       }
-      const novaSimulacao: SimulacaoSalva = {
-          id: Date.now().toString(),
+      const novaSimulacaoPayload = {
           data: new Date().toISOString(),
           municipio,
           edital: editalNome,
           itens: simulacaoItens,
       };
-      setSimulacoesSalvas(prev => [novaSimulacao, ...prev]);
-      alert("Simulação salva com sucesso!");
+      try {
+        const savedSimulacao = await api.post('/api/simulacoes', novaSimulacaoPayload);
+        setSimulacoesSalvas(prev => [savedSimulacao, ...prev]);
+        alert("Simulação salva com sucesso!");
+      } catch (error) {
+        alert(`Erro ao salvar simulação: ${(error as Error).message}`);
+      }
   };
   
   const restaurarSimulacao = (simulacao: SimulacaoSalva) => {
@@ -894,13 +931,14 @@ const ControleMateriais: React.FC<ControleMateriaisProps> = ({ data, setData, si
 
       <div className="bg-white p-6 rounded-b-lg shadow-md min-h-[300px]">
         {!editalAtual && <div className="text-center py-10 text-gray-500">Selecione um município e edital para ver os dados.</div>}
-        {editalAtual && activeTab === 'estoque' && <EstoqueView edital={editalAtual} updateEditalData={updateEditalData} data={data} setData={setData} />}
-        {editalAtual && activeTab === 'saidas' && <SaidasView edital={editalAtual} updateEditalData={updateEditalData} />}
-        {editalAtual && municipioAtual && activeTab === 'simulacao' && <SimulacaoView edital={editalAtual} municipioNome={municipioAtual.nome} simulacaoItens={simulacaoItens} setSimulacaoItens={setSimulacaoItens} updateEditalData={updateEditalData} salvarSimulacao={salvarSimulacao} />}
+        {editalAtual && activeTab === 'estoque' && <EstoqueView edital={editalAtual} onUpdate={onUpdate} />}
+        {editalAtual && activeTab === 'saidas' && <SaidasView edital={editalAtual} onUpdate={onUpdate} />}
+        {editalAtual && municipioAtual && activeTab === 'simulacao' && <SimulacaoView edital={editalAtual} municipioNome={municipioAtual.nome} simulacaoItens={simulacaoItens} setSimulacaoItens={setSimulacaoItens} onUpdate={onUpdate} salvarSimulacao={salvarSimulacao} />}
         {activeTab === 'simulacoesSalvas' && <SimulacoesSalvasView simulacoesSalvas={simulacoesSalvas} setSimulacoesSalvas={setSimulacoesSalvas} restaurarSimulacao={restaurarSimulacao}/>}
-        {activeTab === 'importar' && <ImportarView setData={setData} setFiltros={(m,e) => {setFiltroMunicipioIdx(m); setFiltroEditalIdx(e); setActiveTab('estoque')}} />}
+        {activeTab === 'importar' && <ImportarView data={data} onUpdate={onUpdate} setFiltros={(m,e) => {setFiltroMunicipioIdx(m); setFiltroEditalIdx(e); setActiveTab('estoque')}} />}
         {activeTab === 'relatorios' && <RelatoriosView data={data} />}
       </div>
+      <AdminPanel data={data} setData={setData} />
     </div>
   );
 };

@@ -1,5 +1,4 @@
-
-import React, { useState, FormEvent } from 'react';
+import React, { useState, FormEvent, useRef } from 'react';
 import { LicitacaoDetalhada, StatusLicitacaoDetalhada } from '../types';
 import { api } from '../utils/api';
 
@@ -62,6 +61,7 @@ interface StatusLicitacoesProps {
 const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBid, setEditingBid] = useState<LicitacaoDetalhada | null>(null);
+  const restoreInputRef = useRef<HTMLInputElement>(null);
   
   const showModal = (bid: LicitacaoDetalhada | null) => {
     setEditingBid(bid);
@@ -110,11 +110,74 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
     }
   };
   
+  const handleBackup = () => {
+    if (bids.length === 0) {
+        alert('Não há dados para fazer backup.');
+        return;
+    }
+    const dataStr = JSON.stringify({ bids }, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    const date = new Date().toISOString().slice(0, 10);
+    a.download = `backup_licitacoes_${date}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleRestoreClick = () => {
+      restoreInputRef.current?.click();
+  };
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (file.type !== 'application/json') {
+      alert('Por favor, selecione um arquivo de backup .json válido.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        try {
+            const text = e.target?.result as string;
+            const data = JSON.parse(text);
+
+            if (!data.bids || !Array.isArray(data.bids)) {
+                throw new Error('Formato do arquivo de backup inválido.');
+            }
+
+            if (window.confirm('Restaurar este backup irá substituir TODOS os dados de status atuais. Deseja continuar?')) {
+                await api.post('/api/licitacoes/restore', { licitacoes: data.bids });
+                setBids(data.bids); // Atualiza a UI otimisticamente
+                alert('Backup restaurado com sucesso!');
+            }
+        } catch (error) {
+            console.error('Erro ao restaurar backup:', error);
+            alert(`Ocorreu um erro ao restaurar o arquivo de backup: ${(error as Error).message}`);
+        } finally {
+            if(restoreInputRef.current) restoreInputRef.current.value = '';
+        }
+    };
+    reader.readAsText(file);
+  };
+  
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap justify-between items-center gap-4">
         <h2 className="text-3xl font-bold text-gray-800">Andamento das Licitações</h2>
         <div className="flex items-center gap-2">
+            <button onClick={handleBackup} className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700 transition-colors">
+                Fazer Backup
+            </button>
+            <button onClick={handleRestoreClick} className="px-4 py-2 bg-gray-600 text-white rounded-lg shadow hover:bg-gray-700 transition-colors">
+                Restaurar Backup
+            </button>
+            <input type="file" ref={restoreInputRef} onChange={handleFileSelect} accept=".json" className="hidden" />
             <button onClick={() => showModal(null)} className="px-4 py-2 bg-primary text-white rounded-lg shadow hover:bg-secondary transition-colors">
                 Nova Licitação
             </button>

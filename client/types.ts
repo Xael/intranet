@@ -165,3 +165,12 @@ export interface EventoCalendarioDetalhado extends DetalhesEvento {
   start: string; // YYYY-MM-DD date string
   title: string;
 }
+
+// Type for User Management
+export interface User {
+  id: string;
+  username: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
