@@ -57,12 +57,12 @@ export interface ArquivoAnexado {
 
 export interface Empenho {
   id: string;
-  dataPedido: string; // YYYY-MM-DD
+  dataPedido: string; // ISO String
   numeroPedido: string;
   numeroProcesso: string;
   empenhoPDF?: ArquivoAnexado;
   notaFiscalPDF?: ArquivoAnexado;
-  dataNotaFiscal?: string; // YYYY-MM-DD
+  dataNotaFiscal?: string; // ISO String
   valorNotaFiscal?: number;
 }
 
@@ -126,7 +126,7 @@ export interface EPIEntrega {
   funcionario: string;
   item: string;
   quantidade: number;
-  dataEntrega: string;
+  dataEntrega: string; // ISO String
 }
 
 // New types for the detailed bidding control
@@ -141,7 +141,7 @@ export interface LicitacaoDetalhada {
   id: string;
   city: string;
   bidNumber: string;
-  realizationDate: string; // YYYY-MM-DD
+  realizationDate: string; // ISO String
   placement: string;
   status: StatusLicitacaoDetalhada;
   companyName: string;
@@ -162,7 +162,7 @@ export interface DetalhesEvento {
 
 export interface EventoCalendarioDetalhado {
   id: string;
-  start: string; // YYYY-MM-DD date string
-  title: string; // This will be the bid_number for display
+  start: string; // ISO date string
+  title: string;
   extendedProps: DetalhesEvento;
 }
