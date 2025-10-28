@@ -1,11 +1,11 @@
 
-
 import React, { useState, useRef, FormEvent } from 'react';
 import { EventoCalendarioDetalhado, DetalhesEvento } from '../types';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin, { DateClickArg } from '@fullcalendar/interaction';
 import { EventClickArg, EventDropArg, EventApi } from '@fullcalendar/core';
+import { api } from '../utils/api';
 
 // --- Modal Component ---
 interface EventoModalProps {
@@ -23,7 +23,14 @@ const EventoModal: React.FC<EventoModalProps> = ({ isOpen, onClose, onSave, onDe
 
   const initialDetails: DetalhesEvento = isNew 
     ? { city: '', bid_number: '', time: '', location: '', description: '' }
-    : eventData?.extendedProps as DetalhesEvento;
+    : {
+        city: eventData?.extendedProps.city || '',
+        bid_number: eventData?.extendedProps.bid_number || '',
+        time: eventData?.extendedProps.time || '',
+        location: eventData?.extendedProps.location || '',
+        description: eventData?.extendedProps.description || ''
+    };
+
 
   const [details, setDetails] = useState<DetalhesEvento>(initialDetails);
   
@@ -103,7 +110,6 @@ const CalendarioLicitacoes: React.FC<CalendarioLicitacoesProps> = ({ events, set
     isOpen: false,
     isNew: true,
   });
-  const restoreInputRef = useRef<HTMLInputElement>(null);
 
   const openModalForNew = (arg: DateClickArg) => {
     setModalState({ isOpen: true, isNew: true, dateStr: arg.dateStr });
@@ -117,96 +123,78 @@ const CalendarioLicitacoes: React.FC<CalendarioLicitacoesProps> = ({ events, set
     setModalState({ isOpen: false, isNew: true });
   };
 
-  const handleSaveEvent = (details: DetalhesEvento) => {
-    if (modalState.isNew && modalState.dateStr) {
-      const newEvent: EventoCalendarioDetalhado = {
-        id: Date.now().toString(),
-        start: modalState.dateStr,
-        title: details.bid_number,
-        extendedProps: details,
-      };
-      setEvents(currentEvents => [...currentEvents, newEvent]);
-    } else if (!modalState.isNew && modalState.event) {
-      setEvents(currentEvents =>
-        currentEvents.map(e =>
-          e.id === modalState.event?.id
-            ? { ...e, title: details.bid_number, extendedProps: details }
-            : e
-        )
-      );
+  const handleSaveEvent = async (details: DetalhesEvento) => {
+    try {
+      if (modalState.isNew && modalState.dateStr) {
+        const newEventPayload = {
+          start: modalState.dateStr,
+          title: details.bid_number,
+          city: details.city,
+          bid_number: details.bid_number,
+          time: details.time,
+          location: details.location,
+          description: details.description,
+        };
+        const savedEvent = await api.post('/api/events', newEventPayload);
+        setEvents(currentEvents => [...currentEvents, savedEvent]);
+
+      } else if (!modalState.isNew && modalState.event) {
+        const eventId = modalState.event.id;
+        const updatedEventPayload = {
+            id: eventId,
+            start: modalState.event.startStr,
+            title: details.bid_number,
+            city: details.city,
+            bid_number: details.bid_number,
+            time: details.time,
+            location: details.location,
+            description: details.description,
+        };
+        const savedEvent = await api.put(`/api/events/${eventId}`, updatedEventPayload);
+        setEvents(currentEvents =>
+          currentEvents.map(e => e.id === eventId ? savedEvent : e)
+        );
+      }
+      closeModal();
+    } catch (error) {
+      alert(`Falha ao salvar evento: ${(error as Error).message}`);
     }
-    closeModal();
   };
 
-  const handleDeleteEvent = () => {
+  const handleDeleteEvent = async () => {
     if (!modalState.isNew && modalState.event && window.confirm('Tem certeza que deseja excluir este evento?')) {
-      setEvents(currentEvents => currentEvents.filter(e => e.id !== modalState.event?.id));
-      closeModal();
+      const eventId = modalState.event.id;
+      try {
+        await api.delete(`/api/events/${eventId}`);
+        setEvents(currentEvents => currentEvents.filter(e => e.id !== eventId));
+        closeModal();
+      } catch (error) {
+        alert(`Falha ao excluir evento: ${(error as Error).message}`);
+      }
     }
   };
   
-  const handleEventDrop = (arg: EventDropArg) => {
+  const handleEventDrop = async (arg: EventDropArg) => {
       const { event } = arg;
       if (!event.startStr) return;
       
-      setEvents(currentEvents => currentEvents.map(e => 
-          e.id === event.id ? { ...e, start: event.startStr } : e
-      ));
+      const eventId = event.id;
+      const currentEvent = events.find(e => e.id === eventId);
+      if (!currentEvent) return;
+
+      const updatedEventPayload = { ...currentEvent, start: event.startStr };
+      
+      try {
+        await api.put(`/api/events/${eventId}`, updatedEventPayload);
+        setEvents(currentEvents => currentEvents.map(e => 
+            e.id === eventId ? { ...e, start: event.startStr } : e
+        ));
+      } catch (error) {
+          alert(`Falha ao mover evento: ${(error as Error).message}`);
+          arg.revert(); // Reverte a mudança visual no calendário
+      }
   };
   
-  // Backup and Restore functionality remains the same
-  const handleBackup = () => {
-    if (events.length === 0) {
-        alert('Não há dados no calendário para fazer backup.');
-        return;
-    }
-    const dataStr = JSON.stringify({ events }, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(dataBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    const date = new Date().toISOString().slice(0, 10);
-    a.download = `backup_calendario_${date}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const handleRestoreClick = () => {
-      restoreInputRef.current?.click();
-  };
-  
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (file.type !== 'application/json') {
-      alert('Por favor, selecione um arquivo de backup .json válido.');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        try {
-            const text = e.target?.result as string;
-            const data = JSON.parse(text);
-            if (!data.events || !Array.isArray(data.events)) {
-                throw new Error('Formato do arquivo de backup inválido.');
-            }
-            if (window.confirm('Restaurar este backup irá substituir TODOS os dados atuais do calendário. Deseja continuar?')) {
-                setEvents(data.events);
-                alert('Backup do calendário restaurado com sucesso!');
-            }
-        } catch (error) {
-            console.error('Erro ao restaurar backup:', error);
-            alert('Ocorreu um erro ao ler o arquivo de backup do calendário.');
-        } finally {
-            if(restoreInputRef.current) restoreInputRef.current.value = '';
-        }
-    };
-    reader.readAsText(file);
-  };
-
   return (
     <div className="space-y-6">
        <style>{`
@@ -227,9 +215,6 @@ const CalendarioLicitacoes: React.FC<CalendarioLicitacoesProps> = ({ events, set
       <div className="flex flex-wrap justify-between items-center gap-4">
         <h2 className="text-3xl font-bold text-gray-800">Calendário de Licitações</h2>
         <div className="flex items-center gap-2">
-            <button onClick={handleBackup} className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700 transition-colors">Fazer Backup</button>
-            <button onClick={handleRestoreClick} className="px-4 py-2 bg-gray-600 text-white rounded-lg shadow hover:bg-gray-700 transition-colors">Restaurar Backup</button>
-            <input type="file" ref={restoreInputRef} onChange={handleFileSelect} accept=".json" className="hidden" />
             <button onClick={() => openModalForNew({ dateStr: new Date().toISOString().split('T')[0] } as any)} className="px-4 py-2 bg-primary text-white rounded-lg shadow hover:bg-secondary transition-colors">Novo Evento</button>
         </div>
       </div>
@@ -244,6 +229,7 @@ const CalendarioLicitacoes: React.FC<CalendarioLicitacoesProps> = ({ events, set
             right: 'dayGridMonth'
           }}
           hiddenDays={[0, 6]} // Hide Sunday and Saturday
+          // FIX: Pass events directly. FullCalendar handles extendedProps automatically, which resolves the type error.
           events={events}
           selectable={true}
           editable={true}
@@ -252,8 +238,10 @@ const CalendarioLicitacoes: React.FC<CalendarioLicitacoesProps> = ({ events, set
           eventDrop={handleEventDrop}
           dayCellDidMount={(arg) => {
               const dateStr = arg.date.toISOString().split('T')[0];
-              const hasEvent = events.some(e => e.start === dateStr);
-              arg.el.style.backgroundColor = hasEvent ? '#FFF9C4' : '#C8E6C9';
+              const hasEvent = events.some(e => e.start.split('T')[0] === dateStr);
+              if (hasEvent) {
+                arg.el.style.backgroundColor = '#FFF9C4'; // Amarelo para dias com evento
+              }
           }}
           height="auto"
         />
