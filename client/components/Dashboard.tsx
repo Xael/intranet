@@ -68,7 +68,8 @@ const Dashboard: React.FC<{ bids: LicitacaoDetalhada[], events: EventoCalendario
                     <div key={evento.id} className="p-4 bg-light rounded-md">
                         <p className="font-bold text-primary">{evento.title}</p>
                         <p className="text-sm text-gray-600">{new Date(evento.start).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</p>
-                        <p className="text-sm text-gray-500 mt-1 truncate">{evento.extendedProps.description || evento.extendedProps.city}</p>
+                        {/* FIX: Access properties directly from the event object, not from `extendedProps`. */}
+                        <p className="text-sm text-gray-500 mt-1 truncate">{evento.description || evento.city}</p>
                     </div>
                 )) : <p className="text-gray-500">Nenhum evento próximo.</p>}
             </div>
