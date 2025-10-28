@@ -1,6 +1,16 @@
+// FIX: Manually define types for import.meta.env as the /// <reference> directive for 'vite/client' was failing.
+declare global {
+    interface ImportMeta {
+        readonly env: {
+            readonly VITE_API_URL?: string;
+        };
+    }
+}
+
 // Define a URL base da sua API.
-// Em um ambiente de produção, isso viria de uma variável de ambiente.
-const API_BASE_URL = 'http://localhost:3001';
+// Em produção, isso virá de uma variável de ambiente injetada pelo processo de build.
+// Em desenvolvimento, ele usará o valor padrão.
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 const getAuthToken = (): string | null => {
   return localStorage.getItem('authToken');
@@ -8,7 +18,7 @@ const getAuthToken = (): string | null => {
 
 const request = async (endpoint: string, options: RequestInit = {}) => {
   const token = getAuthToken();
-  const headers = {
+  const headers: HeadersInit = {
     'Content-Type': 'application/json',
     ...options.headers,
   };
@@ -40,7 +50,7 @@ const request = async (endpoint: string, options: RequestInit = {}) => {
     }
     return response.json();
   } catch (error) {
-    console.error(`API call failed: ${error.message}`);
+    console.error(`API call failed: ${(error as Error).message}`);
     throw error;
   }
 };
