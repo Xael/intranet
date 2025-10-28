@@ -1,4 +1,3 @@
-
 import React, { useState, FormEvent } from 'react';
 import { EventoCalendarioDetalhado, DetalhesEvento } from '../types';
 import FullCalendar from '@fullcalendar/react';
@@ -135,7 +134,7 @@ const CalendarioLicitacoes: React.FC<CalendarioLicitacoesProps> = ({ events, set
           location: details.location,
           description: details.description,
         };
-        const savedEvent = await api.post('/api/events', newEventPayload);
+        const savedEvent = await api.post('/events', newEventPayload);
         setEvents(currentEvents => [...currentEvents, savedEvent]);
 
       } else if (!modalState.isNew && modalState.event) {
@@ -150,7 +149,7 @@ const CalendarioLicitacoes: React.FC<CalendarioLicitacoesProps> = ({ events, set
             location: details.location,
             description: details.description,
         };
-        const savedEvent = await api.put(`/api/events/${eventId}`, updatedEventPayload);
+        const savedEvent = await api.put(`/events/${eventId}`, updatedEventPayload);
         setEvents(currentEvents =>
           currentEvents.map(e => e.id === eventId ? savedEvent : e)
         );
@@ -165,7 +164,7 @@ const CalendarioLicitacoes: React.FC<CalendarioLicitacoesProps> = ({ events, set
     if (!modalState.isNew && modalState.event && window.confirm('Tem certeza que deseja excluir este evento?')) {
       const eventId = modalState.event.id;
       try {
-        await api.delete(`/api/events/${eventId}`);
+        await api.delete(`/events/${eventId}`);
         setEvents(currentEvents => currentEvents.filter(e => e.id !== eventId));
         closeModal();
       } catch (error) {
@@ -185,7 +184,7 @@ const CalendarioLicitacoes: React.FC<CalendarioLicitacoesProps> = ({ events, set
       const updatedEventPayload = { ...currentEvent, start: event.startStr };
       
       try {
-        await api.put(`/api/events/${eventId}`, updatedEventPayload);
+        await api.put(`/events/${eventId}`, updatedEventPayload);
         setEvents(currentEvents => currentEvents.map(e => 
             e.id === eventId ? { ...e, start: event.startStr } : e
         ));
