@@ -83,14 +83,14 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
     try {
       if (editingBid) {
         const updatedBid = { ...editingBid, ...bidData, lastUpdated: now };
-        const savedBid = await api.put(`/api/licitacoes/${editingBid.id}`, updatedBid);
+        const savedBid = await api.put(`/licitacoes/${editingBid.id}`, updatedBid);
         setBids(currentBids => currentBids.map(b => (b.id === editingBid.id ? savedBid : b)));
       } else {
         const newBid: Omit<LicitacaoDetalhada, 'id'> = {
           ...bidData,
           lastUpdated: now,
         };
-        const savedBid = await api.post('/api/licitacoes', newBid);
+        const savedBid = await api.post('/licitacoes', newBid);
         setBids(currentBids => [...currentBids, savedBid]);
       }
       closeModal();
@@ -102,7 +102,7 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
   const handleDelete = async (bidId: string) => {
     if (window.confirm('Tem certeza que deseja excluir esta licitação?')) {
       try {
-        await api.delete(`/api/licitacoes/${bidId}`);
+        await api.delete(`/licitacoes/${bidId}`);
         setBids(currentBids => currentBids.filter(b => b.id !== bidId));
       } catch (error) {
           alert(`Falha ao excluir licitação: ${(error as Error).message}`);
@@ -152,7 +152,7 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
             }
 
             if (window.confirm('Restaurar este backup irá substituir TODOS os dados de status atuais. Deseja continuar?')) {
-                await api.post('/api/licitacoes/restore', { licitacoes: data.bids });
+                await api.post('/licitacoes/restore', { licitacoes: data.bids });
                 setBids(data.bids); // Atualiza a UI otimisticamente
                 alert('Backup restaurado com sucesso!');
             }
