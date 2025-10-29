@@ -1,4 +1,4 @@
-import React, { useState, useRef, FormEvent, useMemo, useEffect } from 'react';
+import React, { useState, useRef, FormEvent, useMemo } from 'react';
 import { EPIEntrega, EPIEstoqueItem } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
 import { TrashIcon } from './icons/TrashIcon';
