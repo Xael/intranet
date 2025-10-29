@@ -7,11 +7,14 @@ import StatusLicitacoes from './StatusLicitacoes';
 import ControleMateriais from './ControleMateriais';
 import ControleEPI from './ControleEPI';
 import ControleEmpenhos from './ControleEmpenhos';
-import { LicitacaoDetalhada, EventoCalendarioDetalhado, Municipio, EPIEntrega, SimulacaoSalva } from '../types';
+import Cotacoes from './Cotacoes';
+import Configuracoes from './Configuracoes';
+import Calculadora from './Calculadora';
+import { LicitacaoDetalhada, EventoCalendarioDetalhado, Municipio, EPIEntrega, SimulacaoSalva, Cotacao, ValorReferencia, SimulacaoCotacaoSalva, CalculadoraSalva } from '../types';
 import { api } from '../utils/api';
 
 
-export type ViewType = 'dashboard' | 'calendario' | 'status' | 'materiais' | 'empenhos' | 'epi';
+export type ViewType = 'dashboard' | 'calendario' | 'status' | 'materiais' | 'empenhos' | 'epi' | 'cotacoes' | 'configuracoes' | 'calculadora';
 
 const MainPlatform: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('dashboard');
@@ -22,6 +25,11 @@ const MainPlatform: React.FC = () => {
   const [materiaisData, setMateriaisData] = useState<Municipio[]>([]);
   const [epiData, setEpiData] = useState<EPIEntrega[]>([]);
   const [simulacoesSalvas, setSimulacoesSalvas] = useState<SimulacaoSalva[]>([]);
+  const [cotacoesData, setCotacoesData] = useState<Cotacao[]>([]);
+  const [referenciaData, setReferenciaData] = useState<ValorReferencia[]>([]);
+  const [simulacoesCotacoesSalvas, setSimulacoesCotacoesSalvas] = useState<SimulacaoCotacaoSalva[]>([]);
+  const [calculosSalvos, setCalculosSalvos] = useState<CalculadoraSalva[]>([]);
+
 
   useEffect(() => {
     const fetchData = async () => {
@@ -32,13 +40,21 @@ const MainPlatform: React.FC = () => {
           eventosRes,
           materiaisRes,
           epiRes,
-          simulacoesRes
+          simulacoesRes,
+          cotacoesRes,
+          referenciaRes,
+          simulacoesCotacoesRes,
+          calculosRes,
         ] = await Promise.all([
           api.get('/api/licitacoes'),
           api.get('/api/events'),
           api.get('/api/materiais'),
           api.get('/api/epi'),
-          api.get('/api/simulacoes')
+          api.get('/api/simulacoes'),
+          api.get('/api/cotacoes'),
+          api.get('/api/valores-referencia'),
+          api.get('/api/simulacoes-cotacoes'),
+          api.get('/api/calculadora'),
         ]);
 
         if (licitacoesRes) setLicitacoes(licitacoesRes);
@@ -46,6 +62,10 @@ const MainPlatform: React.FC = () => {
         if (materiaisRes) setMateriaisData(materiaisRes);
         if (epiRes) setEpiData(epiRes);
         if (simulacoesRes) setSimulacoesSalvas(simulacoesRes);
+        if (cotacoesRes) setCotacoesData(cotacoesRes);
+        if (referenciaRes) setReferenciaData(referenciaRes);
+        if (simulacoesCotacoesRes) setSimulacoesCotacoesSalvas(simulacoesCotacoesRes);
+        if (calculosRes) setCalculosSalvos(calculosRes);
 
       } catch (error) {
         console.error("Falha ao carregar dados da plataforma:", error);
@@ -72,20 +92,28 @@ const MainPlatform: React.FC = () => {
       case 'dashboard':
         return <Dashboard bids={licitacoes} events={eventos} materiaisData={materiaisData} epiData={epiData} />;
       case 'calendario':
-        // NOTE: You will need to update this component to use API calls instead of direct state setters for CUD operations.
         return <CalendarioLicitacoes events={eventos} setEvents={setEventos} />;
       case 'status':
-         // NOTE: You will need to update this component to use API calls instead of direct state setters for CUD operations.
         return <StatusLicitacoes bids={licitacoes} setBids={setLicitacoes} />;
       case 'materiais':
-         // NOTE: You will need to update this component to use API calls instead of direct state setters for CUD operations.
         return <ControleMateriais data={materiaisData} setData={setMateriaisData} simulacoesSalvas={simulacoesSalvas} setSimulacoesSalvas={setSimulacoesSalvas} />;
       case 'empenhos':
-         // NOTE: You will need to update this component to use API calls instead of direct state setters for CUD operations.
         return <ControleEmpenhos data={materiaisData} setData={setMateriaisData} />;
       case 'epi':
-         // NOTE: You will need to update this component to use API calls instead of direct state setters for CUD operations.
         return <ControleEPI entregas={epiData} setEntregas={setEpiData} />;
+      case 'cotacoes':
+        return <Cotacoes 
+          cotacoes={cotacoesData}
+          setCotacoes={setCotacoesData}
+          valoresReferencia={referenciaData}
+          setValoresReferencia={setReferenciaData}
+          simulacoesSalvas={simulacoesCotacoesSalvas}
+          setSimulacoesSalvas={setSimulacoesCotacoesSalvas}
+        />;
+       case 'calculadora':
+        return <Calculadora calculosSalvos={calculosSalvos} setCalculosSalvos={setCalculosSalvos} />;
+      case 'configuracoes':
+        return <Configuracoes />;
       default:
         return <Dashboard bids={licitacoes} events={eventos} materiaisData={materiaisData} epiData={epiData} />;
     }

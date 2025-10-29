@@ -9,6 +9,9 @@ import { LogoutIcon } from './icons/LogoutIcon';
 import { ExternalLinkIcon } from './icons/ExternalLinkIcon';
 import { ShieldIcon } from './icons/ShieldIcon';
 import { DocumentTextIcon } from './icons/DocumentTextIcon';
+import { PriceTagIcon } from './icons/PriceTagIcon';
+import { CogIcon } from './icons/CogIcon';
+import { CalculatorIcon } from './icons/CalculatorIcon';
 
 interface SidebarProps {
   currentView: ViewType;
@@ -25,6 +28,9 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView }) => {
     { id: 'materiais', label: 'Controle de Materiais', icon: ArchiveIcon },
     { id: 'empenhos', label: 'Controle de Empenhos', icon: DocumentTextIcon },
     { id: 'epi', label: 'Controle de EPI', icon: ShieldIcon },
+    { id: 'cotacoes', label: 'Cotações', icon: PriceTagIcon },
+    { id: 'calculadora', label: 'Calculadora', icon: CalculatorIcon },
+    { id: 'configuracoes', label: 'Configurações', icon: CogIcon },
   ];
 
   return (

@@ -758,26 +758,73 @@ const AdminPanel: React.FC<{
   const handleRestore = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
     const reader = new FileReader();
     reader.onload = async (e) => {
-      try {
-        const restoredData = JSON.parse(e.target?.result as string);
-        if (Array.isArray(restoredData)) {
-          if (window.confirm("Isso irá substituir TODOS os dados de materiais. Continuar?")) {
-            await api.post('/api/materiais/restore', restoredData);
-            setData(restoredData); // Optimistic update
-            alert("Backup restaurado com sucesso! Os dados serão atualizados.");
-          }
-        } else {
-          throw new Error("Formato de arquivo inválido.");
+        try {
+            const text = e.target?.result as string;
+            if (!text) throw new Error("Arquivo vazio ou ilegível.");
+
+            const parsedJson = JSON.parse(text);
+            let municipiosToRestore: Municipio[];
+
+            // Check for old format: { municipios: [...] }
+            if (parsedJson && typeof parsedJson === 'object' && !Array.isArray(parsedJson) && 'municipios' in parsedJson && Array.isArray(parsedJson.municipios)) {
+                console.log("Detectado formato de backup antigo. Convertendo...");
+                municipiosToRestore = parsedJson.municipios.map((mun: any, munIndex: number): Municipio => ({
+                    id: `migrated-mun-${Date.now()}-${munIndex}`,
+                    nome: mun.nome,
+                    editais: (mun.editais || []).map((ed: any, edIndex: number): Edital => ({
+                        id: `migrated-ed-${Date.now()}-${edIndex}`,
+                        nome: ed.nome,
+                        itens: (ed.itens || []).map((item: any, itemIndex: number): EstoqueItem => ({
+                            id: `migrated-item-${Date.now()}-${itemIndex}`,
+                            descricao: item.descricao || '',
+                            marca: item.marca || '',
+                            unidade: item.unidade || '',
+                            quantidade: parseFloat(item.quantidade) || 0,
+                            valorUnitario: parseFloat(item.valorUnitario) || 0,
+                            valorTotal: parseFloat(item.valorTotal) || (parseFloat(item.quantidade) * parseFloat(item.valorUnitario)) || 0,
+                        })),
+                        saidas: (ed.saidas || []).map((saida: any, saidaIndex: number): SaidaItem => ({
+                            id: `migrated-saida-${Date.now()}-${saidaIndex}`,
+                            itemIndex: typeof saida.itemIndex === 'string' ? parseInt(saida.itemIndex, 10) : saida.itemIndex,
+                            descricao: saida.descricao || '',
+                            marca: saida.marca || '',
+                            quantidade: parseFloat(saida.quantidade) || 0,
+                            valorUnitario: parseFloat(saida.valorUnitario) || 0,
+                            valorTotal: parseFloat(saida.valorTotal) || 0,
+                            data: saida.data || '', // format is already DD/MM/YYYY
+                            notaFiscal: saida.notaFiscal || '',
+                        })),
+                        empenhos: [] // Add empty empenhos array for compatibility
+                    }))
+                }));
+            } 
+            // Check for new format: [...] (current app format)
+            else if (Array.isArray(parsedJson) && (parsedJson.length === 0 || ('nome' in parsedJson[0] && 'editais' in parsedJson[0]))) {
+                 console.log("Detectado formato de backup novo.");
+                 municipiosToRestore = parsedJson;
+            } 
+            // Invalid format
+            else {
+                throw new Error("Formato de arquivo de backup inválido ou não reconhecido.");
+            }
+            
+            if (window.confirm("Isso irá substituir TODOS os dados de materiais. Continuar?")) {
+                await api.post('/api/materiais/restore', municipiosToRestore);
+                setData(municipiosToRestore); // Optimistic update
+                alert("Backup restaurado com sucesso! Os dados serão atualizados.");
+            }
+
+        } catch (error) {
+            alert(`Erro ao restaurar backup: ${error instanceof Error ? error.message : String(error)}`);
+        } finally {
+            if(event.target) event.target.value = '';
         }
-      } catch (error) {
-        alert(`Erro ao restaurar backup: ${(error as Error).message}`);
-      }
     };
     reader.readAsText(file);
-    if (event.target) event.target.value = '';
-  };
+};
 
   return (
     <div className="bg-gray-50 p-4 rounded-lg shadow-md mt-8">

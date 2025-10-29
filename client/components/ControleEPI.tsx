@@ -64,11 +64,15 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas }) => {
     }
   };
 
-  // Funções de backup/restore e exportar/importar permanecem locais por enquanto.
-  const handleClear = () => {
+  const handleClear = async () => {
     if (window.confirm("ATENÇÃO: Isso limpará TODOS os registros de entrega de EPI. Deseja continuar?")) {
-      // TODO: Implementar chamada de API para limpar todos os EPIs se necessário
-      setEntregas([]);
+      try {
+        await api.post('/api/epi/restore', { entregas: [] });
+        setEntregas([]);
+        alert('Todos os registros de EPI foram removidos.');
+      } catch (error) {
+        alert(`Falha ao limpar registros: ${(error as Error).message}`);
+      }
     }
   };
 
@@ -94,7 +98,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas }) => {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const data = new Uint8Array(event.target?.result as ArrayBuffer);
         const workbook = XLSX.read(data, { type: 'array', cellDates:true });
@@ -102,39 +106,65 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas }) => {
         const worksheet = workbook.Sheets[sheetName];
         const json: any[] = XLSX.utils.sheet_to_json(worksheet);
 
-        const newEntregas: EPIEntrega[] = json.map((row, index) => {
-          const func = row['Funcionário'];
-          const item = row['Item (EPI)'];
-          const qtd = row['Quantidade'];
-          const data = row['Data da Entrega'];
+        if (json.length === 0) {
+            alert("Planilha vazia.");
+            return;
+        }
 
-          if(!func || !item || isNaN(parseInt(qtd, 10))) {
-              throw new Error(`Linha ${index + 2} do arquivo está inválida.`);
+        const firstRow = json[0];
+        // Old format has 'Produto' and 'Responsável Retirada'
+        const isOldFormat = 'Produto' in firstRow && 'Responsável Retirada' in firstRow;
+        // New format has 'Item (EPI)' and 'Data da Entrega'
+        const isNewFormat = 'Item (EPI)' in firstRow && 'Data da Entrega' in firstRow;
+
+        if (!isOldFormat && !isNewFormat) {
+            throw new Error("Formato da planilha não reconhecido. Verifique os cabeçalhos das colunas (Ex: 'Produto' ou 'Item (EPI)').");
+        }
+
+        const newEntregas: Omit<EPIEntrega, 'id'>[] = json.map((row, index) => {
+          const func = row['Funcionário'];
+          const item = isOldFormat ? row['Produto'] : row['Item (EPI)'];
+          const qtd = row['Quantidade'];
+          const data = isOldFormat ? row['Data'] : row['Data da Entrega'];
+
+          if(!func || !item || qtd === undefined || isNaN(parseInt(String(qtd), 10))) {
+              throw new Error(`Linha ${index + 2} do arquivo está inválida ou incompleta (faltando Funcionário, Item ou Quantidade).`);
           }
           
           let formattedDate = today;
-          if (data instanceof Date) {
-            formattedDate = data.toISOString().split('T')[0];
-          } else if (typeof data === 'string') {
-              const parsedDate = new Date(data);
-              if(!isNaN(parsedDate.getTime())){
-                  formattedDate = new Date(parsedDate.getTime() + parsedDate.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+          if (data) {
+            if (data instanceof Date) {
+              // Adjust for timezone offset from excel date parsing
+              const adjustedDate = new Date(data.getTime() - (data.getTimezoneOffset() * 60000));
+              formattedDate = adjustedDate.toISOString().split('T')[0];
+            } else if (typeof data === 'string') {
+              if (data.includes('/')) { // DD/MM/YYYY
+                  const parts = data.split('/');
+                  if (parts.length === 3) {
+                      formattedDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+                  }
+              } else if (data.includes('-')) { // YYYY-MM-DD
+                  formattedDate = data;
               }
+            } else if (typeof data === 'number') { // Excel date serial number
+                const dt = XLSX.SSF.parse_date_code(data);
+                formattedDate = `${dt.y}-${String(dt.m).padStart(2, '0')}-${String(dt.d).padStart(2, '0')}`;
+            }
           }
 
           return {
-            id: `import-${Date.now()}-${index}`,
             funcionario: String(func),
             item: String(item),
-            quantidade: parseInt(qtd, 10),
+            quantidade: parseInt(String(qtd), 10),
             dataEntrega: formattedDate,
           }
         });
         
         if (window.confirm(`Foram encontrados ${newEntregas.length} registros. Deseja substituir os dados atuais por estes?`)) {
-            // TODO: Implementar chamada de API para importação em massa
-            setEntregas(newEntregas.sort((a,b) => new Date(b.dataEntrega).getTime() - new Date(a.dataEntrega).getTime()));
-            alert('Dados de EPI importados com sucesso!');
+            await api.post('/api/epi/restore', { entregas: newEntregas });
+            const updatedEntregas = await api.get('/api/epi');
+            setEntregas(updatedEntregas);
+            alert('Dados de EPI importados e salvos com sucesso!');
         }
 
       } catch (error) {

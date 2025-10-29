@@ -173,3 +173,83 @@ export interface EventoCalendarioDetalhado extends DetalhesEvento {
   start: string; // YYYY-MM-DD date string
   title: string;
 }
+
+// Types for the new "Cotações" feature
+export interface CotacaoItem {
+  id: string;
+  produto: string;
+  unidade: string;
+  quantidade: number;
+  valorUnitario: number;
+  valorTotal: number;
+  marca: string;
+}
+
+export interface Cotacao {
+  id: string;
+  local: string;
+  data: string; // YYYY-MM-DD
+  itens: CotacaoItem[];
+}
+
+export interface ValorReferencia {
+  id: string; // Normalized product name
+  produto: string;
+  valor: number;
+}
+
+export interface SimulacaoCotacaoItem {
+    id: string;
+    produto: string;
+    unidade: string;
+    quantidade: number;
+    valorUnitario: number;
+    valorTotal: number;
+    marca: string;
+    cotacaoOrigem: {
+        id: string; // Cotacao.id
+        local: string;
+        data: string;
+    };
+}
+
+export interface SimulacaoCotacaoSalva {
+    id: string;
+    nome: string;
+    data: string; // ISO String
+    itens: SimulacaoCotacaoItem[];
+}
+
+// Types for "Calculadora" feature
+export interface CustoAdicional {
+    id: string;
+    descricao: string;
+    valor: number;
+}
+
+export interface FuncionarioCusto {
+    id: string;
+    cargo: string;
+    salarioBase: number;
+    custosAdicionais: CustoAdicional[];
+}
+
+export interface ItemCusto {
+    id: string;
+    descricao: string;
+    valor: number;
+}
+
+export interface CalculadoraState {
+    funcionarios: FuncionarioCusto[];
+    operacional: ItemCusto[];
+    veiculos: ItemCusto[];
+    impostos: number; // Percentage
+    valorLicitacao: number;
+}
+export interface CalculadoraSalva {
+    id: string;
+    nome: string;
+    data: string; // ISO String
+    custos: CalculadoraState;
+}

@@ -145,15 +145,33 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
     reader.onload = async (e) => {
         try {
             const text = e.target?.result as string;
-            const data = JSON.parse(text);
+            if (!text) throw new Error("Arquivo vazio ou ilegível.");
 
-            if (!data.bids || !Array.isArray(data.bids)) {
-                throw new Error('Formato do arquivo de backup inválido.');
+            const data = JSON.parse(text);
+            let licitacoesToRestore: LicitacaoDetalhada[];
+
+            // Handle both { bids: [...] } and [...] formats
+            if (data && data.bids && Array.isArray(data.bids)) {
+                console.log("Detectado formato de backup { bids: [...] }.");
+                licitacoesToRestore = data.bids;
+            } else if (Array.isArray(data)) {
+                console.log("Detectado formato de backup de array direto [...].");
+                licitacoesToRestore = data;
+            } else {
+                throw new Error('Formato do arquivo de backup inválido ou não reconhecido.');
             }
 
-            if (window.confirm('Restaurar este backup irá substituir TODOS os dados de status atuais. Deseja continuar?')) {
-                await api.post('/api/licitacoes-restore', { licitacoes: data.bids });
-                setBids(data.bids); // Atualiza a UI otimisticamente
+            // Basic validation of the first item to ensure it looks like a bid
+            if (licitacoesToRestore.length > 0) {
+              const firstItem = licitacoesToRestore[0];
+              if (typeof firstItem.bidNumber === 'undefined' || typeof firstItem.status === 'undefined') {
+                 throw new Error('O conteúdo do arquivo não parece ser um backup de licitações válido.');
+              }
+            }
+            
+            if (window.confirm(`Restaurar este backup irá substituir TODOS os dados de status atuais (${licitacoesToRestore.length} registros encontrados). Deseja continuar?`)) {
+                await api.post('/api/restore-bids-backup', { licitacoes: licitacoesToRestore });
+                setBids(licitacoesToRestore); // Atualiza a UI otimisticamente
                 alert('Backup restaurado com sucesso!');
             }
         } catch (error) {
