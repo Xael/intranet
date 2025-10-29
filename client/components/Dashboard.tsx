@@ -52,7 +52,7 @@ const Dashboard: React.FC<{ bids: LicitacaoDetalhada[], events: EventoCalendario
 
   return (
     <div className="space-y-8">
-      <h2 className="text-3xl font-bold text-gray-800">Dashboard</h2>
+      <h2 className="text-3xl font-bold text-gray-800">Painel de Controle</h2>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard title="Licitações Ativas" value={licitacoesAtivas} icon={ClipboardListIcon} />
