@@ -52,6 +52,24 @@ const formatDateTime = (isoString: string): string => {
   return date.toLocaleString('pt-BR');
 };
 
+const normalizeStatus = (status: string): StatusLicitacaoDetalhada => {
+    const value = status.trim();
+    for (const key in StatusLicitacaoDetalhada) {
+        if (StatusLicitacaoDetalhada[key as keyof typeof StatusLicitacaoDetalhada] === value) {
+            return value as StatusLicitacaoDetalhada;
+        }
+    }
+    // Fallback for case-insensitive or partial matches
+    const lowerStatus = value.toLowerCase();
+    if (lowerStatus.includes('andamento')) return StatusLicitacaoDetalhada.EM_ANDAMENTO;
+    if (lowerStatus.includes('vencida')) return StatusLicitacaoDetalhada.VENCIDA;
+    if (lowerStatus.includes('encerrada')) return StatusLicitacaoDetalhada.ENCERRADA;
+    if (lowerStatus.includes('desclassificada')) return StatusLicitacaoDetalhada.DESCLASSIFICADA;
+    
+    return StatusLicitacaoDetalhada.ENCERRADA; // Default fallback
+};
+
+
 interface StatusLicitacoesProps {
   bids: LicitacaoDetalhada[];
   setBids: React.Dispatch<React.SetStateAction<LicitacaoDetalhada[]>>;
@@ -148,30 +166,20 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
             if (!text) throw new Error("Arquivo vazio ou ilegível.");
 
             const data = JSON.parse(text);
-            let licitacoesToRestore: LicitacaoDetalhada[];
+            const licitacoesToRestore = data.bids && Array.isArray(data.bids) ? data.bids : Array.isArray(data) ? data : null;
 
-            // Handle both { bids: [...] } and [...] formats
-            if (data && data.bids && Array.isArray(data.bids)) {
-                console.log("Detectado formato de backup { bids: [...] }.");
-                licitacoesToRestore = data.bids;
-            } else if (Array.isArray(data)) {
-                console.log("Detectado formato de backup de array direto [...].");
-                licitacoesToRestore = data;
-            } else {
-                throw new Error('Formato do arquivo de backup inválido ou não reconhecido.');
+            if (!licitacoesToRestore) {
+                throw new Error('Formato do arquivo de backup inválido. Esperado um array de licitações ou um objeto com a chave "bids".');
             }
 
-            // Basic validation of the first item to ensure it looks like a bid
-            if (licitacoesToRestore.length > 0) {
-              const firstItem = licitacoesToRestore[0];
-              if (typeof firstItem.bidNumber === 'undefined' || typeof firstItem.status === 'undefined') {
-                 throw new Error('O conteúdo do arquivo não parece ser um backup de licitações válido.');
-              }
-            }
+            const normalizedBids = licitacoesToRestore.map((bid: any) => ({
+                ...bid,
+                status: normalizeStatus(bid.status)
+            }));
             
-            if (window.confirm(`Restaurar este backup irá substituir TODOS os dados de status atuais (${licitacoesToRestore.length} registros encontrados). Deseja continuar?`)) {
-                await api.post('/api/restore-bids-backup', { licitacoes: licitacoesToRestore });
-                setBids(licitacoesToRestore); // Atualiza a UI otimisticamente
+            if (window.confirm(`Restaurar este backup irá substituir TODOS os dados de status atuais (${normalizedBids.length} registros encontrados). Deseja continuar?`)) {
+                await api.post('/api/restore-bids-backup', { licitacoes: normalizedBids });
+                setBids(normalizedBids);
                 alert('Backup restaurado com sucesso!');
             }
         } catch (error) {
