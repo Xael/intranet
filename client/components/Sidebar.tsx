@@ -22,7 +22,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView }) => {
   const { logout, user } = useAuth();
 
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: HomeIcon },
+    { id: 'dashboard', label: 'Painel de Controle', icon: HomeIcon },
     { id: 'calendario', label: 'Calendário', icon: CalendarIcon },
     { id: 'status', label: 'Status', icon: ClipboardListIcon },
     { id: 'materiais', label: 'Controle de Materiais', icon: ArchiveIcon },
