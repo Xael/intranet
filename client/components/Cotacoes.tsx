@@ -40,7 +40,8 @@ const Cotacoes: React.FC<CotacoesProps> = ({ cotacoes, setCotacoes, valoresRefer
 
                 if (json.length === 0) throw new Error("A planilha está vazia.");
 
-                const groupedByCotacao = json.reduce((acc: Record<string, any[]>, row) => {
+                // FIX: Use a generic type argument for the reduce function to ensure correct type inference for the accumulator.
+                const groupedByCotacao = json.reduce<Record<string, any[]>>((acc, row) => {
                     const local = String(row['Local da Cotação'] || 'N/A').trim();
                     let data = String(row['Data'] || '').trim();
                     
@@ -173,14 +174,17 @@ const CotacoesSalvasView: React.FC<{
 
     return (
         <div className="space-y-4">
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center gap-4">
                 <div className="relative w-full max-w-md">
                     <input type="text" placeholder="Buscar item em todas as cotações..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 border rounded-lg"/>
                     <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 </div>
-                <button onClick={handleImportClick} className="flex items-center px-4 py-2 bg-primary text-white rounded-lg shadow hover:bg-secondary">
-                    <PlusIcon className="w-5 h-5 mr-2"/> Importar Cotação
-                </button>
+                <div className="text-right flex-shrink-0">
+                    <button onClick={handleImportClick} className="flex items-center px-4 py-2 bg-primary text-white rounded-lg shadow hover:bg-secondary ml-auto">
+                        <PlusIcon className="w-5 h-5 mr-2"/> Importar Cotação
+                    </button>
+                    <p className="text-xs text-gray-500 mt-1">A planilha deve ter: Produto, Unidade, Quantidade, Valor Unitário, Marca, Local da Cotação, Data.</p>
+                </div>
             </div>
 
             {searchTerm ? (
@@ -387,7 +391,7 @@ const ValoresReferenciaView: React.FC<{
             return;
         }
 
-        const id = produto.toLowerCase().trim();
+        const id = editingId || produto.toLowerCase().trim();
         
         try {
             await api.post('/api/valores-referencia', { id, produto, valor });
