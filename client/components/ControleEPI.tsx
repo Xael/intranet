@@ -1,396 +1,462 @@
-import React, { useState, useRef, FormEvent, useMemo } from 'react';
-import { EPIEntrega, EPIEstoqueItem } from '../types';
+import React, { useState, useMemo, useRef } from 'react';
+import { Cotacao, CotacaoItem, ValorReferencia, SimulacaoCotacaoItem, SimulacaoCotacaoSalva } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
 import { TrashIcon } from './icons/TrashIcon';
+import { SearchIcon } from './icons/SearchIcon';
 import { EditIcon } from './icons/EditIcon';
-import { api } from '../utils/api'; // <--- IMPORT DA API
+import { api } from '../utils/api';
 
 declare var XLSX: any;
+declare var jsPDF: any;
 
-interface EPIEstoqueItemComCalculo extends EPIEstoqueItem {
-    outQty: number;
-    remaining: number;
+const formatarMoeda = (valor: number) => valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+interface CotacoesProps {
+    cotacoes: Cotacao[];
+    setCotacoes: React.Dispatch<React.SetStateAction<Cotacao[]>>;
+    valoresReferencia: ValorReferencia[];
+    setValoresReferencia: React.Dispatch<React.SetStateAction<ValorReferencia[]>>;
+    simulacoesSalvas: SimulacaoCotacaoSalva[];
+    setSimulacoesSalvas: React.Dispatch<React.SetStateAction<SimulacaoCotacaoSalva[]>>;
 }
 
-interface ControleEPIProps {
-  entregas: EPIEntrega[];
-  setEntregas: React.Dispatch<React.SetStateAction<EPIEntrega[]>>;
-  estoque: EPIEstoqueItem[];
-  setEstoque: React.Dispatch<React.SetStateAction<EPIEstoqueItem[]>>;
-}
+const Cotacoes: React.FC<CotacoesProps> = ({ cotacoes, setCotacoes, valoresReferencia, setValoresReferencia, simulacoesSalvas, setSimulacoesSalvas }) => {
+    const [activeTab, setActiveTab] = useState('cotacoes');
+    const [simulacaoItens, setSimulacaoItens] = useState<SimulacaoCotacaoItem[]>([]);
+    const importFileRef = useRef<HTMLInputElement>(null);
 
-const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas, estoque, setEstoque }) => {
-  const [showEntregaForm, setShowEntregaForm] = useState(false);
-  const today = new Date().toISOString().split('T')[0];
-  const [newEntrega, setNewEntrega] = useState({ funcionario: '', item: '', quantidade: '1', dataEntrega: today });
-  const [newEstoque, setNewEstoque] = useState({ name: '', qty: '' });
-  
-  const importEntregasRef = useRef<HTMLInputElement>(null);
-  const importEstoqueRef = useRef<HTMLInputElement>(null);
+    const handleImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
 
-  // --- LÓGICA DE CÁLCULO DE ESTOQUE ---
-  const estoqueCalculado: EPIEstoqueItemComCalculo[] = useMemo(() => {
-    const entregasPorItem = new Map<string, number>();
-    entregas.forEach(entrega => {
-        const key = entrega.item.toLowerCase();
-        entregasPorItem.set(key, (entregasPorItem.get(key) || 0) + entrega.quantidade);
-    });
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const data = new Uint8Array(e.target?.result as ArrayBuffer);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+                const json: any[] = XLSX.utils.sheet_to_json(worksheet);
 
-    return estoque.map(item => {
-        const outQty = item.manualOut ? item.manualOutQty : (entregasPorItem.get(item.name.toLowerCase()) || 0);
-        const remaining = item.qty - outQty;
-        return { ...item, outQty, remaining };
-    });
-  }, [estoque, entregas]);
+                if (json.length === 0) throw new Error("A planilha está vazia.");
 
+                // FIX: Use a generic type argument for the reduce function to ensure correct type inference for the accumulator.
+                const groupedByCotacao = json.reduce<Record<string, any[]>>((acc, row) => {
+                    const local = String(row['Local da Cotação'] || 'N/A').trim();
+                    let data = String(row['Data'] || '').trim();
+                    
+                    if (data.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
+                        const [d, m, y] = data.split('/');
+                        data = `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+                    } else if (!data.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                        data = new Date().toISOString().split('T')[0];
+                    }
 
-  // --- HANDLERS DE ESTOQUE ---
-  const handleAddEstoque = async (e: FormEvent) => { 
-    e.preventDefault();
-    const name = newEstoque.name.trim();
-    const qty = parseInt(newEstoque.qty, 10);
-    if (!name || isNaN(qty) || qty <= 0) return alert('Informe nome e quantidade válidos.');
+                    const key = `${local}|${data}`;
+                    if (!acc[key]) acc[key] = [];
 
-    try {
-        const savedItem = await api.post('/api/epi-estoque', { name, qty });
+                    const qtd = parseFloat(row['Quantidade']);
+                    const valUnit = parseFloat(row['Valor Unitário']);
 
-        setEstoque(prev => {
-            const idx = prev.findIndex(i => i.id === savedItem.id);
-            if (idx > -1) {
-                return prev.map(item => item.id === savedItem.id ? savedItem : item);
-            }
-            return [...prev, savedItem];
-        });
+                    if (row['Produto'] && !isNaN(qtd) && !isNaN(valUnit)) {
+                       acc[key].push({
+                            produto: String(row['Produto']),
+                            unidade: String(row['Unidade'] || 'UN'),
+                            quantidade: qtd,
+                            valorUnitario: valUnit,
+                            valorTotal: qtd * valUnit,
+                            marca: String(row['Marca'] || ''),
+                        });
+                    }
+                    return acc;
+                }, {});
 
-        setNewEstoque({ name: '', qty: '' });
-    } catch (error) {
-        alert(`Falha ao salvar item no estoque: ${(error as Error).message}`);
-    }
-  };
+                const novasCotacoes = Object.entries(groupedByCotacao).map(([key, itens]) => {
+                    const [local, data] = key.split('|');
+                    return { local, data, itens };
+                });
+                
+                await api.post('/api/cotacoes/import', { cotacoes: novasCotacoes });
+                const updatedCotacoes = await api.get('/api/cotacoes');
+                setCotacoes(updatedCotacoes);
 
-  const handleEditEstoque = async (item: EPIEstoqueItem, field: 'qty' | 'manualOutQty') => {
-      const promptMsg = field === 'qty' ? `Nova quantidade INICIAL para '${item.name}':` : `Nova quantidade de SAÍDA (manual) para '${item.name}':`;
-      const currentVal = field === 'qty' ? item.qty : item.manualOutQty;
-      const newValStr = prompt(promptMsg, currentVal.toString());
+                alert(`${novasCotacoes.length} cotação(ões) importada(s) com sucesso!`);
 
-      if (newValStr !== null) {
-          const newVal = parseInt(newValStr, 10);
-          if (!isNaN(newVal) && newVal >= 0) {
-              const updateData = {
-                ...item,
-                [field]: newVal,
-                manualOut: field === 'manualOutQty' ? true : item.manualOut
-              };
-              
-              try {
-                const savedItem = await api.put(`/api/epi-estoque/${item.id}`, updateData);
-                setEstoque(prev => prev.map(i => i.id === item.id ? savedItem : i));
-              } catch (error) {
-                alert(`Falha ao editar item: ${(error as Error).message}`);
-              }
-          } else {
-              alert("Valor inválido.");
-          }
-      }
-  };
+            } catch (error) {
+                alert(`Erro ao importar: ${(error as Error).message}. Verifique se a planilha tem as colunas: Produto, Unidade, Quantidade, Valor Unitário, Marca, Local da Cotação, Data.`);
+            } finally {
+                if (importFileRef.current) importFileRef.current.value = '';
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    };
 
-  const handleRemoveEstoque = async (id: string) => { 
-    if(window.confirm("Remover este item do estoque?")) {
-        try {
-            await api.delete(`/api/epi-estoque/${id}`); 
-            setEstoque(prev => prev.filter(i => i.id !== id));
-        } catch (error) {
-            alert(`Falha ao remover item: ${(error as Error).message}`);
-        }
-      }
-  };
+    const TabButton: React.FC<{ tabId: string, label: string }> = ({ tabId, label }) => (
+        <button onClick={() => setActiveTab(tabId)} className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === tabId ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>
+            {label}
+        </button>
+    );
 
-  const handleClearEstoque = async () => {
-    if (window.confirm("ATENÇÃO: Isso limpará TODO o estoque de EPI. Deseja continuar?")) {
-      try {
-        await api.post('/api/epi-estoque/restore', { estoque: [] });
-        setEstoque([]);
-      } catch (error) {
-        alert(`Falha ao limpar o estoque: ${(error as Error).message}`);
-      }
-    }
-  };
+    return (
+        <div className="space-y-6">
+            <h1 className="text-3xl font-bold text-gray-800">Cotações e Simulações</h1>
+             <div className="border-b border-gray-200 bg-white rounded-t-lg shadow-sm"><nav className="-mb-px flex space-x-2">
+                <TabButton tabId="cotacoes" label="Cotações Salvas" />
+                <TabButton tabId="simulacao" label="Simulação Atual" />
+                <TabButton tabId="simulacoes_salvas" label="Simulações Salvas" />
+                <TabButton tabId="referencia" label="Valores de Referência" />
+            </nav></div>
 
-
-  // --- HANDLERS DE ENTREGAS ---
-  const handleAddEntrega = async (e: FormEvent) => {
-    e.preventDefault();
-    const quantidadeNum = parseInt(newEntrega.quantidade, 10);
-    if (!newEntrega.funcionario.trim() || !newEntrega.item.trim() || isNaN(quantidadeNum) || quantidadeNum <= 0) {
-      alert("Por favor, preencha todos os campos corretamente.");
-      return;
-    }
-
-    const newEntryDTO = {
-      funcionario: newEntrega.funcionario.trim(),
-      item: newEntrega.item.trim(),
-      quantidade: quantidadeNum,
-      dataEntrega: newEntrega.dataEntrega,
-    };
-
-    try {
-      const savedEntry = await api.post('/api/epi', newEntryDTO);
-      
-      setEntregas(prev => [savedEntry, ...prev].sort((a,b) => new Date(b.dataEntrega).getTime() - new Date(a.dataEntrega).getTime()));
-      setNewEntrega({ funcionario: '', item: '', quantidade: '1', dataEntrega: today });
-      setShowEntregaForm(false);
-    } catch (error) {
-      alert(`Falha ao salvar entrega: ${(error as Error).message}`);
-    }
-  };
-  
-  const handleRemoveEntrega = async (id: string) => {
-    if (window.confirm("Tem certeza que deseja remover este registro de entrega?")) {
-      try {
-        await api.delete(`/api/epi/${id}`);
-        setEntregas(prev => prev.filter(e => e.id !== id));
-      } catch (error) {
-        alert(`Falha ao remover entrega: ${(error as Error).message}`);
-      }
-    }
-  };
-
-  const handleClearEntregas = async () => {
-    if (window.confirm("ATENÇÃO: Isso limpará TODOS os registros de entrega de EPI. Deseja continuar?")) {
-      try {
-        await api.post('/api/epi/restore', { entregas: [] });
-        setEntregas([]);
-      } catch (error) {
-        alert(`Falha ao limpar entregas: ${(error as Error).message}`);
-      }
-    }
-  };
-
-  // --- IMPORTAÇÃO / EXPORTAÇÃO ---
-  const handleExport = (type: 'estoque' | 'entregas') => {
-    if (type === 'estoque') {
-        if(estoque.length === 0) return alert('Não há dados de estoque para exportar.');
-        const data = estoque.map(i => ({ 'Item': i.name, 'Quantidade Inicial': i.qty, 'Saída Manual': i.manualOut ? i.manualOutQty : 'Automático' }));
-        const ws = XLSX.utils.json_to_sheet(data);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Estoque EPI');
-        XLSX.writeFile(wb, `estoque_epi_${today}.xlsx`);
-    } else {
-        if(entregas.length === 0) return alert('Não há dados de entregas para exportar.');
-        const data = entregas.map(e => ({ 'Funcionário': e.funcionario, 'Item (EPI)': e.item, 'Quantidade': e.quantidade, 'Data da Entrega': e.dataEntrega }));
-        const ws = XLSX.utils.json_to_sheet(data);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Entregas EPI');
-        XLSX.writeFile(wb, `entregas_epi_${today}.xlsx`);
-    }
-  };
-
-  const handleImportEntregas = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-        try {
-            const data = new Uint8Array(event.target?.result as ArrayBuffer);
-            const workbook = XLSX.read(data, { type: 'array', cellDates: true });
-            const sheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[sheetName];
-            const json: any[] = XLSX.utils.sheet_to_json(worksheet);
-
-            if (json.length === 0) throw new Error("Planilha vazia.");
-
-            const headers = Object.keys(json[0]);
-            const isOldFormat = headers.includes('Produto') && headers.includes('Responsável Retirada');
-            const isNewFormat = headers.includes('Item (EPI)');
-
-            if (!isOldFormat && !isNewFormat) throw new Error("Formato de planilha não reconhecido. Verifique os cabeçalhos.");
-            
-            const newEntregasDTO = json.map((row, index) => {
-                const item = row[isOldFormat ? 'Produto' : 'Item (EPI)'];
-                const dataEntrega = row[isOldFormat ? 'Data' : 'Data da Entrega'];
-                let formattedDate = today;
-                if (dataEntrega instanceof Date) {
-                    formattedDate = new Date(dataEntrega.getTime() - (dataEntrega.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-                }
-
-                return {
-                    funcionario: String(row['Funcionário'] || ''),
-                    item: String(item || ''),
-                    quantidade: parseInt(row['Quantidade'], 10) || 0,
-                    dataEntrega: formattedDate,
-                }
-            }).filter(e => e.funcionario && e.item && e.quantidade > 0);
-            
-            if(window.confirm(`${newEntregasDTO.length} registros válidos encontrados. Deseja substituir os registros de entrega atuais?`)){
-                const savedEntregas = await api.post('/api/epi/restore', { entregas: newEntregasDTO });
-                setEntregas(savedEntregas.sort((a:EPIEntrega, b:EPIEntrega) => new Date(b.dataEntrega).getTime() - new Date(a.dataEntrega).getTime()));
-                alert("Entregas importadas e salvas com sucesso!");
-            }
-        } catch (error) {
-            alert(`Erro ao importar: ${(error as Error).message}`);
-        } finally {
-            if(importEntregasRef.current) importEntregasRef.current.value = '';
-        }
-    };
-    reader.readAsArrayBuffer(file);
-  };
-  
-  const handleImportEstoque = (e: React.ChangeEvent<HTMLInputElement>) => {
-     const file = e.target.files?.[0];
-     if (!file) return;
-     const reader = new FileReader();
-     reader.onload = async (event) => {
-        try {
-            const data = new Uint8Array(event.target?.result as ArrayBuffer);
-            const workbook = XLSX.read(data, { type: 'array' });
-            const sheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[sheetName];
-            const json: any[] = XLSX.utils.sheet_to_json(worksheet);
-            
-            const newEstoqueDTO = json.map((row, index) => {
-                const name = row['Item'];
-                const qty = parseInt(row['Quantidade Inicial'], 10);
-                if (!name || isNaN(qty)) throw new Error(`Linha ${index+2} inválida.`);
-                return { name, qty };
-            });
-
-            if(window.confirm(`${newEstoqueDTO.length} itens de estoque encontrados. Deseja substituir o estoque atual?`)) {
-                const savedEstoque = await api.post('/api/epi-estoque/restore', { estoque: newEstoqueDTO });
-                setEstoque(savedEstoque);
-                alert('Estoque importado e salvo com sucesso!');
-            }
-        } catch(error) {
-            alert(`Erro ao importar estoque: ${(error as Error).message}. A planilha deve conter as colunas 'Item' e 'Quantidade Inicial'.`);
-        } finally {
-            if(importEstoqueRef.current) importEstoqueRef.current.value = '';
-        }
-     };
-     reader.readAsArrayBuffer(file);
-  };
-
-  return (
-    <div className="space-y-8">
-      <h1 className="text-3xl font-bold text-gray-800">Controle de Estoque de EPIs</h1>
-
-      {/* Seção de Estoque */}
-      <div className="bg-white p-6 rounded-lg shadow-md space-y-4">
-        <h2 className="text-2xl font-bold text-gray-800">Estoque de EPI</h2>
-        <div className="flex flex-wrap gap-2 items-start">
-            <div>
-              <button onClick={() => handleExport('estoque')} className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md">Exportar</button>
-            </div>
-            <div>
-              <button onClick={() => importEstoqueRef.current?.click()} className="px-3 py-1 text-sm bg-gray-600 text-white rounded-md">Importar</button>
-              <p className="text-xs text-gray-500 mt-1">Planilha com colunas: 'Item', 'Quantidade Inicial'.</p>
-              <input type="file" ref={importEstoqueRef} className="hidden" accept=".xlsx, .xls" onChange={handleImportEstoque} />
-            </div>
-            <div>
-              <button onClick={handleClearEstoque} className="px-3 py-1 text-sm bg-red-600 text-white rounded-md">Limpar Estoque</button>
-            </div>
-        </div>
-        <form onSubmit={handleAddEstoque} className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end p-4 bg-light rounded-md">
-            <input type="text" value={newEstoque.name} onChange={e => setNewEstoque({...newEstoque, name: e.target.value})} placeholder="Nome do Item" className="sm:col-span-1 border-gray-300 rounded-md" required />
-            <input type="number" value={newEstoque.qty} onChange={e => setNewEstoque({...newEstoque, qty: e.target.value})} placeholder="Quantidade" className="sm:col-span-1 border-gray-300 rounded-md" required />
-            <button type="submit" className="px-4 py-2 bg-primary text-white rounded-lg shadow hover:bg-secondary">Adicionar/Repor</button>
-        </form>
-        <div className="overflow-x-auto border rounded-lg">
-          <table className="w-full text-sm">
-            <thead className="text-xs text-gray-700 uppercase bg-gray-50">
-              <tr>
-                <th className="px-4 py-3">Item</th>
-                <th className="px-4 py-3 text-center">Qtd. Inicial</th>
-                <th className="px-4 py-3 text-center">Saídas</th>
-                <th className="px-4 py-3 text-center font-bold">Restante</th>
-                <th className="px-4 py-3 text-center">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {estoqueCalculado.map(item => (
-                <tr key={item.id} className="bg-white border-b hover:bg-gray-50">
-                  <td className="px-4 py-2 font-medium">{item.name}</td>
-                  <td className="px-4 py-2 text-center">{item.qty}</td>
-                  <td className="px-4 py-2 text-center">{item.outQty} {item.manualOut && <span className="text-xs text-orange-500">(M)</span>}</td>
-                  <td className="px-4 py-2 text-center font-bold text-lg">{item.remaining}</td>
-                  <td className="px-4 py-2 text-center space-x-2 whitespace-nowrap">
-                    <button onClick={() => handleEditEstoque(item, 'qty')} className="p-1 text-blue-600" title="Editar Qtd. Inicial"><EditIcon className="w-4 h-4"/></button>
-                    <button onClick={() => handleEditEstoque(item, 'manualOutQty')} className="p-1 text-yellow-600" title="Editar Saída Manualmente"><EditIcon className="w-4 h-4"/></button>
-                    <button onClick={() => handleRemoveEstoque(item.id)} className="p-1 text-red-600" title="Remover Item"><TrashIcon className="w-4 h-4"/></button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      
-      {/* Seção de Entregas */}
-      <div className="bg-white p-6 rounded-lg shadow-md space-y-4">
-        <div className="flex flex-wrap justify-between items-center gap-4">
-            <h2 className="text-2xl font-bold text-gray-800">Relatório de Entregas (Saídas)</h2>
-            <div className="flex items-start gap-2">
-                <button onClick={() => handleExport('entregas')} className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md">Exportar</button>
-                <div>
-                  <button onClick={() => importEntregasRef.current?.click()} className="px-3 py-1 text-sm bg-gray-600 text-white rounded-md">Importar</button>
-                  <p className="text-xs text-gray-500 mt-1">Colunas: 'Funcionário', 'Item (EPI)', 'Quantidade', 'Data da Entrega'.</p>
-                  <input type="file" ref={importEntregasRef} className="hidden" accept=".xlsx, .xls" onChange={handleImportEntregas} />
-                </div>
-                <button onClick={handleClearEntregas} className="px-3 py-1 text-sm bg-red-600 text-white rounded-md">Limpar</button>
-                <button onClick={() => setShowEntregaForm(true)} className="flex items-center px-4 py-2 bg-primary text-white rounded-lg shadow hover:bg-secondary">
-                  <PlusIcon className="w-5 h-5 mr-2" /> Nova Entrega
-                </button>
-            </div>
-        </div>
-        {showEntregaForm && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4" onClick={() => setShowEntregaForm(false)}>
-                <div className="bg-white rounded-lg shadow-xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
-                    <form onSubmit={handleAddEntrega} className="space-y-4">
-                        <div className="p-6 border-b"><h3 className="text-xl font-bold">Registrar Nova Entrega</h3></div>
-                        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="md:col-span-2"><label>Funcionário</label><input type="text" name="funcionario" value={newEntrega.funcionario} onChange={e => setNewEntrega(prev => ({ ...prev, funcionario: e.target.value }))} required className="w-full mt-1 border-gray-300 rounded-md"/></div>
-                          <div className="md:col-span-2"><label>Item (EPI)</label>
-                            <input list="epi-items" name="item" value={newEntrega.item} onChange={e => setNewEntrega(prev => ({ ...prev, item: e.target.value }))} required className="w-full mt-1 border-gray-300 rounded-md"/>
-                            <datalist id="epi-items">
-                                {estoque.map(i => <option key={i.id} value={i.name}/>)}
-                            </datalist>
-                          </div>
-                          <div><label>Quantidade</label><input type="number" name="quantidade" value={newEntrega.quantidade} onChange={e => setNewEntrega(prev => ({ ...prev, quantidade: e.target.value }))} required min="1" className="w-full mt-1 border-gray-300 rounded-md"/></div>
-                          <div><label>Data da Entrega</label><input type="date" name="dataEntrega" value={newEntrega.dataEntrega} onChange={e => setNewEntrega(prev => ({ ...prev, dataEntrega: e.target.value }))} required className="w-full mt-1 border-gray-300 rounded-md"/></div>
-                        </div>
-                        <div className="p-6 bg-gray-50 flex justify-end gap-3">
-                            <button type="button" onClick={() => setShowEntregaForm(false)}>Cancelar</button>
-                            <button type="submit" className="px-4 py-2 bg-primary text-white rounded-md">Salvar</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        )}
-        <div className="overflow-x-auto border rounded-lg">
-          <table className="w-full text-sm">
-            <thead className="text-xs text-gray-700 uppercase bg-gray-50">
-              <tr>
-                <th className="px-6 py-3">Funcionário</th><th className="px-6 py-3">Item (EPI)</th>
-                <th className="px-6 py-3 text-center">Qtd.</th><th className="px-6 py-3">Data</th><th className="px-6 py-3 text-center">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entregas.map(item => (
-                <tr key={item.id} className="bg-white border-b hover:bg-gray-50">
-                  <td className="px-6 py-4 font-medium whitespace-nowrap">{item.funcionario}</td>
-                  <td className="px-6 py-4">{item.item}</td>
-                  <td className="px-6 py-4 text-center">{item.quantidade}</td>
-                  <td className="px-6 py-4">{new Date(item.dataEntrega + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
-                  <td className="px-6 py-4 text-center">
-                    <button onClick={() => handleRemoveEntrega(item.id)} className="text-red-500 hover:text-red-700"><TrashIcon className="w-5 h-5 inline-block" /></button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
+            <div className="bg-white p-6 rounded-b-lg shadow-md">
+                {activeTab === 'cotacoes' && <CotacoesSalvasView cotacoes={cotacoes} setCotacoes={setCotacoes} setSimulacaoItens={setSimulacaoItens} valoresReferencia={valoresReferencia} handleImportClick={() => importFileRef.current?.click()} />}
+                {activeTab === 'simulacao' && <SimulacaoAtualView simulacaoItens={simulacaoItens} setSimulacaoItens={setSimulacaoItens} setSimulacoesSalvas={setSimulacoesSalvas} valoresReferencia={valoresReferencia} />}
+                {activeTab === 'simulacoes_salvas' && <SimulacoesSalvasView simulacoesSalvas={simulacoesSalvas} setSimulacoesSalvas={setSimulacoesSalvas} setSimulacaoItens={setSimulacaoItens} setActiveTab={setActiveTab}/>}
+                {activeTab === 'referencia' && <ValoresReferenciaView valoresReferencia={valoresReferencia} setValoresReferencia={setValoresReferencia} />}
+            </div>
+            <input type="file" ref={importFileRef} onChange={handleImport} accept=".xlsx, .xls" className="hidden" />
+        </div>
+    );
 };
 
-export default ControleEPI;
+// Sub-component views
+
+const CotacoesSalvasView: React.FC<{
+    cotacoes: Cotacao[],
+    setCotacoes: React.Dispatch<React.SetStateAction<Cotacao[]>>,
+    setSimulacaoItens: React.Dispatch<React.SetStateAction<SimulacaoCotacaoItem[]>>,
+    valoresReferencia: ValorReferencia[],
+    handleImportClick: () => void,
+}> = ({ cotacoes, setCotacoes, setSimulacaoItens, valoresReferencia, handleImportClick }) => {
+    const [searchTerm, setSearchTerm] = useState('');
+    const [expandedCotacaoId, setExpandedCotacaoId] = useState<string | null>(null);
+
+    const filteredItems = useMemo(() => {
+        if (!searchTerm.trim()) return [];
+        const results: (CotacaoItem & { cotacao: Cotacao })[] = [];
+        cotacoes.forEach(c => {
+            c.itens.forEach(item => {
+                if (item.produto.toLowerCase().includes(searchTerm.toLowerCase()) || item.marca.toLowerCase().includes(searchTerm.toLowerCase())) {
+                    results.push({ ...item, cotacao: c });
+                }
+            });
+        });
+        return results;
+    }, [searchTerm, cotacoes]);
+
+    const referenciaMap = useMemo(() => new Map(valoresReferencia.map(v => [v.id, v.valor])), [valoresReferencia]);
+    const getComparisonClass = (produto: string, valor: number) => {
+        const refValor = referenciaMap.get(produto.toLowerCase().trim());
+        if (refValor === undefined) return '';
+        return valor <= refValor ? 'text-green-600' : 'text-red-600';
+    };
+    
+    const handleAddToSimulacao = (item: CotacaoItem, cotacao: Cotacao) => {
+        setSimulacaoItens(prev => {
+            const newItem: SimulacaoCotacaoItem = {
+                ...item,
+                cotacaoOrigem: { id: cotacao.id, local: cotacao.local, data: cotacao.data }
+            };
+            return [...prev, newItem];
+        });
+        alert(`'${item.produto}' adicionado à simulação.`);
+    };
+
+    const handleDeleteCotacao = async (cotacaoId: string, local: string) => {
+        if(window.confirm(`Tem certeza que deseja excluir a cotação de "${local}"?`)) {
+            try {
+                await api.delete(`/api/cotacoes/${cotacaoId}`);
+                setCotacoes(prev => prev.filter(cot => cot.id !== cotacaoId));
+            } catch (error) {
+                alert(`Erro ao excluir cotação: ${(error as Error).message}`);
+            }
+        }
+    };
+
+    return (
+        <div className="space-y-4">
+            <div className="flex justify-between items-center gap-4">
+                <div className="relative w-full max-w-md">
+                    <input type="text" placeholder="Buscar item em todas as cotações..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 border rounded-lg"/>
+                    <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                </div>
+                <div className="text-right flex-shrink-0">
+                    <button onClick={handleImportClick} className="flex items-center px-4 py-2 bg-primary text-white rounded-lg shadow hover:bg-secondary ml-auto">
+                        <PlusIcon className="w-5 h-5 mr-2"/> Importar Cotação
+                    </button>
+                    <p className="text-xs text-gray-500 mt-1">A planilha deve ter: Produto, Unidade, Quantidade, Valor Unitário, Marca, Local da Cotação, Data.</p>
+                </div>
+            </div>
+
+            {searchTerm ? (
+                <div className="border rounded-lg overflow-hidden">
+                    <table className="w-full text-sm">
+                        <thead className="bg-gray-50"><tr><th className="px-4 py-2">Produto</th><th className="px-4 py-2">Origem</th><th className="px-4 py-2 text-right">Valor</th><th className="px-4 py-2 text-center">Ações</th></tr></thead>
+                        <tbody>
+                            {filteredItems.map(item => (
+                                <tr key={item.id} className="border-b hover:bg-gray-50">
+                                    <td className="px-4 py-2 font-medium">{item.produto} ({item.marca})</td>
+                                    <td className="px-4 py-2 text-gray-600">{item.cotacao.local} - {new Date(item.cotacao.data  + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
+                                    <td className={`px-4 py-2 text-right font-semibold ${getComparisonClass(item.produto, item.valorUnitario)}`}>{formatarMoeda(item.valorUnitario)}</td>
+                                    <td className="px-4 py-2 text-center"><button onClick={() => handleAddToSimulacao(item, item.cotacao)} className="text-blue-600 text-xs">Add à Simulação</button></td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            ) : (
+                <div className="space-y-3">
+                    {cotacoes.map(c => (
+                        <div key={c.id} className="border rounded-lg">
+                            <div onClick={() => setExpandedCotacaoId(expandedCotacaoId === c.id ? null : c.id)} className="p-4 flex justify-between items-center cursor-pointer hover:bg-gray-50">
+                                <div>
+                                    <p className="font-bold">{c.local}</p>
+                                    <p className="text-sm text-gray-500">{new Date(c.data + 'T00:00:00').toLocaleDateString('pt-BR')} - {c.itens.length} itens</p>
+                                </div>
+                                <TrashIcon className="w-5 h-5 text-gray-400 hover:text-red-600" onClick={(e) => {e.stopPropagation(); handleDeleteCotacao(c.id, c.local)}}/>
+                            </div>
+                            {expandedCotacaoId === c.id && (
+                                <div className="border-t p-2">
+                                     <table className="w-full text-sm">
+                                        <tbody>
+                                            {c.itens.map(item => (
+                                                <tr key={item.id} className="hover:bg-blue-50">
+                                                    <td className="px-2 py-1">{item.produto}</td>
+                                                    <td className={`px-2 py-1 text-right ${getComparisonClass(item.produto, item.valorUnitario)}`}>{formatarMoeda(item.valorUnitario)}</td>
+                                                    <td className="px-2 py-1 text-center"><button onClick={() => handleAddToSimulacao(item, c)} className="text-blue-600 text-xs">Add</button></td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const SimulacaoAtualView: React.FC<{
+    simulacaoItens: SimulacaoCotacaoItem[],
+    setSimulacaoItens: React.Dispatch<React.SetStateAction<SimulacaoCotacaoItem[]>>,
+    setSimulacoesSalvas: React.Dispatch<React.SetStateAction<SimulacaoCotacaoSalva[]>>,
+    valoresReferencia: ValorReferencia[],
+}> = ({ simulacaoItens, setSimulacaoItens, setSimulacoesSalvas, valoresReferencia }) => {
+    
+    const totalSimulacao = useMemo(() => simulacaoItens.reduce((acc, item) => acc + item.valorTotal, 0), [simulacaoItens]);
+    const referenciaMap = useMemo(() => new Map(valoresReferencia.map(v => [v.id, v.valor])), [valoresReferencia]);
+    const getComparisonClass = (produto: string, valor: number) => {
+        const refValor = referenciaMap.get(produto.toLowerCase().trim());
+        if (refValor === undefined) return '';
+        return valor <= refValor ? 'text-green-600' : 'text-red-600';
+    };
+
+    const handleSave = async () => {
+        const nome = prompt("Digite um nome para esta simulação:");
+        if (nome && nome.trim()) {
+            const novaSimulacaoPayload = {
+                nome,
+                data: new Date().toISOString(),
+                itens: simulacaoItens,
+            };
+            try {
+                const savedSimulacao = await api.post('/api/simulacoes-cotacoes', novaSimulacaoPayload);
+                setSimulacoesSalvas(prev => [savedSimulacao, ...prev]);
+                alert("Simulação salva com sucesso!");
+            } catch (error) {
+                 alert(`Erro ao salvar simulação: ${(error as Error).message}`);
+            }
+        }
+    };
+
+    const handleExport = (type: 'pdf' | 'excel') => {
+        if (simulacaoItens.length === 0) return;
+        
+        const head = [['Produto', 'Marca', 'Un.', 'Qtd.', 'V. Unit.', 'V. Total', 'Origem']];
+        const body = simulacaoItens.map(item => [item.produto, item.marca, item.unidade, item.quantidade, formatarMoeda(item.valorUnitario), formatarMoeda(item.valorTotal), `${item.cotacaoOrigem.local} (${new Date(item.cotacaoOrigem.data + 'T00:00:00').toLocaleDateString('pt-BR')})`]);
+        
+        if (type === 'pdf') {
+            const doc = new jsPDF.default();
+            doc.text("Simulação de Cotação", 14, 20);
+            doc.autoTable({ head, body, startY: 30 });
+            doc.text(`Total: ${formatarMoeda(totalSimulacao)}`, 14, doc.lastAutoTable.finalY + 10);
+            doc.save(`simulacao_cotacao_${Date.now()}.pdf`);
+        } else {
+            const dataToExport = simulacaoItens.map(item => ({
+                'Produto': item.produto, 'Marca': item.marca, 'Unidade': item.unidade, 'Quantidade': item.quantidade, 'Valor Unitário': item.valorUnitario, 'Valor Total': item.valorTotal, 'Origem Cotação': item.cotacaoOrigem.local, 'Data Cotação': item.cotacaoOrigem.data
+            }));
+            dataToExport.push({ 'Produto': 'TOTAL', 'Valor Total': totalSimulacao } as any);
+            const ws = XLSX.utils.json_to_sheet(dataToExport);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Simulação');
+            XLSX.writeFile(wb, `simulacao_cotacao_${Date.now()}.xlsx`);
+        }
+    };
+
+    return (
+        <div className="space-y-4">
+            <h3 className="text-xl font-semibold">Itens na Simulação Atual</h3>
+            <div className="border rounded-lg overflow-hidden">
+                 <table className="w-full text-sm">
+                    <thead className="bg-gray-50"><tr><th className="px-4 py-2">Produto</th><th className="px-4 py-2">Unidade</th><th className="px-4 py-2">Origem</th><th className="px-4 py-2 text-right">V. Unitário</th><th className="px-4 py-2 text-right">Qtd</th><th className="px-4 py-2 text-right">V. Total</th><th className="px-4 py-2 text-center">Ações</th></tr></thead>
+                    <tbody>
+                        {simulacaoItens.map((item, index) => (
+                            <tr key={`${item.id}-${index}`} className="border-b">
+                                <td className="px-4 py-2">{item.produto}</td>
+                                <td className="px-4 py-2">{item.unidade}</td>
+                                <td className="px-4 py-2 text-xs text-gray-500">{item.cotacaoOrigem.local}</td>
+                                <td className={`px-4 py-2 text-right ${getComparisonClass(item.produto, item.valorUnitario)}`}>{formatarMoeda(item.valorUnitario)}</td>
+                                <td className="px-4 py-2 text-right">{item.quantidade}</td>
+                                <td className="px-4 py-2 text-right font-semibold">{formatarMoeda(item.valorTotal)}</td>
+                                <td className="px-4 py-2 text-center"><button onClick={() => setSimulacaoItens(prev => prev.filter((_, i) => i !== index))} className="text-red-500"><TrashIcon className="w-4 h-4"/></button></td>
+                            </tr>
+                        ))}
+                    </tbody>
+                    <tfoot><tr className="font-bold bg-gray-50"><td colSpan={5} className="px-4 py-2 text-right">Total:</td><td className="px-4 py-2 text-right">{formatarMoeda(totalSimulacao)}</td><td></td></tr></tfoot>
+                 </table>
+            </div>
+            <div className="flex flex-wrap gap-2">
+                <button onClick={handleSave} className="px-4 py-2 bg-green-600 text-white rounded-lg">Salvar Simulação</button>
+                <button onClick={() => handleExport('pdf')} className="px-4 py-2 bg-gray-700 text-white rounded-lg">Exportar PDF</button>
+                <button onClick={() => handleExport('excel')} className="px-4 py-2 bg-gray-600 text-white rounded-lg">Exportar Excel</button>
+                <button onClick={() => setSimulacaoItens([])} className="px-4 py-2 bg-red-600 text-white rounded-lg">Limpar</button>
+            </div>
+        </div>
+    );
+};
+
+const SimulacoesSalvasView: React.FC<{
+    simulacoesSalvas: SimulacaoCotacaoSalva[],
+    setSimulacoesSalvas: React.Dispatch<React.SetStateAction<SimulacaoCotacaoSalva[]>>,
+    setSimulacaoItens: React.Dispatch<React.SetStateAction<SimulacaoCotacaoItem[]>>,
+    setActiveTab: (tab: string) => void
+}> = ({simulacoesSalvas, setSimulacoesSalvas, setSimulacaoItens, setActiveTab}) => {
+
+    const handleRestore = (simulacao: SimulacaoCotacaoSalva) => {
+        setSimulacaoItens(simulacao.itens);
+        setActiveTab('simulacao');
+        alert(`Simulação '${simulacao.nome}' restaurada.`);
+    };
+    
+    const handleDelete = async (id: string) => {
+        if(window.confirm('Deseja excluir esta simulação salva?')) {
+            try {
+                await api.delete(`/api/simulacoes-cotacoes/${id}`);
+                setSimulacoesSalvas(prev => prev.filter(s => s.id !== id));
+            } catch (error) {
+                 alert(`Erro ao excluir simulação: ${(error as Error).message}`);
+            }
+        }
+    };
+
+    return (
+        <div className="space-y-4">
+             <h3 className="text-xl font-semibold">Simulações de Cotação Salvas</h3>
+             <div className="border rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                    <thead className="bg-gray-50"><tr><th className="px-4 py-2">Nome</th><th className="px-4 py-2">Data</th><th className="px-4 py-2 text-right">Valor Total</th><th className="px-4 py-2 text-center">Ações</th></tr></thead>
+                    <tbody>
+                        {simulacoesSalvas.map(sim => (
+                            <tr key={sim.id} className="border-b hover:bg-gray-50">
+                                <td className="px-4 py-2 font-medium">{sim.nome}</td>
+                                <td className="px-4 py-2">{new Date(sim.data).toLocaleString('pt-BR')}</td>
+                                <td className="px-4 py-2 text-right">{formatarMoeda(sim.itens.reduce((acc, item) => acc + item.valorTotal, 0))}</td>
+                                <td className="px-4 py-2 text-center space-x-2">
+                                    <button onClick={() => handleRestore(sim)} className="text-blue-600">Restaurar</button>
+                                    <button onClick={() => handleDelete(sim.id)} className="text-red-600">Excluir</button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+             </div>
+        </div>
+    );
+};
+
+const ValoresReferenciaView: React.FC<{
+    valoresReferencia: ValorReferencia[],
+    setValoresReferencia: React.Dispatch<React.SetStateAction<ValorReferencia[]>>,
+}> = ({ valoresReferencia, setValoresReferencia }) => {
+    const [form, setForm] = useState({ produto: '', valor: '' });
+    const [editingId, setEditingId] = useState<string | null>(null);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const valor = parseFloat(form.valor);
+        const produto = form.produto.trim();
+        if (!produto || isNaN(valor)) {
+            alert("Preencha o nome do produto e um valor válido.");
+            return;
+        }
+
+        const id = editingId || produto.toLowerCase().trim();
+        
+        try {
+            await api.post('/api/valores-referencia', { id, produto, valor });
+            const updatedValores = await api.get('/api/valores-referencia');
+            setValoresReferencia(updatedValores);
+        } catch (error) {
+            alert(`Erro ao salvar valor de referência: ${(error as Error).message}`);
+        }
+
+        setForm({ produto: '', valor: '' });
+        setEditingId(null);
+    };
+
+    const handleDelete = async (id: string) => {
+        if(window.confirm('Deseja excluir este valor de referência?')) {
+            try {
+                await api.delete(`/api/valores-referencia/${id}`);
+                setValoresReferencia(prev => prev.filter(v => v.id !== id));
+            } catch (error) {
+                alert(`Erro ao excluir: ${(error as Error).message}`);
+            }
+        }
+    };
+    
+    const handleEdit = (ref: ValorReferencia) => {
+        setEditingId(ref.id);
+        setForm({ produto: ref.produto, valor: ref.valor.toString() });
+    };
+
+    const handleCancelEdit = () => {
+        setEditingId(null);
+        setForm({ produto: '', valor: '' });
+    };
+
+    return (
+        <div className="space-y-4">
+             <h3 className="text-xl font-semibold">Gerenciar Valores de Referência</h3>
+             <form onSubmit={handleSubmit} className="p-4 bg-light rounded-lg border grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                <input type="text" placeholder="Nome do Produto" value={form.produto} onChange={e => setForm({...form, produto: e.target.value})} className="border-gray-300 rounded-md" required disabled={!!editingId} title={editingId ? "Não é possível alterar o nome, apenas o valor. Exclua e crie um novo para renomear." : ""}/>
+                <input type="number" step="0.01" placeholder="Valor (R$)" value={form.valor} onChange={e => setForm({...form, valor: e.target.value})} className="border-gray-300 rounded-md" required/>
+                <div className="flex gap-2">
+                    <button type="submit" className="flex-1 px-4 py-2 bg-primary text-white rounded-lg">{editingId ? 'Salvar' : 'Adicionar'}</button>
+                    {editingId && <button type="button" onClick={handleCancelEdit} className="px-4 py-2 bg-gray-300 rounded-lg">Cancelar</button>}
+                </div>
+             </form>
+             <div className="border rounded-lg overflow-hidden">
+                 <table className="w-full text-sm">
+                    <thead className="bg-gray-50"><tr><th className="px-4 py-2">Produto</th><th className="px-4 py-2 text-right">Valor de Referência</th><th className="px-4 py-2 text-center">Ações</th></tr></thead>
+                    <tbody>
+                        {valoresReferencia.map(ref => (
+                            <tr key={ref.id} className="border-b">
+                                <td className="px-4 py-2">{ref.produto}</td>
+                                <td className="px-4 py-2 text-right font-semibold">{formatarMoeda(ref.valor)}</td>
+                                <td className="px-4 py-2 text-center space-x-2">
+                                    <button onClick={() => handleEdit(ref)} className="p-1 text-blue-600"><EditIcon className="w-4 h-4"/></button>
+                                    <button onClick={() => handleDelete(ref.id)} className="p-1 text-red-500"><TrashIcon className="w-4 h-4"/></button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                 </table>
+             </div>
+        </div>
+    );
+};
+
+
+export default Cotacoes;
