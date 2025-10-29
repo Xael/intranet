@@ -44,8 +44,6 @@ const ControleEstoque: React.FC<ControleEstoqueProps> = ({ inventory, setInvento
 
 
   // --- HANDLERS (Todos Corretos) ---
-  // (Omitidos por brevidade, eles já estavam certos)
-
   const handleAddStock = async (e: FormEvent) => {
     e.preventDefault();
     const name = stockForm.name.trim();
@@ -201,24 +199,28 @@ const ControleEstoque: React.FC<ControleEstoqueProps> = ({ inventory, setInvento
 
               if (type === 'stock') {
                   // 1. Mapeia para o TIPO COMPLETO (com IDs fabricados) para o estado local
-                  const newInventoryItems: InventoryItem[] = json.map((row, index) => ({
+                  const newInventoryItems: InventoryItem[] = json.map((row, index) => {
+                    const initialQty = Number(row['Inicial'] || 0); // Pega a Qtd. Inicial
+                    return {
                       id: `import-${Date.now()}-${index}`, // ID Fabricado
                       name: String(row['Item'] || ''),
-                      qty: Number(row['Inicial'] || 0),
+                      qty: initialQty,
                       manualOut: false, // Valor padrão
-                      outQty: 0          // Valor padrão
-                  })).filter(item => item.name && item.qty > 0);
+                      outQty: 0,        // Valor padrão
+                      remaining: initialQty // <-- CORREÇÃO: 'remaining' é igual a 'qty' inicial
+                    };
+                  }).filter(item => item.name && item.qty > 0);
                   
-                  // 2. Mapeia para o DTO (sem ID) para enviar ao servidor
-                  const newInventoryDTO = newInventoryItems.map(({ id, ...rest }) => ({
-                    name: rest.name,
-                    qty: rest.qty
+                  // 2. Mapeia para o DTO (sem ID, etc) para enviar ao servidor
+                  const newInventoryDTO = newInventoryItems.map(item => ({
+                    name: item.name,
+                    qty: item.qty
                   }));
                   
                   if(window.confirm(`${newInventoryItems.length} itens de estoque válidos encontrados. Deseja substituir o estoque atual?`)) {
                     // 3. Salva no servidor
                     await api.post('/api/materiais/restore', { materiais: newInventoryDTO });
-                    // 4. Atualiza o estado local com os dados que *sabemos* estarem corretos (com IDs fabricados)
+                    // 4. Atualiza o estado local
                     setInventory(newInventoryItems);
                     alert('Estoque importado e salvo com sucesso!');
                   }
@@ -240,7 +242,7 @@ const ControleEstoque: React.FC<ControleEstoqueProps> = ({ inventory, setInvento
                   if (window.confirm(`${newOutputItems.length} registros de saída válidos encontrados. Deseja substituir as saídas atuais?`)) {
                     // 3. Salva no servidor
                     await api.post('/api/editais/restore', { editais: newOutputsDTO });
-                    // 4. Atualiza o estado local com os dados que *sabemos* estarem corretos (com IDs fabricados)
+                    // 4. Atualiza o estado local
                     setOutputs(newOutputItems);
                     alert('Saídas importadas e salvas com sucesso!');
                   }
@@ -273,7 +275,7 @@ const ControleEstoque: React.FC<ControleEstoqueProps> = ({ inventory, setInvento
                 </div>
                 <div className="sm:col-span-1">
                     <label className="block text-sm font-medium text-gray-700">Quantidade</label>
-                    <input type="number" value={stockForm.qty} onChange={e => setStockForm({...stockForm, qty: e.target.value})} placeholder="Ex: 50" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required />
+                <input type="number" value={stockForm.qty} onChange={e => setStockForm({...stockForm, qty: e.target.value})} placeholder="Ex: 50" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required />
                 </div>
                 <button type="submit" className="px-4 py-2 h-10 bg-primary text-white rounded-lg shadow hover:bg-secondary">Adicionar/Repor</button>
             </form>
@@ -282,14 +284,14 @@ const ControleEstoque: React.FC<ControleEstoqueProps> = ({ inventory, setInvento
                     <thead className="text-xs text-gray-700 uppercase bg-gray-50">
                         <tr>
                             <th className="px-6 py-3">Item</th><th className="px-6 py-3">Inicial</th><th className="px-6 py-3">Saída</th><th className="px-6 py-3">Restante</th><th className="px-6 py-3">Ações</th>
-                        </tr>
+                        </tr>
                     </thead>
                     <tbody>
                         {inventoryCalculado.map(item => ( 
                             <tr key={item.id} className="bg-white border-b hover:bg-gray-50">
                                 <td className="px-6 py-4 font-medium text-gray-900">{item.name}</td>
                                 <td className="px-6 py-4">{item.qty}</td>
-                                <td className="px-6 py-4">{item.outQty} {item.manualOut && <span className="text-xs text-orange-500">(M)</span>}</td>
+                                <td className="px-6 py-4">{item.outQty} {item.manualOut && <span className="text-xs text-orange-500">(M)</span>}</td>
                                 <td className="px-6 py-4 font-bold">{item.remaining}</td>
                                 <td className="px-6 py-4 space-x-2 whitespace-nowrap">
                                     <button onClick={() => handleEditStock(item, 'qty')} className="font-medium text-blue-600 hover:underline">Editar Entrada</button>
@@ -297,10 +299,10 @@ const ControleEstoque: React.FC<ControleEstoqueProps> = ({ inventory, setInvento
                                     <button onClick={() => handleRemoveStock(item.id)} className="font-medium text-red-600 hover:underline">Remover</button>
                                 </td>
                             </tr>
-                        ))}
-                  </tbody>
+                        ))}
+                    </tbody>
                 </table>
-          </div>
+            </div>
         </div>
 
         {/* Saídas Section */}
@@ -316,11 +318,11 @@ const ControleEstoque: React.FC<ControleEstoqueProps> = ({ inventory, setInvento
                 <div>
                     <label className="block text-sm font-medium text-gray-700">Data</label>
                     <input type="date" value={outputForm.date} onChange={e => setOutputForm({...outputForm, date: e.target.value})} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required />
-                </div>
+            </div>
                  <div>
                     <label className="block text-sm font-medium text-gray-700">Produto</label>
                     <input type="text" list="inventory-items" value={outputForm.product} onChange={e => setOutputForm({...outputForm, product: e.target.value})} placeholder="Nome do item" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required />
-                    <datalist id="inventory-items">
+                    <datalist id="inventory-items">
                       {inventory.map(i => <option key={i.id} value={i.name}/>)}
                     </datalist>
                 </div>
@@ -334,11 +336,11 @@ const ControleEstoque: React.FC<ControleEstoqueProps> = ({ inventory, setInvento
                 </div>
                  <div>
                     <label className="block text-sm font-medium text-gray-700">Funcionário</label>
-                    <input type="text" value={outputForm.employee} onChange={e => setOutputForm({...outputForm, employee: e.target.value})} placeholder="Nome do funcionário" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required />
+                <input type="text" value={outputForm.employee} onChange={e => setOutputForm({...outputForm, employee: e.target.value})} placeholder="Nome do funcionário" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required />
                 </div>
                  <div>
                     <label className="block text-sm font-medium text-gray-700">Responsável Retirada</label>
-                    <input type="text" value={outputForm.responsible} onChange={e => setOutputForm({...outputForm, responsible: e.target.value})} placeholder="Quem retirou" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required />
+                 <input type="text" value={outputForm.responsible} onChange={e => setOutputForm({...outputForm, responsible: e.target.value})} placeholder="Quem retirou" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required />
                 </div>
                 <div className="lg:col-span-3">
                     <button type="submit" className="w-full px-4 py-2 bg-primary text-white rounded-lg shadow hover:bg-secondary">Registrar Saída</button>
@@ -349,25 +351,25 @@ const ControleEstoque: React.FC<ControleEstoqueProps> = ({ inventory, setInvento
                     <thead className="text-xs text-gray-700 uppercase bg-gray-50">
                         <tr>
                             <th className="px-6 py-3">Data</th><th className="px-6 py-3">Produto</th><th className="px-6 py-3">Qtd</th><th className="px-6 py-3">Tamanho</th><th className="px-6 py-3">Funcionário</th><th className="px-6 py-3">Responsável</th><th className="px-6 py-3">Ações</th>
-                        </tr>
+                </tr>
                     </thead>
                     <tbody>
-                        {outputsOrdenados.map(out => ( 
+                        {outputsOrdenados.map(out => (A 
                             <tr key={out.id} className="bg-white border-b hover:bg-gray-50">
                                 <td className="px-6 py-4">{out.date}</td>
                                 <td className="px-6 py-4 font-medium text-gray-900">{out.product}</td>
-                        <td className="px-6 py-4">{out.qty}</td>
+                                <td className="px-6 py-4">{out.qty}</td>
                                 <td className="px-6 py-4">{out.size}</td>
-                       <td className="px-6 py-4">{out.employee}</td>
+                  <td className="px-6 py-4">{out.employee}</td>
                                 <td className="px-6 py-4">{out.responsible}</td>
                                 <td className="px-6 py-4">
                                     <button onClick={() => handleRemoveOutput(out.id)} className="font-medium text-red-600 hover:underline">Remover</button>
-                            </td>
+                                </td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
-            </div>
+            </div>
         </div>
     </div>
   );
