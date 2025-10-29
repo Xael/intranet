@@ -10,7 +10,7 @@ import ControleEmpenhos from './ControleEmpenhos';
 import Cotacoes from './Cotacoes';
 import Configuracoes from './Configuracoes';
 import Calculadora from './Calculadora';
-import { LicitacaoDetalhada, EventoCalendarioDetalhado, Municipio, EPIEntrega, SimulacaoSalva, Cotacao, ValorReferencia, SimulacaoCotacaoSalva, CalculadoraSalva } from '../types';
+import { LicitacaoDetalhada, EventoCalendarioDetalhado, Municipio, EPIEntrega, SimulacaoSalva, Cotacao, ValorReferencia, SimulacaoCotacaoSalva, CalculadoraSalva, EPIEstoqueItem } from '../types';
 import { api } from '../utils/api';
 
 
@@ -24,6 +24,7 @@ const MainPlatform: React.FC = () => {
   const [eventos, setEventos] = useState<EventoCalendarioDetalhado[]>([]);
   const [materiaisData, setMateriaisData] = useState<Municipio[]>([]);
   const [epiData, setEpiData] = useState<EPIEntrega[]>([]);
+  const [epiEstoqueData, setEpiEstoqueData] = useState<EPIEstoqueItem[]>([]);
   const [simulacoesSalvas, setSimulacoesSalvas] = useState<SimulacaoSalva[]>([]);
   const [cotacoesData, setCotacoesData] = useState<Cotacao[]>([]);
   const [referenciaData, setReferenciaData] = useState<ValorReferencia[]>([]);
@@ -40,6 +41,7 @@ const MainPlatform: React.FC = () => {
           eventosRes,
           materiaisRes,
           epiRes,
+          epiEstoqueRes,
           simulacoesRes,
           cotacoesRes,
           referenciaRes,
@@ -50,6 +52,7 @@ const MainPlatform: React.FC = () => {
           api.get('/api/events'),
           api.get('/api/materiais'),
           api.get('/api/epi'),
+          api.get('/api/epi-estoque'),
           api.get('/api/simulacoes'),
           api.get('/api/cotacoes'),
           api.get('/api/valores-referencia'),
@@ -61,6 +64,7 @@ const MainPlatform: React.FC = () => {
         if (eventosRes) setEventos(eventosRes);
         if (materiaisRes) setMateriaisData(materiaisRes);
         if (epiRes) setEpiData(epiRes);
+        if (epiEstoqueRes) setEpiEstoqueData(epiEstoqueRes);
         if (simulacoesRes) setSimulacoesSalvas(simulacoesRes);
         if (cotacoesRes) setCotacoesData(cotacoesRes);
         if (referenciaRes) setReferenciaData(referenciaRes);
@@ -98,9 +102,10 @@ const MainPlatform: React.FC = () => {
       case 'materiais':
         return <ControleMateriais data={materiaisData} setData={setMateriaisData} simulacoesSalvas={simulacoesSalvas} setSimulacoesSalvas={setSimulacoesSalvas} />;
       case 'empenhos':
+        // FIX: Pass the correct state setter function 'setMateriaisData' to the 'setData' prop.
         return <ControleEmpenhos data={materiaisData} setData={setMateriaisData} />;
       case 'epi':
-        return <ControleEPI entregas={epiData} setEntregas={setEpiData} />;
+        return <ControleEPI entregas={epiData} setEntregas={setEpiData} estoque={epiEstoqueData} setEstoque={setEpiEstoqueData} />;
       case 'cotacoes':
         return <Cotacoes 
           cotacoes={cotacoesData}
