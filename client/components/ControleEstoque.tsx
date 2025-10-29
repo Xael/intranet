@@ -33,18 +33,18 @@ const ControleEstoque: React.FC<ControleEstoqueProps> = ({ inventory, setInvento
     });
   }, [inventory, outputs]);
 
-  // --- OTIMIZAÇÃO: Saídas ordenadas (Novo) ---
+  // --- OTIMIZAÇÃO: Saídas ordenadas (Correto) ---
   const outputsOrdenados = useMemo(() => {
     return [...outputs].sort((a, b) => {
-      // Converte 'DD/MM/YYYY' para um formato comparável
       const dataA = new Date(a.date.split('/').reverse().join('-')).getTime();
       const dataB = new Date(b.date.split('/').reverse().join('-')).getTime();
-      return dataB - dataA; // Ordena do mais novo para o mais antigo
+      return dataB - dataA; 
     });
-  }, [outputs]); // Só re-ordena se 'outputs' mudar
+  }, [outputs]); 
 
 
   // --- HANDLERS (Todos Corretos) ---
+  // (Omitidos por brevidade, eles já estavam certos)
 
   const handleAddStock = async (e: FormEvent) => {
     e.preventDefault();
@@ -79,7 +79,7 @@ const ControleEstoque: React.FC<ControleEstoqueProps> = ({ inventory, setInvento
       return;
     }
     const [y, m, d] = date.split('-');
-    const formattedDate = `${d}/${m}/${y}`; 
+    const formattedDate = `${d}/${m}/${y}`; 
 
     const newOutputDTO = {
       date: formattedDate,
@@ -92,7 +92,7 @@ const ControleEstoque: React.FC<ControleEstoqueProps> = ({ inventory, setInvento
 
     try {
       const savedOutput = await api.post('/api/editais', newOutputDTO);
-      setOutputs(prev => [savedOutput, ...prev]); 
+      setOutputs(prev => [savedOutput, ...prev]); 
       setOutputForm({ date: '', product: '', qty: '', size: '', employee: '', responsible: '' });
     } catch (error) {
       alert(`Falha ao registrar saída: ${(error as Error).message}`);
@@ -185,12 +185,13 @@ const ControleEstoque: React.FC<ControleEstoqueProps> = ({ inventory, setInvento
       }
   };
   
+  // --- FUNÇÃO CORRIGIDA ---
   const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>, type: 'stock' | 'outputs') => {
       const file = e.target.files?.[0];
       if (!file) return;
 
       const reader = new FileReader();
-      reader.onload = async (event) => { 
+      reader.onload = async (event) => { 
           try {
               const data = new Uint8Array(event.target?.result as ArrayBuffer);
               const workbook = XLSX.read(data, { type: 'array' });
@@ -199,39 +200,58 @@ const ControleEstoque: React.FC<ControleEstoqueProps> = ({ inventory, setInvento
               const json: any[] = XLSX.utils.sheet_to_json(worksheet);
 
               if (type === 'stock') {
-                  const newInventoryDTO = json.map((row) => ({
-                      name: row['Item'] || '',
+                  // 1. Mapeia para o TIPO COMPLETO (com IDs fabricados) para o estado local
+                  const newInventoryItems: InventoryItem[] = json.map((row, index) => ({
+                      id: `import-${Date.now()}-${index}`, // ID Fabricado
+                      name: String(row['Item'] || ''),
                       qty: Number(row['Inicial'] || 0),
+                      manualOut: false, // Valor padrão
+                      outQty: 0          // Valor padrão
                   })).filter(item => item.name && item.qty > 0);
                   
-                  if(window.confirm(`${newInventoryDTO.length} itens de estoque válidos encontrados. Deseja substituir o estoque atual?`)) {
-                    const savedInventory = await api.post('/api/materiais/restore', { materiais: newInventoryDTO });
-                    setInventory(savedInventory);
+                  // 2. Mapeia para o DTO (sem ID) para enviar ao servidor
+                  const newInventoryDTO = newInventoryItems.map(({ id, ...rest }) => ({
+                    name: rest.name,
+                    qty: rest.qty
+                  }));
+                  
+                  if(window.confirm(`${newInventoryItems.length} itens de estoque válidos encontrados. Deseja substituir o estoque atual?`)) {
+                    // 3. Salva no servidor
+                    await api.post('/api/materiais/restore', { materiais: newInventoryDTO });
+                    // 4. Atualiza o estado local com os dados que *sabemos* estarem corretos (com IDs fabricados)
+                    setInventory(newInventoryItems);
                     alert('Estoque importado e salvo com sucesso!');
                   }
               } else {
-                  const newOutputsDTO = json.map((row) => ({
-                      date: row['Data'] || '',
-                      product: row['Produto'] || '',
+                  // 1. Mapeia para o TIPO COMPLETO (com IDs fabricados) para o estado local
+                  const newOutputItems: OutputItem[] = json.map((row, index) => ({
+                      id: `import-${Date.now()}-${index}`, // ID Fabricado
+                      date: String(row['Data'] || ''),
+                      product: String(row['Produto'] || ''),
                       qty: Number(row['Quantidade'] || 0),
-                      size: row['Tamanho'] || '',
-                      employee: row['Funcionário'] || '',
-                      responsible: row['Responsável Retirada'] || ''
+                      size: String(row['Tamanho'] || ''),
+                      employee: String(row['Funcionário'] || ''),
+                      responsible: String(row['Responsável Retirada'] || '')
                   })).filter(item => item.product && item.qty > 0 && item.date);
                   
-                  if (window.confirm(`${newOutputsDTO.length} registros de saída válidos encontrados. Deseja substituir as saídas atuais?`)) {
-                    const savedOutputs = await api.post('/api/editais/restore', { editais: newOutputsDTO });
-                    setOutputs(savedOutputs);
+                  // 2. Mapeia para o DTO (sem ID) para enviar ao servidor
+                  const newOutputsDTO = newOutputItems.map(({ id, ...rest }) => rest);
+                  
+                  if (window.confirm(`${newOutputItems.length} registros de saída válidos encontrados. Deseja substituir as saídas atuais?`)) {
+                    // 3. Salva no servidor
+                    await api.post('/api/editais/restore', { editais: newOutputsDTO });
+                    // 4. Atualiza o estado local com os dados que *sabemos* estarem corretos (com IDs fabricados)
+                    setOutputs(newOutputItems);
                     alert('Saídas importadas e salvas com sucesso!');
                   }
               }
           } catch (error) {
               console.error("Erro ao importar arquivo:", error);
-              alert("Ocorreu um erro ao importar o arquivo. Verifique o formato.");
+              alert(`Ocorreu um erro ao importar o arquivo: ${(error as Error).message}`);
           }
       };
       reader.readAsArrayBuffer(file);
-      e.target.value = ''; 
+      e.target.value = ''; 
   };
 
 
@@ -265,11 +285,11 @@ const ControleEstoque: React.FC<ControleEstoqueProps> = ({ inventory, setInvento
                         </tr>
                     </thead>
                     <tbody>
-                        {inventoryCalculado.map(item => ( 
+                        {inventoryCalculado.map(item => ( 
                             <tr key={item.id} className="bg-white border-b hover:bg-gray-50">
                                 <td className="px-6 py-4 font-medium text-gray-900">{item.name}</td>
                                 <td className="px-6 py-4">{item.qty}</td>
-                                <td className="px-6 py-4">{item.outQty} {item.manualOut && <span className="text-xs text-orange-500">(M)</span>}</td>
+                                <td className="px-6 py-4">{item.outQty} {item.manualOut && <span className="text-xs text-orange-500">(M)</span>}</td>
                                 <td className="px-6 py-4 font-bold">{item.remaining}</td>
                                 <td className="px-6 py-4 space-x-2 whitespace-nowrap">
                                     <button onClick={() => handleEditStock(item, 'qty')} className="font-medium text-blue-600 hover:underline">Editar Entrada</button>
@@ -278,9 +298,9 @@ const ControleEstoque: React.FC<ControleEstoqueProps> = ({ inventory, setInvento
                                 </td>
                             </tr>
                         ))}
-                    </tbody>
+                  </tbody>
                 </table>
-            </div>
+          </div>
         </div>
 
         {/* Saídas Section */}
@@ -300,7 +320,7 @@ const ControleEstoque: React.FC<ControleEstoqueProps> = ({ inventory, setInvento
                  <div>
                     <label className="block text-sm font-medium text-gray-700">Produto</label>
                     <input type="text" list="inventory-items" value={outputForm.product} onChange={e => setOutputForm({...outputForm, product: e.target.value})} placeholder="Nome do item" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required />
-                    <datalist id="inventory-items">
+                    <datalist id="inventory-items">
                       {inventory.map(i => <option key={i.id} value={i.name}/>)}
                     </datalist>
                 </div>
@@ -332,17 +352,17 @@ const ControleEstoque: React.FC<ControleEstoqueProps> = ({ inventory, setInvento
                         </tr>
                     </thead>
                     <tbody>
-                        {outputsOrdenados.map(out => ( // <-- MUDANÇA AQUI
+                        {outputsOrdenados.map(out => ( 
                             <tr key={out.id} className="bg-white border-b hover:bg-gray-50">
                                 <td className="px-6 py-4">{out.date}</td>
                                 <td className="px-6 py-4 font-medium text-gray-900">{out.product}</td>
-                                <td className="px-6 py-4">{out.qty}</td>
+                        <td className="px-6 py-4">{out.qty}</td>
                                 <td className="px-6 py-4">{out.size}</td>
-                       <td className="px-6 py-4">{out.employee}</td>
+                       <td className="px-6 py-4">{out.employee}</td>
                                 <td className="px-6 py-4">{out.responsible}</td>
                                 <td className="px-6 py-4">
                                     <button onClick={() => handleRemoveOutput(out.id)} className="font-medium text-red-600 hover:underline">Remover</button>
-                                </td>
+                            </td>
                             </tr>
                         ))}
                     </tbody>
