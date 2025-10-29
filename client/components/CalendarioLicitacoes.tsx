@@ -1,5 +1,6 @@
 
-import React, { useState, FormEvent } from 'react';
+
+import React, { useState, useRef, FormEvent } from 'react';
 import { EventoCalendarioDetalhado, DetalhesEvento } from '../types';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
@@ -24,11 +25,11 @@ const EventoModal: React.FC<EventoModalProps> = ({ isOpen, onClose, onSave, onDe
   const initialDetails: DetalhesEvento = isNew 
     ? { city: '', bid_number: '', time: '', location: '', description: '' }
     : {
-        city: eventData?.extendedProps.city || '',
-        bid_number: eventData?.extendedProps.bid_number || '',
-        time: eventData?.extendedProps.time || '',
-        location: eventData?.extendedProps.location || '',
-        description: eventData?.extendedProps.description || ''
+        city: (eventData?.extendedProps as any)?.city || '',
+        bid_number: (eventData?.extendedProps as any)?.bid_number || (eventData as any)?.bid_number || '',
+        time: (eventData?.extendedProps as any)?.time || (eventData as any)?.time || '',
+        location: (eventData?.extendedProps as any)?.location || (eventData as any)?.location || '',
+        description: (eventData?.extendedProps as any)?.description || (eventData as any)?.description || ''
     };
 
 
@@ -110,13 +111,18 @@ const CalendarioLicitacoes: React.FC<CalendarioLicitacoesProps> = ({ events, set
     isOpen: false,
     isNew: true,
   });
+  const restoreInputRef = useRef<HTMLInputElement>(null);
 
   const openModalForNew = (arg: DateClickArg) => {
     setModalState({ isOpen: true, isNew: true, dateStr: arg.dateStr });
   };
 
   const openModalForEdit = (arg: EventClickArg) => {
-    setModalState({ isOpen: true, isNew: false, event: arg.event });
+    const eventData = events.find(e => e.id === arg.event.id);
+    if(eventData) {
+        // Pass the raw event data to the modal, not the FullCalendar EventApi object
+        setModalState({ isOpen: true, isNew: false, event: arg.event });
+    }
   };
 
   const closeModal = () => {
@@ -129,26 +135,20 @@ const CalendarioLicitacoes: React.FC<CalendarioLicitacoesProps> = ({ events, set
         const newEventPayload = {
           start: modalState.dateStr,
           title: details.bid_number,
-          city: details.city,
-          bid_number: details.bid_number,
-          time: details.time,
-          location: details.location,
-          description: details.description,
+          ...details,
         };
         const savedEvent = await api.post('/api/events', newEventPayload);
         setEvents(currentEvents => [...currentEvents, savedEvent]);
 
       } else if (!modalState.isNew && modalState.event) {
         const eventId = modalState.event.id;
+        const originalEvent = events.find(e => e.id === eventId);
+        if (!originalEvent) throw new Error("Evento original não encontrado");
+
         const updatedEventPayload = {
-            id: eventId,
-            start: modalState.event.startStr,
+            ...originalEvent,
             title: details.bid_number,
-            city: details.city,
-            bid_number: details.bid_number,
-            time: details.time,
-            location: details.location,
-            description: details.description,
+            ...details,
         };
         const savedEvent = await api.put(`/api/events/${eventId}`, updatedEventPayload);
         setEvents(currentEvents =>
@@ -178,27 +178,82 @@ const CalendarioLicitacoes: React.FC<CalendarioLicitacoesProps> = ({ events, set
       const { event } = arg;
       if (!event.startStr) return;
       
-      const eventId = event.id;
-      const currentEvent = events.find(e => e.id === eventId);
-      if (!currentEvent) return;
+      const originalEvent = events.find(e => e.id === event.id);
+      if(!originalEvent) return;
 
-      const updatedEventPayload = { ...currentEvent, start: event.startStr };
-      
+      const updatedEventPayload = { ...originalEvent, start: event.startStr };
+
       try {
-        await api.put(`/api/events/${eventId}`, updatedEventPayload);
+        const savedEvent = await api.put(`/api/events/${event.id}`, updatedEventPayload);
         setEvents(currentEvents => currentEvents.map(e => 
-            e.id === eventId ? { ...e, start: event.startStr } : e
+            e.id === event.id ? savedEvent : e
         ));
       } catch (error) {
-          alert(`Falha ao mover evento: ${(error as Error).message}`);
-          arg.revert(); // Reverte a mudança visual no calendário
+        alert(`Falha ao mover evento: ${(error as Error).message}`);
+        arg.revert(); // Reverte a mudança visual no calendário
       }
   };
   
+  const handleBackup = () => {
+    if (events.length === 0) {
+        alert('Não há dados no calendário para fazer backup.');
+        return;
+    }
+    const dataStr = JSON.stringify({ events }, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    const date = new Date().toISOString().slice(0, 10);
+    a.download = `backup_calendario_${date}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleRestoreClick = () => {
+      restoreInputRef.current?.click();
+  };
+  
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (file.type !== 'application/json') {
+      alert('Por favor, selecione um arquivo de backup .json válido.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        try {
+            const text = e.target?.result as string;
+            if(!text) throw new Error("Arquivo vazio.");
+
+            const data = JSON.parse(text);
+            const eventsToRestore = data.events && Array.isArray(data.events) ? data.events : null;
+            
+            if (!eventsToRestore) {
+                throw new Error('Formato do arquivo de backup inválido. Chave "events" não encontrada.');
+            }
+            if (window.confirm('Restaurar este backup irá substituir TODOS os dados atuais do calendário. Deseja continuar?')) {
+                await api.post('/api/events/restore', { events: eventsToRestore });
+                setEvents(eventsToRestore);
+                alert('Backup do calendário restaurado com sucesso!');
+            }
+        } catch (error) {
+            console.error('Erro ao restaurar backup:', error);
+            alert(`Ocorreu um erro ao ler o arquivo de backup do calendário: ${(error as Error).message}`);
+        } finally {
+            if(restoreInputRef.current) restoreInputRef.current.value = '';
+        }
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div className="space-y-6">
        <style>{`
-        /* Estilo da grade do calendário */
         .fc .fc-scrollgrid, .fc table {
             border-collapse: collapse;
         }
@@ -215,6 +270,9 @@ const CalendarioLicitacoes: React.FC<CalendarioLicitacoesProps> = ({ events, set
       <div className="flex flex-wrap justify-between items-center gap-4">
         <h2 className="text-3xl font-bold text-gray-800">Calendário de Licitações</h2>
         <div className="flex items-center gap-2">
+            <button onClick={handleBackup} className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700 transition-colors">Fazer Backup</button>
+            <button onClick={handleRestoreClick} className="px-4 py-2 bg-gray-600 text-white rounded-lg shadow hover:bg-gray-700 transition-colors">Restaurar Backup</button>
+            <input type="file" ref={restoreInputRef} onChange={handleFileSelect} accept=".json" className="hidden" />
             <button onClick={() => openModalForNew({ dateStr: new Date().toISOString().split('T')[0] } as any)} className="px-4 py-2 bg-primary text-white rounded-lg shadow hover:bg-secondary transition-colors">Novo Evento</button>
         </div>
       </div>
@@ -235,12 +293,16 @@ const CalendarioLicitacoes: React.FC<CalendarioLicitacoesProps> = ({ events, set
           dateClick={openModalForNew}
           eventClick={openModalForEdit}
           eventDrop={handleEventDrop}
+          eventDataTransform={(eventInfo) => {
+              return {
+                  ...eventInfo,
+                  extendedProps: eventInfo
+              }
+          }}
           dayCellDidMount={(arg) => {
               const dateStr = arg.date.toISOString().split('T')[0];
-              const hasEvent = events.some(e => e.start.split('T')[0] === dateStr);
-              if (hasEvent) {
-                arg.el.style.backgroundColor = '#FFF9C4'; // Amarelo para dias com evento
-              }
+              const hasEvent = events.some(e => e.start === dateStr);
+              arg.el.style.backgroundColor = hasEvent ? '#FFF9C4' : '#C8E6C9';
           }}
           height="auto"
         />
