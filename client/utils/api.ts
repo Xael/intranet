@@ -1,36 +1,5 @@
-// FIX: Manually define types for import.meta.env as the /// <reference> directive for 'vite/client' was failing.
-declare global {
-    interface ImportMeta {
-        readonly env: {
-            readonly VITE_API_URL?: string;
-            readonly PROD: boolean;
-        };
-    }
-}
-
-const getApiBaseUrl = (): string => {
-    // Prioridade 1: Usar uma variável de ambiente explícita, se definida.
-    if (import.meta.env.VITE_API_URL) {
-        return import.meta.env.VITE_API_URL;
-    }
-
-    // Prioridade 2: Em produção, derivar a URL do hostname.
-    if (import.meta.env.PROD && !window.location.hostname.includes('localhost')) {
-        // Assume que o backend está em um subdomínio similar, com 'node' no final do nome do serviço.
-        // Ex: 'app.domain.com' -> 'appnode.domain.com'
-        const currentHost = window.location.hostname;
-        const parts = currentHost.split('.');
-        // 'intranet-intranet' se torna 'intranet-intranetnode'
-        parts[0] = `${parts[0]}node`; 
-        const backendHost = parts.join('.');
-        return `https://${backendHost}`;
-    }
-
-    // Prioridade 3: Fallback para o ambiente de desenvolvimento.
-    return 'http://localhost:3001';
-};
-
-const API_BASE_URL = getApiBaseUrl();
+// A URL da API agora está fixada para o ambiente de produção.
+const API_BASE_URL = 'https://intranet-intranetnode.t84kr0.easypanel.host';
 
 const getAuthToken = (): string | null => {
   return localStorage.getItem('authToken');
