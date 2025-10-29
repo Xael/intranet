@@ -1,266 +1,307 @@
 
-import React, { useState, useRef, FormEvent } from 'react';
-import { EPIEntrega } from '../types';
+import React, { useState, useRef, FormEvent, useMemo } from 'react';
+import { EPIEntrega, EPIEstoqueItem } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
 import { TrashIcon } from './icons/TrashIcon';
+import { EditIcon } from './icons/EditIcon';
 import { api } from '../utils/api';
 
 declare var XLSX: any;
 
+interface EPIEstoqueItemComCalculo extends EPIEstoqueItem {
+    outQty: number;
+    remaining: number;
+}
+
 interface ControleEPIProps {
   entregas: EPIEntrega[];
   setEntregas: React.Dispatch<React.SetStateAction<EPIEntrega[]>>;
+  estoque: EPIEstoqueItem[];
+  setEstoque: React.Dispatch<React.SetStateAction<EPIEstoqueItem[]>>;
 }
 
-const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas }) => {
-  const [showForm, setShowForm] = useState(false);
+const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas, estoque, setEstoque }) => {
+  const [showEntregaForm, setShowEntregaForm] = useState(false);
   const today = new Date().toISOString().split('T')[0];
-  const [newEntrega, setNewEntrega] = useState({
-    funcionario: '',
-    item: '',
-    quantidade: '1',
-    dataEntrega: today
-  });
-  const importRef = useRef<HTMLInputElement>(null);
+  const [newEntrega, setNewEntrega] = useState({ funcionario: '', item: '', quantidade: '1', dataEntrega: today });
+  const [newEstoque, setNewEstoque] = useState({ name: '', qty: '' });
+  
+  const importEntregasRef = useRef<HTMLInputElement>(null);
+  const importEstoqueRef = useRef<HTMLInputElement>(null);
 
-  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setNewEntrega(prev => ({ ...prev, [name]: value }));
+  const estoqueCalculado: EPIEstoqueItemComCalculo[] = useMemo(() => {
+    const entregasPorItem = new Map<string, number>();
+    entregas.forEach(entrega => {
+        const key = entrega.item.toLowerCase();
+        entregasPorItem.set(key, (entregasPorItem.get(key) || 0) + entrega.quantidade);
+    });
+
+    return estoque.map(item => {
+        const outQty = item.manualOut ? item.manualOutQty : (entregasPorItem.get(item.name.toLowerCase()) || 0);
+        const remaining = item.qty - outQty;
+        return { ...item, outQty, remaining };
+    });
+  }, [estoque, entregas]);
+
+  const handleAddEstoque = async (e: FormEvent) => {
+    e.preventDefault();
+    const name = newEstoque.name.trim();
+    const qty = parseInt(newEstoque.qty, 10);
+    if (!name || isNaN(qty) || qty <= 0) return alert('Informe nome e quantidade válidos.');
+
+    try {
+        await api.post('/api/epi-estoque', { name, qty });
+        const updatedEstoque = await api.get('/api/epi-estoque');
+        setEstoque(updatedEstoque);
+        setNewEstoque({ name: '', qty: '' });
+    } catch(error) {
+        alert(`Erro ao adicionar item: ${(error as Error).message}`);
+    }
+  };
+
+  const handleEditEstoque = async (item: EPIEstoqueItem, field: 'qty' | 'manualOutQty') => {
+      const promptMsg = field === 'qty' ? `Nova quantidade INICIAL para '${item.name}':` : `Nova quantidade de SAÍDA (manual) para '${item.name}':`;
+      const currentVal = field === 'qty' ? item.qty : item.manualOutQty;
+      const newValStr = prompt(promptMsg, currentVal.toString());
+
+      if (newValStr !== null) {
+          const newVal = parseInt(newValStr, 10);
+          if (!isNaN(newVal) && newVal >= 0) {
+              const payload = { ...item, [field]: newVal, manualOut: field === 'manualOutQty' ? true : item.manualOut };
+              try {
+                  await api.put(`/api/epi-estoque/${item.id}`, payload);
+                  setEstoque(prev => prev.map(i => i.id === item.id ? payload : i));
+              } catch (error) {
+                  alert(`Erro ao editar item: ${(error as Error).message}`);
+              }
+          } else {
+              alert("Valor inválido.");
+          }
+      }
+  };
+
+  const handleRemoveEstoque = async (id: string) => {
+      if(window.confirm("Remover este item do estoque?")) {
+          try {
+              await api.delete(`/api/epi-estoque/${id}`);
+              setEstoque(prev => prev.filter(i => i.id !== id));
+          } catch (error) {
+              alert(`Erro ao remover item: ${(error as Error).message}`);
+          }
+      }
+  };
+
+  const handleClearEstoque = async () => {
+    if (window.confirm("ATENÇÃO: Isso limpará TODO o estoque de EPI. Deseja continuar?")) {
+        try {
+            await api.post('/api/epi-estoque/restore', { estoque: [] });
+            setEstoque([]);
+        } catch (error) {
+            alert(`Erro ao limpar estoque: ${(error as Error).message}`);
+        }
+    }
   };
 
   const handleAddEntrega = async (e: FormEvent) => {
     e.preventDefault();
-    const quantidadeNum = parseInt(newEntrega.quantidade, 10);
-    if (!newEntrega.funcionario.trim() || !newEntrega.item.trim() || isNaN(quantidadeNum) || quantidadeNum <= 0) {
-      alert("Por favor, preencha todos os campos corretamente.");
-      return;
-    }
-
-    const newEntry: Omit<EPIEntrega, 'id'> = {
-      funcionario: newEntrega.funcionario.trim(),
-      item: newEntrega.item.trim(),
-      quantidade: quantidadeNum,
-      dataEntrega: newEntrega.dataEntrega,
-    };
-
+    const payload = { ...newEntrega, quantidade: parseInt(newEntrega.quantidade, 10) };
     try {
-        const savedEntrega = await api.post('/api/epi', newEntry);
+        const savedEntrega = await api.post('/api/epi', payload);
         setEntregas(prev => [savedEntrega, ...prev].sort((a,b) => new Date(b.dataEntrega).getTime() - new Date(a.dataEntrega).getTime()));
         setNewEntrega({ funcionario: '', item: '', quantidade: '1', dataEntrega: today });
-        setShowForm(false);
-    } catch(error) {
-        alert(`Falha ao registrar entrega: ${(error as Error).message}`);
+        setShowEntregaForm(false);
+    } catch (error) {
+        alert(`Erro ao registrar entrega: ${(error as Error).message}`);
     }
   };
-
+  
   const handleRemoveEntrega = async (id: string) => {
     if (window.confirm("Tem certeza que deseja remover este registro de entrega?")) {
-      try {
-        await api.delete(`/api/epi/${id}`);
-        setEntregas(prev => prev.filter(e => e.id !== id));
-      } catch (error) {
-        alert(`Falha ao remover entrega: ${(error as Error).message}`);
-      }
+        try {
+            await api.delete(`/api/epi/${id}`);
+            setEntregas(prev => prev.filter(e => e.id !== id));
+        } catch (error) {
+            alert(`Erro ao remover entrega: ${(error as Error).message}`);
+        }
     }
   };
 
-  const handleClear = async () => {
+  const handleClearEntregas = async () => {
     if (window.confirm("ATENÇÃO: Isso limpará TODOS os registros de entrega de EPI. Deseja continuar?")) {
-      try {
-        await api.post('/api/epi/restore', { entregas: [] });
-        setEntregas([]);
-        alert('Todos os registros de EPI foram removidos.');
-      } catch (error) {
-        alert(`Falha ao limpar registros: ${(error as Error).message}`);
-      }
+        try {
+            await api.post('/api/epi/restore', { entregas: [] });
+            setEntregas([]);
+        } catch (error) {
+            alert(`Erro ao limpar entregas: ${(error as Error).message}`);
+        }
     }
   };
 
-  const handleExport = () => {
-    if (entregas.length === 0) {
-      alert('Não há dados para exportar.');
-      return;
+  const handleExport = (type: 'estoque' | 'entregas') => {
+    if (type === 'estoque') {
+        if(estoque.length === 0) return alert('Não há dados de estoque para exportar.');
+        const data = estoque.map(i => ({ 'Item': i.name, 'Quantidade Inicial': i.qty, 'Saída Manual': i.manualOut ? i.manualOutQty : 'Automático' }));
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Estoque EPI');
+        XLSX.writeFile(wb, `estoque_epi_${today}.xlsx`);
+    } else {
+        if(entregas.length === 0) return alert('Não há dados de entregas para exportar.');
+        const data = entregas.map(e => ({ 'Funcionário': e.funcionario, 'Item (EPI)': e.item, 'Quantidade': e.quantidade, 'Data da Entrega': e.dataEntrega }));
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Entregas EPI');
+        XLSX.writeFile(wb, `entregas_epi_${today}.xlsx`);
     }
-    const dataToExport = entregas.map(e => ({
-      'Funcionário': e.funcionario,
-      'Item (EPI)': e.item,
-      'Quantidade': e.quantidade,
-      'Data da Entrega': e.dataEntrega,
-    }));
-    const ws = XLSX.utils.json_to_sheet(dataToExport);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Entregas de EPI');
-    XLSX.writeFile(wb, `backup_entregas_epi_${new Date().toISOString().slice(0,10)}.xlsx`);
   };
 
-  const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportEntregas = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = async (event) => {
-      try {
-        const data = new Uint8Array(event.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array', cellDates:true });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const json: any[] = XLSX.utils.sheet_to_json(worksheet);
+        try {
+            const data = new Uint8Array(event.target?.result as ArrayBuffer);
+            const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const json: any[] = XLSX.utils.sheet_to_json(worksheet);
+            if (json.length === 0) throw new Error("Planilha vazia.");
 
-        if (json.length === 0) {
-            alert("Planilha vazia.");
-            return;
-        }
+            const headers = Object.keys(json[0]);
+            const isOldFormat = headers.includes('Produto') && headers.includes('Responsável Retirada');
+            const isNewFormat = headers.includes('Item (EPI)');
 
-        const firstRow = json[0];
-        // Old format has 'Produto' and 'Responsável Retirada'
-        const isOldFormat = 'Produto' in firstRow && 'Responsável Retirada' in firstRow;
-        // New format has 'Item (EPI)' and 'Data da Entrega'
-        const isNewFormat = 'Item (EPI)' in firstRow && 'Data da Entrega' in firstRow;
-
-        if (!isOldFormat && !isNewFormat) {
-            throw new Error("Formato da planilha não reconhecido. Verifique os cabeçalhos das colunas (Ex: 'Produto' ou 'Item (EPI)').");
-        }
-
-        const newEntregas: Omit<EPIEntrega, 'id'>[] = json.map((row, index) => {
-          const func = row['Funcionário'];
-          const item = isOldFormat ? row['Produto'] : row['Item (EPI)'];
-          const qtd = row['Quantidade'];
-          const data = isOldFormat ? row['Data'] : row['Data da Entrega'];
-
-          if(!func || !item || qtd === undefined || isNaN(parseInt(String(qtd), 10))) {
-              throw new Error(`Linha ${index + 2} do arquivo está inválida ou incompleta (faltando Funcionário, Item ou Quantidade).`);
-          }
-          
-          let formattedDate = today;
-          if (data) {
-            if (data instanceof Date) {
-              // Adjust for timezone offset from excel date parsing
-              const adjustedDate = new Date(data.getTime() - (data.getTimezoneOffset() * 60000));
-              formattedDate = adjustedDate.toISOString().split('T')[0];
-            } else if (typeof data === 'string') {
-              if (data.includes('/')) { // DD/MM/YYYY
-                  const parts = data.split('/');
-                  if (parts.length === 3) {
-                      formattedDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-                  }
-              } else if (data.includes('-')) { // YYYY-MM-DD
-                  formattedDate = data;
-              }
-            } else if (typeof data === 'number') { // Excel date serial number
-                const dt = XLSX.SSF.parse_date_code(data);
-                formattedDate = `${dt.y}-${String(dt.m).padStart(2, '0')}-${String(dt.d).padStart(2, '0')}`;
+            if (!isOldFormat && !isNewFormat) throw new Error("Formato de planilha não reconhecido.");
+            
+            const newEntregas: Omit<EPIEntrega, 'id'>[] = json.map(row => {
+                let formattedDate = today;
+                const dataEntrega = row[isOldFormat ? 'Data' : 'Data da Entrega'];
+                if (dataEntrega instanceof Date) {
+                    formattedDate = new Date(dataEntrega.getTime() - (dataEntrega.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+                }
+                return {
+                    funcionario: String(row['Funcionário'] || ''), item: String(row[isOldFormat ? 'Produto' : 'Item (EPI)'] || ''),
+                    quantidade: parseInt(row['Quantidade'], 10) || 0, dataEntrega: formattedDate,
+                }
+            }).filter(e => e.funcionario && e.item && e.quantidade > 0);
+            
+            if(window.confirm(`${newEntregas.length} registros válidos encontrados. Deseja substituir os registros de entrega atuais?`)){
+                await api.post('/api/epi/restore', { entregas: newEntregas });
+                const updatedEntregas = await api.get('/api/epi');
+                setEntregas(updatedEntregas);
             }
-          }
-
-          return {
-            funcionario: String(func),
-            item: String(item),
-            quantidade: parseInt(String(qtd), 10),
-            dataEntrega: formattedDate,
-          }
-        });
-        
-        if (window.confirm(`Foram encontrados ${newEntregas.length} registros. Deseja substituir os dados atuais por estes?`)) {
-            await api.post('/api/epi/restore', { entregas: newEntregas });
-            const updatedEntregas = await api.get('/api/epi');
-            setEntregas(updatedEntregas);
-            alert('Dados de EPI importados e salvos com sucesso!');
-        }
-
-      } catch (error) {
-        console.error("Erro ao importar arquivo:", error);
-        alert(`Ocorreu um erro ao importar o arquivo: ${(error as Error).message}`);
-      } finally {
-        if(importRef.current) importRef.current.value = '';
-      }
+        } catch (error) { alert(`Erro ao importar: ${(error as Error).message}`); } finally { if(importEntregasRef.current) importEntregasRef.current.value = ''; }
     };
     reader.readAsArrayBuffer(file);
   };
+  
+  const handleImportEstoque = (e: React.ChangeEvent<HTMLInputElement>) => {
+     const file = e.target.files?.[0]; if (!file) return;
+     const reader = new FileReader();
+     reader.onload = async (event) => {
+        try {
+            const data = new Uint8Array(event.target?.result as ArrayBuffer);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const json: any[] = XLSX.utils.sheet_to_json(worksheet);
+            
+            const newEstoque: Omit<EPIEstoqueItem, 'id'>[] = json.map((row, index) => {
+                const name = row['Item']; const qty = parseInt(row['Quantidade Inicial'], 10);
+                if (!name || isNaN(qty)) throw new Error(`Linha ${index+2} inválida.`);
+                return { name, qty, manualOut: false, manualOutQty: 0 };
+            });
 
+            if(window.confirm(`${newEstoque.length} itens de estoque encontrados. Deseja substituir o estoque atual?`)) {
+                await api.post('/api/epi-estoque/restore', { estoque: newEstoque });
+                const updatedEstoque = await api.get('/api/epi-estoque');
+                setEstoque(updatedEstoque);
+            }
+        } catch(error) { alert(`Erro ao importar estoque: ${(error as Error).message}.`); } finally { if(importEstoqueRef.current) importEstoqueRef.current.value = ''; }
+     };
+     reader.readAsArrayBuffer(file);
+  };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap justify-between items-center gap-4">
-        <h2 className="text-3xl font-bold text-gray-800">Controle de Entrega de EPIs</h2>
-        <div className="flex items-center gap-2">
-            <button onClick={handleExport} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700">Exportar</button>
-            <button onClick={() => importRef.current?.click()} className="px-4 py-2 text-sm bg-gray-600 text-white rounded-lg shadow hover:bg-gray-700">Importar</button>
-            <input type="file" ref={importRef} className="hidden" accept=".xlsx, .xls" onChange={handleFileImport} />
-            <button onClick={handleClear} className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg shadow hover:bg-red-700">Limpar Tudo</button>
-            <button onClick={() => setShowForm(true)} className="flex items-center px-4 py-2 bg-primary text-white rounded-lg shadow hover:bg-secondary transition-colors">
-              <PlusIcon className="w-5 h-5 mr-2" />
-              Nova Entrega
-            </button>
+    <div className="space-y-8">
+      <h1 className="text-3xl font-bold text-gray-800">Controle de Estoque de EPIs</h1>
+      <div className="bg-white p-6 rounded-lg shadow-md space-y-4">
+        <h2 className="text-2xl font-bold text-gray-800">Estoque de EPI</h2>
+        <div className="flex flex-wrap gap-2">
+            <button onClick={() => handleExport('estoque')} className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md">Exportar</button>
+            <button onClick={() => importEstoqueRef.current?.click()} className="px-3 py-1 text-sm bg-gray-600 text-white rounded-md">Importar</button>
+            <input type="file" ref={importEstoqueRef} className="hidden" accept=".xlsx, .xls" onChange={handleImportEstoque} />
+            <button onClick={handleClearEstoque} className="px-3 py-1 text-sm bg-red-600 text-white rounded-md">Limpar Estoque</button>
         </div>
-      </div>
-      
-      {showForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4" onClick={() => setShowForm(false)}>
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
-                <form onSubmit={handleAddEntrega}>
-                    <div className="p-6 border-b">
-                        <h3 className="text-xl font-bold text-gray-800">Registrar Nova Entrega de EPI</h3>
-                    </div>
-                    <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="md:col-span-2">
-                          <label className="block text-sm font-medium text-gray-700">Funcionário</label>
-                          <input type="text" name="funcionario" value={newEntrega.funcionario} onChange={handleFormChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary" />
-                        </div>
-                        <div className="md:col-span-2">
-                          <label className="block text-sm font-medium text-gray-700">Item (EPI)</label>
-                          <input type="text" name="item" value={newEntrega.item} onChange={handleFormChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary" />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">Quantidade</label>
-                          <input type="number" name="quantidade" value={newEntrega.quantidade} onChange={handleFormChange} required min="1" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary" />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">Data da Entrega</label>
-                          <input type="date" name="dataEntrega" value={newEntrega.dataEntrega} onChange={handleFormChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary" />
-                        </div>
-                    </div>
-                    <div className="p-6 bg-gray-50 rounded-b-lg flex justify-end items-center gap-3">
-                        <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50">Cancelar</button>
-                        <button type="submit" className="px-4 py-2 bg-primary border border-transparent rounded-md shadow-sm text-sm font-medium text-white hover:bg-secondary">Salvar</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-      )}
-
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left text-gray-500">
-            <thead className="text-xs text-gray-700 uppercase bg-gray-50">
-              <tr>
-                <th scope="col" className="px-6 py-3">Funcionário</th>
-                <th scope="col" className="px-6 py-3">Item (EPI)</th>
-                <th scope="col" className="px-6 py-3 text-center">Quantidade</th>
-                <th scope="col" className="px-6 py-3">Data da Entrega</th>
-                <th scope="col" className="px-6 py-3 text-center">Ações</th>
-              </tr>
-            </thead>
+        <form onSubmit={handleAddEstoque} className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end p-4 bg-light rounded-md">
+            <input type="text" value={newEstoque.name} onChange={e => setNewEstoque({...newEstoque, name: e.target.value})} placeholder="Nome do Item" className="sm:col-span-1 border-gray-300 rounded-md" required />
+            <input type="number" value={newEstoque.qty} onChange={e => setNewEstoque({...newEstoque, qty: e.target.value})} placeholder="Quantidade" className="sm:col-span-1 border-gray-300 rounded-md" required />
+            <button type="submit" className="px-4 py-2 bg-primary text-white rounded-lg shadow hover:bg-secondary">Adicionar/Repor</button>
+        </form>
+        <div className="overflow-x-auto border rounded-lg">
+          <table className="w-full text-sm"><thead className="text-xs text-gray-700 uppercase bg-gray-50"><tr><th className="px-4 py-3">Item</th><th className="px-4 py-3 text-center">Qtd. Inicial</th><th className="px-4 py-3 text-center">Saídas</th><th className="px-4 py-3 text-center font-bold">Restante</th><th className="px-4 py-3 text-center">Ações</th></tr></thead>
             <tbody>
-              {entregas.map(item => (
+              {estoqueCalculado.map(item => (
                 <tr key={item.id} className="bg-white border-b hover:bg-gray-50">
-                  <th scope="row" className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">
-                    {item.funcionario}
-                  </th>
-                  <td className="px-6 py-4">{item.item}</td>
-                  <td className="px-6 py-4 text-center">{item.quantidade}</td>
-                  <td className="px-6 py-4">{new Date(item.dataEntrega + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
-                  <td className="px-6 py-4 text-center">
-                    <button onClick={() => handleRemoveEntrega(item.id)} className="text-red-500 hover:text-red-700" aria-label="Remover">
-                      <TrashIcon className="w-5 h-5 inline-block" />
-                    </button>
+                  <td className="px-4 py-2 font-medium">{item.name}</td><td className="px-4 py-2 text-center">{item.qty}</td>
+                  <td className="px-4 py-2 text-center">{item.outQty} {item.manualOut && <span className="text-xs text-orange-500" title="Saída manual">(M)</span>}</td>
+                  <td className="px-4 py-2 text-center font-bold text-lg">{item.remaining}</td>
+                  <td className="px-4 py-2 text-center space-x-2 whitespace-nowrap">
+                    <button onClick={() => handleEditEstoque(item, 'qty')} className="p-1 text-blue-600" title="Editar Qtd. Inicial"><EditIcon className="w-4 h-4"/></button>
+                    <button onClick={() => handleEditEstoque(item, 'manualOutQty')} className="p-1 text-yellow-600" title="Editar Saída Manualmente"><EditIcon className="w-4 h-4"/></button>
+                    <button onClick={() => handleRemoveEstoque(item.id)} className="p-1 text-red-600" title="Remover Item"><TrashIcon className="w-4 h-4"/></button>
                   </td>
                 </tr>
               ))}
-              {entregas.length === 0 && (
-                <tr>
-                    <td colSpan={5} className="text-center py-8 text-gray-500">Nenhuma entrega de EPI registrada.</td>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div className="bg-white p-6 rounded-lg shadow-md space-y-4">
+        <div className="flex flex-wrap justify-between items-center gap-4">
+            <h2 className="text-2xl font-bold text-gray-800">Relatório de Entregas (Saídas)</h2>
+            <div className="flex items-center gap-2">
+                <button onClick={() => handleExport('entregas')} className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md">Exportar</button>
+                <button onClick={() => importEntregasRef.current?.click()} className="px-3 py-1 text-sm bg-gray-600 text-white rounded-md">Importar</button>
+                 <input type="file" ref={importEntregasRef} className="hidden" accept=".xlsx, .xls" onChange={handleImportEntregas} />
+                <button onClick={handleClearEntregas} className="px-3 py-1 text-sm bg-red-600 text-white rounded-md">Limpar</button>
+                <button onClick={() => setShowEntregaForm(true)} className="flex items-center px-4 py-2 bg-primary text-white rounded-lg shadow hover:bg-secondary">
+                  <PlusIcon className="w-5 h-5 mr-2" /> Nova Entrega
+                </button>
+            </div>
+        </div>
+        {showEntregaForm && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4" onClick={() => setShowEntregaForm(false)}>
+                <div className="bg-white rounded-lg shadow-xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
+                    <form onSubmit={handleAddEntrega} className="space-y-4">
+                        <div className="p-6 border-b"><h3 className="text-xl font-bold">Registrar Nova Entrega</h3></div>
+                        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="md:col-span-2"><label>Funcionário</label><input type="text" name="funcionario" value={newEntrega.funcionario} onChange={e => setNewEntrega(prev => ({ ...prev, funcionario: e.target.value }))} required className="w-full mt-1 border-gray-300 rounded-md"/></div>
+                          <div className="md:col-span-2"><label>Item (EPI)</label>
+                            <input list="epi-items" name="item" value={newEntrega.item} onChange={e => setNewEntrega(prev => ({ ...prev, item: e.target.value }))} required className="w-full mt-1 border-gray-300 rounded-md"/>
+                            <datalist id="epi-items">{estoque.map(i => <option key={i.id} value={i.name}/>)}</datalist>
+                          </div>
+                          <div><label>Quantidade</label><input type="number" name="quantidade" value={newEntrega.quantidade} onChange={e => setNewEntrega(prev => ({ ...prev, quantidade: e.target.value }))} required min="1" className="w-full mt-1 border-gray-300 rounded-md"/></div>
+                          <div><label>Data da Entrega</label><input type="date" name="dataEntrega" value={newEntrega.dataEntrega} onChange={e => setNewEntrega(prev => ({ ...prev, dataEntrega: e.target.value }))} required className="w-full mt-1 border-gray-300 rounded-md"/></div>
+                        </div>
+                        <div className="p-6 bg-gray-50 flex justify-end gap-3"><button type="button" onClick={() => setShowEntregaForm(false)}>Cancelar</button><button type="submit" className="px-4 py-2 bg-primary text-white rounded-md">Salvar</button></div>
+                    </form>
+                </div>
+            </div>
+        )}
+        <div className="overflow-x-auto border rounded-lg">
+          <table className="w-full text-sm"><thead className="text-xs text-gray-700 uppercase bg-gray-50"><tr><th className="px-6 py-3">Funcionário</th><th className="px-6 py-3">Item (EPI)</th><th className="px-6 py-3 text-center">Qtd.</th><th className="px-6 py-3">Data</th><th className="px-6 py-3 text-center">Ações</th></tr></thead>
+            <tbody>
+              {entregas.map(item => (
+                <tr key={item.id} className="bg-white border-b hover:bg-gray-50">
+                  <td className="px-6 py-4 font-medium whitespace-nowrap">{item.funcionario}</td><td className="px-6 py-4">{item.item}</td>
+                  <td className="px-6 py-4 text-center">{item.quantidade}</td>
+                  <td className="px-6 py-4">{new Date(item.dataEntrega + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
+                  <td className="px-6 py-4 text-center"><button onClick={() => handleRemoveEntrega(item.id)} className="text-red-500 hover:text-red-700"><TrashIcon className="w-5 h-5 inline-block" /></button></td>
                 </tr>
-              )}
+              ))}
+               {entregas.length === 0 && (<tr><td colSpan={5} className="text-center py-8 text-gray-500">Nenhuma entrega de EPI registrada.</td></tr>)}
             </tbody>
           </table>
         </div>
