@@ -3,7 +3,7 @@ import { EPIEntrega, EPIEstoqueItem } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { EditIcon } from './icons/EditIcon';
-import { api } from '../utils/api'; // Import da API
+import { api } from '../utils/api'; // <--- IMPORT DA API
 
 declare var XLSX: any;
 
@@ -68,7 +68,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas, estoqu
     }
   };
 
-  const handleEditEstoque = async (item: EPIEstoqueItem, field: 'qty' | 'manualOutQty') => { 
+  const handleEditEstoque = async (item: EPIEstoqueItem, field: 'qty' | 'manualOutQty') => {
       const promptMsg = field === 'qty' ? `Nova quantidade INICIAL para '${item.name}':` : `Nova quantidade de SAÍDA (manual) para '${item.name}':`;
       const currentVal = field === 'qty' ? item.qty : item.manualOutQty;
       const newValStr = prompt(promptMsg, currentVal.toString());
@@ -97,7 +97,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas, estoqu
   const handleRemoveEstoque = async (id: string) => { 
     if(window.confirm("Remover este item do estoque?")) {
         try {
-            await api.delete(`/api/epi-estoque/${id}`);
+            await api.delete(`/api/epi-estoque/${id}`); 
             setEstoque(prev => prev.filter(i => i.id !== id));
         } catch (error) {
             alert(`Falha ao remover item: ${(error as Error).message}`);
@@ -105,7 +105,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas, estoqu
       }
   };
 
-  const handleClearEstoque = async () => { 
+  const handleClearEstoque = async () => {
     if (window.confirm("ATENÇÃO: Isso limpará TODO o estoque de EPI. Deseja continuar?")) {
       try {
         await api.post('/api/epi-estoque/restore', { estoque: [] });
@@ -118,7 +118,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas, estoqu
 
 
   // --- HANDLERS DE ENTREGAS ---
-  const handleAddEntrega = async (e: FormEvent) => { 
+  const handleAddEntrega = async (e: FormEvent) => {
     e.preventDefault();
     const quantidadeNum = parseInt(newEntrega.quantidade, 10);
     if (!newEntrega.funcionario.trim() || !newEntrega.item.trim() || isNaN(quantidadeNum) || quantidadeNum <= 0) {
@@ -144,7 +144,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas, estoqu
     }
   };
   
-  const handleRemoveEntrega = async (id: string) => { 
+  const handleRemoveEntrega = async (id: string) => {
     if (window.confirm("Tem certeza que deseja remover este registro de entrega?")) {
       try {
         await api.delete(`/api/epi/${id}`);
@@ -155,7 +155,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas, estoqu
     }
   };
 
-  const handleClearEntregas = async () => { 
+  const handleClearEntregas = async () => {
     if (window.confirm("ATENÇÃO: Isso limpará TODOS os registros de entrega de EPI. Deseja continuar?")) {
       try {
         await api.post('/api/epi/restore', { entregas: [] });
@@ -190,7 +190,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas, estoqu
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = async (event) => { 
+    reader.onload = async (event) => {
         try {
             const data = new Uint8Array(event.target?.result as ArrayBuffer);
             const workbook = XLSX.read(data, { type: 'array', cellDates: true });
@@ -206,7 +206,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas, estoqu
 
             if (!isOldFormat && !isNewFormat) throw new Error("Formato de planilha não reconhecido. Verifique os cabeçalhos.");
             
-            const newEntregasDTO = json.map((row) => {
+            const newEntregasDTO = json.map((row, index) => {
                 const item = row[isOldFormat ? 'Produto' : 'Item (EPI)'];
                 const dataEntrega = row[isOldFormat ? 'Data' : 'Data da Entrega'];
                 let formattedDate = today;
@@ -240,14 +240,14 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas, estoqu
      const file = e.target.files?.[0];
      if (!file) return;
      const reader = new FileReader();
-     reader.onload = async (event) => { 
+     reader.onload = async (event) => {
         try {
             const data = new Uint8Array(event.target?.result as ArrayBuffer);
             const workbook = XLSX.read(data, { type: 'array' });
             const sheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[sheetName];
             const json: any[] = XLSX.utils.sheet_to_json(worksheet);
-        _    
+            
             const newEstoqueDTO = json.map((row, index) => {
                 const name = row['Item'];
                 const qty = parseInt(row['Quantidade Inicial'], 10);
@@ -317,7 +317,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas, estoqu
                     <button onClick={() => handleEditEstoque(item, 'manualOutQty')} className="p-1 text-yellow-600" title="Editar Saída Manualmente"><EditIcon className="w-4 h-4"/></button>
                     <button onClick={() => handleRemoveEstoque(item.id)} className="p-1 text-red-600" title="Remover Item"><TrashIcon className="w-4 h-4"/></button>
                   </td>
-              </tr>
+                </tr>
               ))}
             </tbody>
           </table>
@@ -334,7 +334,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas, estoqu
                   <button onClick={() => importEntregasRef.current?.click()} className="px-3 py-1 text-sm bg-gray-600 text-white rounded-md">Importar</button>
                   <p className="text-xs text-gray-500 mt-1">Colunas: 'Funcionário', 'Item (EPI)', 'Quantidade', 'Data da Entrega'.</p>
                   <input type="file" ref={importEntregasRef} className="hidden" accept=".xlsx, .xls" onChange={handleImportEntregas} />
-             </div>
+                </div>
                 <button onClick={handleClearEntregas} className="px-3 py-1 text-sm bg-red-600 text-white rounded-md">Limpar</button>
                 <button onClick={() => setShowEntregaForm(true)} className="flex items-center px-4 py-2 bg-primary text-white rounded-lg shadow hover:bg-secondary">
                   <PlusIcon className="w-5 h-5 mr-2" /> Nova Entrega
@@ -355,7 +355,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas, estoqu
                             </datalist>
                           </div>
                           <div><label>Quantidade</label><input type="number" name="quantidade" value={newEntrega.quantidade} onChange={e => setNewEntrega(prev => ({ ...prev, quantidade: e.target.value }))} required min="1" className="w-full mt-1 border-gray-300 rounded-md"/></div>
-                       <div><label>Data da Entrega</label><input type="date" name="dataEntrega" value={newEntrega.dataEntrega} onChange={e => setNewEntrega(prev => ({ ...prev, dataEntrega: e.target.value }))} required className="w-full mt-1 border-gray-300 rounded-md"/></div>
+                          <div><label>Data da Entrega</label><input type="date" name="dataEntrega" value={newEntrega.dataEntrega} onChange={e => setNewEntrega(prev => ({ ...prev, dataEntrega: e.target.value }))} required className="w-full mt-1 border-gray-300 rounded-md"/></div>
                         </div>
                         <div className="p-6 bg-gray-50 flex justify-end gap-3">
                             <button type="button" onClick={() => setShowEntregaForm(false)}>Cancelar</button>
@@ -370,16 +370,16 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas, estoqu
             <thead className="text-xs text-gray-700 uppercase bg-gray-50">
               <tr>
                 <th className="px-6 py-3">Funcionário</th><th className="px-6 py-3">Item (EPI)</th>
-          <th className="px-6 py-3 text-center">Qtd.</th><th className="px-6 py-3">Data</th><th className="px-6 py-3 text-center">Ações</th>
+                <th className="px-6 py-3 text-center">Qtd.</th><th className="px-6 py-3">Data</th><th className="px-6 py-3 text-center">Ações</th>
               </tr>
             </thead>
             <tbody>
               {entregas.map(item => (
                 <tr key={item.id} className="bg-white border-b hover:bg-gray-50">
-              <td className="px-6 py-4 font-medium whitespace-nowrap">{item.funcionario}</td>
+                  <td className="px-6 py-4 font-medium whitespace-nowrap">{item.funcionario}</td>
                   <td className="px-6 py-4">{item.item}</td>
                   <td className="px-6 py-4 text-center">{item.quantidade}</td>
-                  <td className="px-6 py-4">{new Date(item.dataEntrega + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
+                  <td className="px-6 py-4">{new Date(item.dataEntrega + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
                   <td className="px-6 py-4 text-center">
                     <button onClick={() => handleRemoveEntrega(item.id)} className="text-red-500 hover:text-red-700"><TrashIcon className="w-5 h-5 inline-block" /></button>
                   </td>
