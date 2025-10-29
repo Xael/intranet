@@ -44,23 +44,33 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas, estoqu
 
 
   // --- HANDLERS DE ESTOQUE ---
-  const handleAddEstoque = (e: FormEvent) => {
-    e.preventDefault();
-    const name = newEstoque.name.trim();
-    const qty = parseInt(newEstoque.qty, 10);
-    if (!name || isNaN(qty) || qty <= 0) return alert('Informe nome e quantidade válidos.');
+const handleAddEstoque = async (e: FormEvent) => { // 1. Adiciona async
+    e.preventDefault();
+    const name = newEstoque.name.trim();
+    const qty = parseInt(newEstoque.qty, 10);
+    if (!name || isNaN(qty) || qty <= 0) return alert('Informe nome e quantidade válidos.');
 
-    setEstoque(prev => {
-        const idx = prev.findIndex(i => i.name.toLowerCase() === name.toLowerCase());
-        if (idx > -1) {
-            const updated = [...prev];
-            updated[idx].qty += qty;
-            return updated;
-        }
-        return [...prev, { id: Date.now().toString(), name, qty, manualOut: false, manualOutQty: 0 }];
-    });
-    setNewEstoque({ name: '', qty: '' });
-  };
+    try {
+        // 2. Chama a API primeiro para salvar no servidor
+        const savedItem = await api.post('/api/epi-estoque', { name, qty });
+
+        // 3. Atualiza o estado do React com a resposta do servidor
+        setEstoque(prev => {
+            // Verifica se o item (retornado pelo servidor) já estava na lista
+            const idx = prev.findIndex(i => i.id === savedItem.id);
+            if (idx > -1) {
+                // Se sim, substitui
+                return prev.map(item => item.id === savedItem.id ? savedItem : item);
+            }
+            // Se não, adiciona
+            return [...prev, savedItem];
+        });
+
+        setNewEstoque({ name: '', qty: '' });
+    } catch (error) {
+        alert(`Falha ao salvar item no estoque: ${(error as Error).message}`);
+    }
+};
 
   const handleEditEstoque = (item: EPIEstoqueItem, field: 'qty' | 'manualOutQty') => {
       const promptMsg = field === 'qty' ? `Nova quantidade INICIAL para '${item.name}':` : `Nova quantidade de SAÍDA (manual) para '${item.name}':`;
