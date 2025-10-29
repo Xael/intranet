@@ -52,6 +52,7 @@ const AdminPanel: React.FC<{
   data: Municipio[];
   setData: React.Dispatch<React.SetStateAction<Municipio[]>>;
 }> = ({ data, setData }) => {
+  const [isAdminOpen, setIsAdminOpen] = useState(false);
 
   const handleAddMunicipio = async () => {
     const nome = prompt("Nome do novo município:");
@@ -109,31 +110,40 @@ const AdminPanel: React.FC<{
 
   return (
     <div className="bg-gray-50 p-4 rounded-lg shadow-md mt-8">
-      <h2 className="text-xl font-semibold text-gray-800 mb-4">Administrar Municípios e Editais</h2>
-      <div className="space-y-4">
-        {data.map((mun) => (
-          <div key={mun.id} className="p-3 bg-white border rounded-md">
-            <div className="flex justify-between items-center">
-              <h3 className="font-bold">{mun.nome}</h3>
-              <div className="space-x-2">
-                <button onClick={() => handleAddEdital(mun.id)} className="text-xs text-green-600 hover:text-green-800">Adicionar Edital</button>
-                <button onClick={() => handleRemoveMunicipio(mun.id, mun.nome)} className="text-xs text-red-600 hover:text-red-800">Remover Município</button>
-              </div>
-            </div>
-            <ul className="mt-2 space-y-1 text-sm">
-              {mun.editais.map((ed) => (
-                <li key={ed.id} className="flex justify-between items-center bg-gray-50 p-2 rounded">
-                  <span>{ed.nome}</span>
-                  <button onClick={() => handleRemoveEdital(ed.id, ed.nome)} className="text-xs text-red-500 hover:text-red-700">Remover</button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-        <button onClick={handleAddMunicipio} className="w-full px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">
-          Adicionar Município
-        </button>
+      <div onClick={() => setIsAdminOpen(!isAdminOpen)} className="flex justify-between items-center cursor-pointer">
+          <h2 className="text-xl font-semibold text-gray-800">Cadastro Geral</h2>
+          <svg className={`w-6 h-6 transform transition-transform ${isAdminOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
       </div>
+      {isAdminOpen && (
+        <div className="mt-4 pt-4 border-t">
+          <div className="space-y-4">
+            {data.map((mun) => (
+              <div key={mun.id} className="p-3 bg-white border rounded-md">
+                <div className="flex justify-between items-center">
+                  <h3 className="font-bold">{mun.nome}</h3>
+                  <div className="space-x-2">
+                    <button onClick={() => handleAddEdital(mun.id)} className="text-xs text-green-600 hover:text-green-800">Adicionar Edital</button>
+                    <button onClick={() => handleRemoveMunicipio(mun.id, mun.nome)} className="text-xs text-red-600 hover:text-red-800">Remover Município</button>
+                  </div>
+                </div>
+                <ul className="mt-2 space-y-1 text-sm">
+                  {mun.editais.map((ed) => (
+                    <li key={ed.id} className="flex justify-between items-center bg-gray-50 p-2 rounded">
+                      <span>{ed.nome}</span>
+                      <button onClick={() => handleRemoveEdital(ed.id, ed.nome)} className="text-xs text-red-500 hover:text-red-700">Remover</button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+            <button onClick={handleAddMunicipio} className="w-full px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">
+              Adicionar Município
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
