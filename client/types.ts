@@ -137,6 +137,14 @@ export interface EPIEntrega {
   dataEntrega: string;
 }
 
+export interface EPIEstoqueItem {
+  id: string;
+  name: string;
+  qty: number;
+  manualOut: boolean;
+  manualOutQty: number;
+}
+
 // New types for the detailed bidding control
 export enum StatusLicitacaoDetalhada {
   EM_ANDAMENTO = 'Em Andamento',
