@@ -1,4 +1,5 @@
 
+
 export enum StatusLicitacao {
   EM_ANALISE = "Em Análise",
   AGUARDANDO_DOCUMENTOS = "Aguardando Documentos",
