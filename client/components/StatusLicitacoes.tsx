@@ -152,7 +152,7 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
             }
 
             if (window.confirm('Restaurar este backup irá substituir TODOS os dados de status atuais. Deseja continuar?')) {
-                await api.post('/api/licitacoes/restore', { licitacoes: data.bids });
+                await api.post('/api/licitacoes-restore', { licitacoes: data.bids });
                 setBids(data.bids); // Atualiza a UI otimisticamente
                 alert('Backup restaurado com sucesso!');
             }
