@@ -106,6 +106,7 @@ export interface User {
   name: string;
   username: string;
   createdAt: string; // ISO string
+  role: 'ADMIN' | 'OPERACIONAL';
 }
 
 // FIX: Add missing types for legacy ControleEstoque component.
