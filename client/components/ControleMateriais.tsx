@@ -676,43 +676,65 @@ const SimulacaoView: React.FC<{
   };
 
   const handleExportarPDF = (simplificado: boolean) => {
-    if (simulacaoItens.length === 0) return;
-    const doc = new jsPDF();
-    const title = simplificado
-      ? `Lista de Materiais - ${municipioNome} - ${edital.nome}`
-      : `Simulação de Saída - ${municipioNome} - ${edital.nome}`;
-    doc.text(title, 14, 20);
+  if (simulacaoItens.length === 0) return;
 
-    const head = simplificado
-      ? [['Descrição', 'Marca', 'Unidade', 'Quantidade']]
-      : [['Descrição', 'Marca', 'Unidade', 'Qtd', 'V. Unit.', 'V. Total']];
+  // cria o PDF
+  const doc = new jsPDF();
 
-    const body = simulacaoItens.map((item) =>
-      simplificado
-        ? [item.descricao, item.marca, item.unidade, item.quantidade]
-        : [
-            item.descricao,
-            item.marca,
-            item.unidade,
-            item.quantidade,
-            formatarMoeda(item.valorUnitario),
-            formatarMoeda(item.valorTotal)
-          ]
+  const title = simplificado
+    ? `Lista de Materiais - ${municipioNome} - ${edital.nome}`
+    : `Simulação de Saída - ${municipioNome} - ${edital.nome}`;
+
+  doc.text(title, 14, 20);
+
+  const head = simplificado
+    ? [['Descrição', 'Marca', 'Unidade', 'Quantidade']]
+    : [['Descrição', 'Marca', 'Unidade', 'Qtd', 'V. Unit.', 'V. Total']];
+
+  const body = simulacaoItens.map((item) =>
+    simplificado
+      ? [item.descricao, item.marca, item.unidade, item.quantidade]
+      : [
+          item.descricao,
+          item.marca,
+          item.unidade,
+          item.quantidade,
+          item.valorUnitario.toLocaleString('pt-BR', {
+            style: 'currency',
+            currency: 'BRL',
+          }),
+          item.valorTotal.toLocaleString('pt-BR', {
+            style: 'currency',
+            currency: 'BRL',
+          }),
+        ]
+  );
+
+  // usa o plugin que importamos
+  autoTable(doc, {
+    head,
+    body,
+    startY: 30,
+  });
+
+  if (!simplificado) {
+    const finalY = (doc as any).lastAutoTable.finalY + 10;
+    doc.text(
+      `Total Simulado: ${totalSimulado.toLocaleString('pt-BR', {
+        style: 'currency',
+        currency: 'BRL',
+      })}`,
+      14,
+      finalY
     );
+  }
 
-    doc.autoTable({ head, body, startY: 30 });
-
-    if (!simplificado) {
-      const finalY = (doc as any).lastAutoTable.finalY + 10;
-      doc.text(`Total Simulado: ${formatarMoeda(totalSimulado)}`, 14, finalY);
-    }
-
-    doc.save(
-      `simulacao_${simplificado ? 'simplificada' : 'completa'}_${new Date()
-        .toISOString()
-        .slice(0, 10)}.pdf`
-    );
-  };
+  doc.save(
+    `simulacao_${simplificado ? 'simplificada' : 'completa'}_${new Date()
+      .toISOString()
+      .slice(0, 10)}.pdf`
+  );
+};
 
   return (
     <div className="space-y-4">
