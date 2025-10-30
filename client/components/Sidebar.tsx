@@ -21,7 +21,7 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView }) => {
   const { logout, user } = useAuth();
 
-  const navItems = [
+  const allNavItems = [
     { id: 'dashboard', label: 'Painel de Controle', icon: HomeIcon },
     { id: 'calendario', label: 'Calendário', icon: CalendarIcon },
     { id: 'status', label: 'Status', icon: ClipboardListIcon },
@@ -32,6 +32,13 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView }) => {
     { id: 'calculadora', label: 'Calculadora', icon: CalculatorIcon },
     { id: 'configuracoes', label: 'Configurações', icon: CogIcon },
   ];
+
+  const operationalViews: ViewType[] = ['dashboard', 'calendario', 'status', 'cotacoes', 'epi'];
+
+  const navItems = user?.role === 'ADMIN'
+    ? allNavItems
+    : allNavItems.filter(item => operationalViews.includes(item.id as ViewType));
+
 
   return (
     <div className="hidden md:flex flex-col w-64 bg-primary text-white">
