@@ -4,6 +4,7 @@ import { api } from '../utils/api';
 interface User {
   username: string;
   name: string;
+  role: 'ADMIN' | 'OPERACIONAL';
 }
 
 interface AuthContextType {
