@@ -677,7 +677,7 @@ const SimulacaoView: React.FC<{
 
   const handleExportarPDF = (simplificado: boolean) => {
     if (simulacaoItens.length === 0) return;
-    const doc = new jsPDF.default();
+    const doc = new jsPDF();
     const title = simplificado
       ? `Lista de Materiais - ${municipioNome} - ${edital.nome}`
       : `Simulação de Saída - ${municipioNome} - ${edital.nome}`;
