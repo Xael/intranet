@@ -35,7 +35,10 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView }) => {
 
   const operationalViews: ViewType[] = ['dashboard', 'calendario', 'status', 'cotacoes', 'epi'];
 
-  const navItems = user?.role === 'ADMIN'
+  // Garante que o usuário 'admincrb' seja sempre admin, além de checar o 'role'
+  const isAdmin = user?.role === 'ADMIN' || user?.username === 'admincrb';
+
+  const navItems = isAdmin
     ? allNavItems
     : allNavItems.filter(item => operationalViews.includes(item.id as ViewType));
 
