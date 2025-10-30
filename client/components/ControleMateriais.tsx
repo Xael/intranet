@@ -1,3 +1,5 @@
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 import React, {
   useState,
   useMemo,
@@ -20,9 +22,9 @@ import { EditIcon } from './icons/EditIcon';
 import { Chart } from 'chart.js/auto';
 import { api } from '../utils/api';
 
+
 // --- DECLARAÇÕES GLOBAIS (scripts carregados no index.html) ---
 declare var XLSX: any;
-declare var jsPDF: any;
 
 // --- HELPERS DE API (segundo seu backend) ---
 const saveEditalItens = async (editalId: string, itens: EstoqueItem[]) => {
@@ -680,7 +682,6 @@ const SimulacaoView: React.FC<{
 
   // cria o PDF
   const doc = new jsPDF();
-
   const title = simplificado
     ? `Lista de Materiais - ${municipioNome} - ${edital.nome}`
     : `Simulação de Saída - ${municipioNome} - ${edital.nome}`;
@@ -711,7 +712,7 @@ const SimulacaoView: React.FC<{
   );
 
   // usa o plugin que importamos
-  autoTable(doc, {
+  (doc as any).autoTable({
     head,
     body,
     startY: 30,
@@ -719,14 +720,7 @@ const SimulacaoView: React.FC<{
 
   if (!simplificado) {
     const finalY = (doc as any).lastAutoTable.finalY + 10;
-    doc.text(
-      `Total Simulado: ${totalSimulado.toLocaleString('pt-BR', {
-        style: 'currency',
-        currency: 'BRL',
-      })}`,
-      14,
-      finalY
-    );
+    doc.text(`Total Simulado: ${formatarMoeda(totalSimulado)}`, 14, finalY);
   }
 
   doc.save(
@@ -735,6 +729,7 @@ const SimulacaoView: React.FC<{
       .slice(0, 10)}.pdf`
   );
 };
+  
 
   return (
     <div className="space-y-4">
