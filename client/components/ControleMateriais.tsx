@@ -1,18 +1,5 @@
-import React, {
-  useState,
-  useMemo,
-  useRef,
-  useEffect,
-  useCallback,
-} from 'react';
-import {
-  Municipio,
-  Edital,
-  EstoqueItem,
-  SaidaItem,
-  SimulacaoItem,
-  SimulacaoSalva,
-} from '../types';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { Municipio, Edital, EstoqueItem, SaidaItem, SimulacaoItem, SimulacaoSalva } from '../types';
 import { SearchIcon } from './icons/SearchIcon';
 import { PlusIcon } from './icons/PlusIcon';
 import { TrashIcon } from './icons/TrashIcon';
@@ -24,13 +11,21 @@ import { api } from '../utils/api';
 declare var XLSX: any;
 declare var jsPDF: any;
 
+// --- HELPERS DE API (nova lógica incremental) ---
+const saveEditalItens = async (editalId: string, itens: EstoqueItem[]) => {
+  // o server espera { itens: [...] }
+  return api.put(`/api/editais/${editalId}/itens`, { itens });
+};
+
+const saveEditalSaidas = async (editalId: string, saidas: SaidaItem[]) => {
+  // o server espera { saidas: [...] }
+  return api.put(`/api/editais/${editalId}/saidas`, { saidas });
+};
+
 // --- FUNÇÕES HELPER ---
 const formatarMoeda = (valor: number | undefined) => {
   if (typeof valor !== 'number' || isNaN(valor)) return 'R$ 0,00';
-  return valor.toLocaleString('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  });
+  return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
 
 const parseDataBR = (dateString: string): Date | null => {
@@ -44,9 +39,9 @@ const parseDataBR = (dateString: string): Date | null => {
   }
 };
 
-// =======================================
-// VIEW: ESTOQUE
-// =======================================
+// --- SUB-COMPONENTES DE VIEW ---
+
+// View para a Aba de Estoque
 const EstoqueView: React.FC<{
   edital: Edital;
   onUpdate: () => void;
@@ -58,17 +53,13 @@ const EstoqueView: React.FC<{
     marca: '',
     unidade: '',
     quantidade: '',
-    valorUnitario: '',
+    valorUnitario: ''
   });
 
-  // soma de saídas por itemIndex
   const saidasPorItem = useMemo(() => {
     const map = new Map<number, number>();
     (edital.saidas || []).forEach((saida) => {
-      map.set(
-        saída.itemIndex,
-        (map.get(saida.itemIndex) || 0) + saida.quantidade
-      );
+      map.set(saida.itemIndex, (map.get(saida.itemIndex) || 0) + saida.quantidade);
     });
     return map;
   }, [edital.saidas]);
@@ -84,17 +75,13 @@ const EstoqueView: React.FC<{
           qtdInicial: item.quantidade,
           qtdSaida,
           qtdRestante,
-          valorTotalRestante: qtdRestante * item.valorUnitario,
+          valorTotalRestante: qtdRestante * item.valorUnitario
         };
       })
       .filter(
         (item) =>
-          item.descricao
-            .toLowerCase()
-            .includes(searchTerm.toLowerCase()) ||
-          (item.marca || '')
-            .toLowerCase()
-            .includes(searchTerm.toLowerCase())
+          item.descricao.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (item.marca || '').toLowerCase().includes(searchTerm.toLowerCase())
       );
   }, [edital.itens, saidasPorItem, searchTerm]);
 
@@ -103,37 +90,25 @@ const EstoqueView: React.FC<{
     [itensComSaldo]
   );
 
-  // >>> NOVO: atualiza só os ITENS do edital
-  const updateItensBackend = async (itens: EstoqueItem[]) => {
+  // agora só salva itens
+  const updateEditalItens = async (itensAtualizados: EstoqueItem[]) => {
     try {
-      await api.put(`/api/editais/${edital.id}/itens`, { itens });
+      await saveEditalItens(edital.id, itensAtualizados);
       onUpdate();
     } catch (error) {
       alert(`Erro ao atualizar itens do edital: ${(error as Error).message}`);
     }
   };
 
-  const handleEditQuantidadeInicial = (
-    itemIndex: number,
-    valorAtual: number
-  ) => {
-    const novoValorStr = prompt(
-      'Digite a nova quantidade TOTAL (inicial) do item:',
-      valorAtual.toString()
-    );
+  const handleEditQuantidadeInicial = (itemIndex: number, valorAtual: number) => {
+    const novoValorStr = prompt('Digite a nova quantidade TOTAL (inicial) do item:', valorAtual.toString());
     if (novoValorStr) {
       const novoValor = parseFloat(novoValorStr);
       if (!isNaN(novoValor) && novoValor >= 0) {
-        const novosItens = edital.itens.map((it, idx) =>
-          idx === itemIndex
-            ? {
-                ...it,
-                quantidade: novoValor,
-                valorTotal: novoValor * it.valorUnitario,
-              }
-            : it
+        const itensAtualizados = edital.itens.map((it, idx) =>
+          idx === itemIndex ? { ...it, quantidade: novoValor, valorTotal: novoValor * it.valorUnitario } : it
         );
-        updateItensBackend(novosItens);
+        updateEditalItens(itensAtualizados);
       } else {
         alert('Valor inválido.');
       }
@@ -141,13 +116,9 @@ const EstoqueView: React.FC<{
   };
 
   const handleRemoveItem = (itemIndex: number) => {
-    if (
-      window.confirm(
-        `Tem certeza que deseja remover o item "${edital.itens[itemIndex].descricao}"?`
-      )
-    ) {
-      const novosItens = edital.itens.filter((_, idx) => idx !== itemIndex);
-      updateItensBackend(novosItens);
+    if (window.confirm(`Tem certeza que deseja remover o item "${edital.itens[itemIndex].descricao}"?`)) {
+      const itensAtualizados = edital.itens.filter((_, idx) => idx !== itemIndex);
+      updateEditalItens(itensAtualizados);
     }
   };
 
@@ -157,12 +128,7 @@ const EstoqueView: React.FC<{
     const qtdNum = parseFloat(quantidade);
     const valorNum = parseFloat(valorUnitario);
 
-    if (
-      !descricao.trim() ||
-      !unidade.trim() ||
-      isNaN(qtdNum) ||
-      isNaN(valorNum)
-    ) {
+    if (!descricao.trim() || !unidade.trim() || isNaN(qtdNum) || isNaN(valorNum)) {
       alert('Preencha todos os campos corretamente.');
       return;
     }
@@ -174,19 +140,13 @@ const EstoqueView: React.FC<{
       unidade: unidade.trim(),
       quantidade: qtdNum,
       valorUnitario: valorNum,
-      valorTotal: qtdNum * valorNum,
+      valorTotal: qtdNum * valorNum
     };
 
-    const novosItens = [...(edital.itens || []), novoItem];
-    updateItensBackend(novosItens);
+    const itensAtualizados = [...edital.itens, novoItem];
+    updateEditalItens(itensAtualizados);
 
-    setNewItem({
-      descricao: '',
-      marca: '',
-      unidade: '',
-      quantidade: '',
-      valorUnitario: '',
-    });
+    setNewItem({ descricao: '', marca: '', unidade: '', quantidade: '', valorUnitario: '' });
     setShowAddItemForm(false);
   };
 
@@ -213,46 +173,26 @@ const EstoqueView: React.FC<{
               <th className="px-4 py-3 text-center">Un.</th>
               <th className="px-4 py-3 text-center">Qtd. Inicial</th>
               <th className="px-4 py-3 text-center">Qtd. Saída</th>
-              <th className="px-4 py-3 text-center font-bold">
-                Qtd. Restante
-              </th>
+              <th className="px-4 py-3 text-center font-bold">Qtd. Restante</th>
               <th className="px-4 py-3 text-right">V. Unitário</th>
-              <th className="px-4 py-3 text-right font-bold">
-                V. Total Restante
-              </th>
+              <th className="px-4 py-3 text-right font-bold">V. Total Restante</th>
               <th className="px-4 py-3 text-center">Ações</th>
             </tr>
           </thead>
           <tbody>
             {itensComSaldo.map((item) => (
-              <tr
-                key={item.id}
-                className="bg-white border-b hover:bg-gray-50"
-              >
-                <td className="px-4 py-2 font-medium text-gray-900">
-                  {item.descricao}
-                </td>
+              <tr key={item.id} className="bg-white border-b hover:bg-gray-50">
+                <td className="px-4 py-2 font-medium text-gray-900">{item.descricao}</td>
                 <td className="px-4 py-2">{item.marca}</td>
                 <td className="px-4 py-2 text-center">{item.unidade}</td>
                 <td className="px-4 py-2 text-center">{item.qtdInicial}</td>
                 <td className="px-4 py-2 text-center">{item.qtdSaida}</td>
-                <td className="px-4 py-2 text-center font-bold text-lg">
-                  {item.qtdRestante}
-                </td>
-                <td className="px-4 py-2 text-right">
-                  {formatarMoeda(item.valorUnitario)}
-                </td>
-                <td className="px-4 py-2 text-right font-bold">
-                  {formatarMoeda(item.valorTotalRestante)}
-                </td>
+                <td className="px-4 py-2 text-center font-bold text-lg">{item.qtdRestante}</td>
+                <td className="px-4 py-2 text-right">{formatarMoeda(item.valorUnitario)}</td>
+                <td className="px-4 py-2 text-right font-bold">{formatarMoeda(item.valorTotalRestante)}</td>
                 <td className="px-4 py-2 text-center flex items-center justify-center space-x-2">
                   <button
-                    onClick={() =>
-                      handleEditQuantidadeInicial(
-                        item.itemIndex,
-                        item.qtdInicial
-                      )
-                    }
+                    onClick={() => handleEditQuantidadeInicial(item.itemIndex, item.qtdInicial)}
                     className="text-blue-500 hover:text-blue-700 p-1"
                     title="Editar Qtd. Inicial"
                   >
@@ -274,9 +214,7 @@ const EstoqueView: React.FC<{
               <td colSpan={7} className="px-4 py-2 text-right">
                 Total em Estoque:
               </td>
-              <td className="px-4 py-2 text-right">
-                {formatarMoeda(totalEstoque)}
-              </td>
+              <td className="px-4 py-2 text-right">{formatarMoeda(totalEstoque)}</td>
               <td></td>
             </tr>
           </tfoot>
@@ -288,23 +226,17 @@ const EstoqueView: React.FC<{
           onClick={() => setShowAddItemForm(!showAddItemForm)}
           className="flex items-center px-4 py-2 bg-primary text-white rounded-lg shadow hover:bg-secondary"
         >
-          <PlusIcon className="w-5 h-5 mr-2" />{' '}
-          {showAddItemForm ? 'Cancelar' : 'Adicionar Item Manualmente'}
+          <PlusIcon className="w-5 h-5 mr-2" /> {showAddItemForm ? 'Cancelar' : 'Adicionar Item Manualmente'}
         </button>
         {showAddItemForm && (
-          <form
-            onSubmit={handleAddItemSubmit}
-            className="p-4 mt-4 bg-light rounded-lg border space-y-4"
-          >
+          <form onSubmit={handleAddItemSubmit} className="p-4 mt-4 bg-light rounded-lg border space-y-4">
             <h3 className="font-semibold text-lg">Novo Item no Estoque</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <input
                 type="text"
                 placeholder="Descrição"
                 value={newItem.descricao}
-                onChange={(e) =>
-                  setNewItem({ ...newItem, descricao: e.target.value })
-                }
+                onChange={(e) => setNewItem({ ...newItem, descricao: e.target.value })}
                 className="border-gray-300 rounded-md"
                 required
               />
@@ -312,18 +244,14 @@ const EstoqueView: React.FC<{
                 type="text"
                 placeholder="Marca"
                 value={newItem.marca}
-                onChange={(e) =>
-                  setNewItem({ ...newItem, marca: e.target.value })
-                }
+                onChange={(e) => setNewItem({ ...newItem, marca: e.target.value })}
                 className="border-gray-300 rounded-md"
               />
               <input
                 type="text"
                 placeholder="Unidade (Ex: un, kg)"
                 value={newItem.unidade}
-                onChange={(e) =>
-                  setNewItem({ ...newItem, unidade: e.target.value })
-                }
+                onChange={(e) => setNewItem({ ...newItem, unidade: e.target.value })}
                 className="border-gray-300 rounded-md"
                 required
               />
@@ -331,9 +259,7 @@ const EstoqueView: React.FC<{
                 type="number"
                 placeholder="Quantidade"
                 value={newItem.quantidade}
-                onChange={(e) =>
-                  setNewItem({ ...newItem, quantidade: e.target.value })
-                }
+                onChange={(e) => setNewItem({ ...newItem, quantidade: e.target.value })}
                 className="border-gray-300 rounded-md"
                 required
               />
@@ -342,16 +268,11 @@ const EstoqueView: React.FC<{
                 step="0.01"
                 placeholder="Valor Unitário"
                 value={newItem.valorUnitario}
-                onChange={(e) =>
-                  setNewItem({ ...newItem, valorUnitario: e.target.value })
-                }
+                onChange={(e) => setNewItem({ ...newItem, valorUnitario: e.target.value })}
                 className="border-gray-300 rounded-md"
                 required
               />
-              <button
-                type="submit"
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-              >
+              <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
                 Adicionar
               </button>
             </div>
@@ -362,23 +283,13 @@ const EstoqueView: React.FC<{
   );
 };
 
-// =======================================
-// VIEW: SAÍDAS
-// =======================================
-const SaidasView: React.FC<{
-  edital: Edital;
-  onUpdate: () => void;
-}> = ({ edital, onUpdate }) => {
+// View para a Aba de Saídas
+const SaidasView: React.FC<{ edital: Edital; onUpdate: () => void }> = ({ edital, onUpdate }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showForm, setShowForm] = useState(false);
 
   const today = new Date().toISOString().split('T')[0];
-  const [newSaida, setNewSaida] = useState({
-    itemIndex: '',
-    quantidade: '',
-    notaFiscal: '',
-    data: today,
-  });
+  const [newSaida, setNewSaida] = useState({ itemIndex: '', quantidade: '', notaFiscal: '', data: today });
 
   const saidasOrdenadas = useMemo(() => {
     return [...(edital.saidas || [])].sort((a, b) => {
@@ -397,21 +308,18 @@ const SaidasView: React.FC<{
     );
   }, [saidasOrdenadas, searchTerm]);
 
-  // >>> NOVO: atualiza só as SAÍDAS do edital
-  const updateSaidasBackend = async (saidas: SaidaItem[]) => {
+  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setNewSaida((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const updateEditalSaidas = async (saidasAtualizadas: SaidaItem[]) => {
     try {
-      await api.put(`/api/editais/${edital.id}/saidas`, { saidas });
+      await saveEditalSaidas(edital.id, saidasAtualizadas);
       onUpdate();
     } catch (error) {
       alert(`Erro ao atualizar saídas: ${(error as Error).message}`);
     }
-  };
-
-  const handleFormChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
-  ) => {
-    const { name, value } = e.target;
-    setNewSaida((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleAddSaida = (e: React.FormEvent) => {
@@ -441,27 +349,20 @@ const SaidasView: React.FC<{
       valorUnitario: itemSelecionado.valorUnitario,
       valorTotal: quantidade * itemSelecionado.valorUnitario,
       data: newSaida.data.split('-').reverse().join('/'),
-      notaFiscal: newSaida.notaFiscal.trim(),
+      notaFiscal: newSaida.notaFiscal.trim()
     };
 
-    const novasSaidas = [...(edital.saidas || []), novaSaida];
-    updateSaidasBackend(novasSaidas);
+    const saidasAtualizadas = [...(edital.saidas || []), novaSaida];
+    updateEditalSaidas(saidasAtualizadas);
 
-    setNewSaida({
-      itemIndex: '',
-      quantidade: '',
-      notaFiscal: '',
-      data: today,
-    });
+    setNewSaida({ itemIndex: '', quantidade: '', notaFiscal: '', data: today });
     setShowForm(false);
   };
 
   const handleRemoveSaida = (saidaId: string) => {
     if (window.confirm('Tem certeza que deseja remover este registro de saída?')) {
-      const novasSaidas = (edital.saidas || []).filter(
-        (s) => s.id !== saidaId
-      );
-      updateSaidasBackend(novasSaidas);
+      const saidasAtualizadas = (edital.saidas || []).filter((s) => s.id !== saidaId);
+      updateEditalSaidas(saidasAtualizadas);
     }
   };
 
@@ -482,16 +383,12 @@ const SaidasView: React.FC<{
           onClick={() => setShowForm(!showForm)}
           className="flex items-center px-4 py-2 bg-primary text-white rounded-lg shadow hover:bg-secondary"
         >
-          <PlusIcon className="w-5 h-5 mr-2" />{' '}
-          {showForm ? 'Cancelar' : 'Nova Saída'}
+          <PlusIcon className="w-5 h-5 mr-2" /> {showForm ? 'Cancelar' : 'Nova Saída'}
         </button>
       </div>
 
       {showForm && (
-        <form
-          onSubmit={handleAddSaida}
-          className="p-4 bg-light rounded-lg border space-y-4"
-        >
+        <form onSubmit={handleAddSaida} className="p-4 bg-light rounded-lg border space-y-4">
           <h3 className="font-semibold text-lg">Registrar Nova Saída</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
             <div>
@@ -571,24 +468,13 @@ const SaidasView: React.FC<{
           </thead>
           <tbody>
             {filteredSaidas.map((saida) => (
-              <tr
-                key={saida.id}
-                className="bg-white border-b hover:bg-gray-50"
-              >
+              <tr key={saida.id} className="bg-white border-b hover:bg-gray-50">
                 <td className="px-4 py-2">{saida.data}</td>
                 <td className="px-4 py-2">{saida.notaFiscal}</td>
-                <td className="px-4 py-2 font-medium text-gray-900">
-                  {saida.descricao}
-                </td>
-                <td className="px-4 py-2 text-center">
-                  {saida.quantidade}
-                </td>
-                <td className="px-4 py-2 text-right">
-                  {formatarMoeda(saida.valorUnitario)}
-                </td>
-                <td className="px-4 py-2 text-right font-semibold">
-                  {formatarMoeda(saida.valorTotal)}
-                </td>
+                <td className="px-4 py-2 font-medium text-gray-900">{saida.descricao}</td>
+                <td className="px-4 py-2 text-center">{saida.quantidade}</td>
+                <td className="px-4 py-2 text-right">{formatarMoeda(saida.valorUnitario)}</td>
+                <td className="px-4 py-2 text-right font-semibold">{formatarMoeda(saida.valorTotal)}</td>
                 <td className="px-4 py-2 text-center">
                   <button
                     onClick={() => handleRemoveSaida(saida.id)}
@@ -606,26 +492,14 @@ const SaidasView: React.FC<{
   );
 };
 
-// =======================================
-// VIEW: SIMULAÇÃO
-// =======================================
 const SimulacaoView: React.FC<{
   edital: Edital;
   simulacaoItens: SimulacaoItem[];
-  setSimulacaoItens: React.Dispatch<
-    React.SetStateAction<SimulacaoItem[]>
-  >;
+  setSimulacaoItens: React.Dispatch<React.SetStateAction<SimulacaoItem[]>>;
   onUpdate: () => void;
   salvarSimulacao: (municipio: string, editalNome: string) => void;
   municipioNome: string;
-}> = ({
-  edital,
-  simulacaoItens,
-  setSimulacaoItens,
-  onUpdate,
-  salvarSimulacao,
-  municipioNome,
-}) => {
+}> = ({ edital, simulacaoItens, setSimulacaoItens, onUpdate, salvarSimulacao, municipioNome }) => {
   const [selectedItemIndex, setSelectedItemIndex] = useState<string>('');
   const [simulacaoQtd, setSimulacaoQtd] = useState<string>('1');
 
@@ -634,26 +508,11 @@ const SimulacaoView: React.FC<{
     [simulacaoItens]
   );
 
-  // >>> NOVO: atualiza só as SAÍDAS ao confirmar simulação
-  const updateSaidasBackend = async (saidas: SaidaItem[]) => {
-    try {
-      await api.put(`/api/editais/${edital.id}/saidas`, { saidas });
-      onUpdate();
-    } catch (error) {
-      alert(`Erro ao confirmar saídas: ${(error as Error).message}`);
-    }
-  };
-
   const handleAdicionarSimulacao = () => {
     const itemIndex = parseInt(selectedItemIndex, 10);
     const quantidade = parseInt(simulacaoQtd, 10);
 
-    if (
-      isNaN(itemIndex) ||
-      !edital.itens[itemIndex] ||
-      isNaN(quantidade) ||
-      quantidade <= 0
-    ) {
+    if (isNaN(itemIndex) || !edital.itens[itemIndex] || isNaN(quantidade) || quantidade <= 0) {
       alert('Selecione um item e uma quantidade válida.');
       return;
     }
@@ -666,7 +525,7 @@ const SimulacaoView: React.FC<{
       unidade: item.unidade,
       quantidade,
       valorUnitario: item.valorUnitario,
-      valorTotal: quantidade * item.valorUnitario,
+      valorTotal: quantidade * item.valorUnitario
     };
 
     setSimulacaoItens((prev) => [...prev, itemSimulado]);
@@ -678,20 +537,30 @@ const SimulacaoView: React.FC<{
     setSimulacaoItens((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const confirmSimulacaoOnBackend = async (saidasNovas: SaidaItem[]) => {
+    try {
+      const saidasAtualizadas = [...(edital.saidas || []), ...saidasNovas];
+      await saveEditalSaidas(edital.id, saidasAtualizadas);
+      onUpdate();
+      setSimulacaoItens([]);
+      alert('Saídas registradas com sucesso a partir da simulação!');
+    } catch (error) {
+      alert(`Erro ao confirmar saídas: ${(error as Error).message}`);
+    }
+  };
+
   const handleConfirmarSimulacao = () => {
     if (simulacaoItens.length === 0) {
       alert('Nenhum item na simulação.');
       return;
     }
-    const notaFiscal = prompt(
-      'Digite o número da Nota Fiscal para estas saídas:'
-    );
+    const notaFiscal = prompt('Digite o número da Nota Fiscal para estas saídas:');
     if (!notaFiscal || !notaFiscal.trim()) return;
 
     const data = new Date().toLocaleDateString('pt-BR');
 
     const novasSaidas: SaidaItem[] = simulacaoItens.map((sim) => ({
-      id: `saida-${Date.now()}-${sim.itemIndex}`,
+      id: `saida-${Date.now()}-${sim.itemIndex}-${Math.random()}`,
       itemIndex: sim.itemIndex,
       descricao: sim.descricao,
       marca: sim.marca,
@@ -699,13 +568,10 @@ const SimulacaoView: React.FC<{
       valorUnitario: sim.valorUnitario,
       valorTotal: sim.valorTotal,
       data,
-      notaFiscal,
+      notaFiscal
     }));
 
-    const saidasFinais = [...(edital.saidas || []), ...novasSaidas];
-    updateSaidasBackend(saidasFinais);
-    setSimulacaoItens([]);
-    alert('Saídas registradas com sucesso a partir da simulação!');
+    confirmSimulacaoOnBackend(novasSaidas);
   };
 
   const handleExportarPDF = (simplificado: boolean) => {
@@ -718,9 +584,7 @@ const SimulacaoView: React.FC<{
 
     const head = simplificado
       ? [['Descrição', 'Marca', 'Unidade', 'Quantidade']]
-      : [
-          ['Descrição', 'Marca', 'Unidade', 'Qtd', 'V. Unit.', 'V. Total'],
-        ];
+      : [['Descrição', 'Marca', 'Unidade', 'Qtd', 'V. Unit.', 'V. Total']];
 
     const body = simulacaoItens.map((item) =>
       simplificado
@@ -731,7 +595,7 @@ const SimulacaoView: React.FC<{
             item.unidade,
             item.quantidade,
             formatarMoeda(item.valorUnitario),
-            formatarMoeda(item.valorTotal),
+            formatarMoeda(item.valorTotal)
           ]
     );
 
@@ -739,17 +603,11 @@ const SimulacaoView: React.FC<{
 
     if (!simplificado) {
       const finalY = (doc as any).lastAutoTable.finalY + 10;
-      doc.text(
-        `Total Simulado: ${formatarMoeda(totalSimulado)}`,
-        14,
-        finalY
-      );
+      doc.text(`Total Simulado: ${formatarMoeda(totalSimulado)}`, 14, finalY);
     }
 
     doc.save(
-      `simulacao_${simplificado ? 'simplificada' : 'completa'}_${new Date()
-        .toISOString()
-        .slice(0, 10)}.pdf`
+      `simulacao_${simplificado ? 'simplificada' : 'completa'}_${new Date().toISOString().slice(0, 10)}.pdf`
     );
   };
 
@@ -776,10 +634,7 @@ const SimulacaoView: React.FC<{
           className="w-full border-gray-300 rounded-md"
           placeholder="Quantidade"
         />
-        <button
-          onClick={handleAdicionarSimulacao}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg"
-        >
+        <button onClick={handleAdicionarSimulacao} className="px-4 py-2 bg-blue-600 text-white rounded-lg">
           Adicionar à Simulação
         </button>
       </div>
@@ -799,14 +654,9 @@ const SimulacaoView: React.FC<{
               <tr key={index} className="border-b">
                 <td className="px-4 py-2">{item.descricao}</td>
                 <td className="px-4 py-2">{item.quantidade}</td>
-                <td className="px-4 py-2 text-right">
-                  {formatarMoeda(item.valorTotal)}
-                </td>
+                <td className="px-4 py-2 text-right">{formatarMoeda(item.valorTotal)}</td>
                 <td className="px-4 py-2 text-center">
-                  <button
-                    onClick={() => handleRemoverSimulacao(index)}
-                    className="text-red-500"
-                  >
+                  <button onClick={() => handleRemoverSimulacao(index)} className="text-red-500">
                     <TrashIcon className="w-4 h-4" />
                   </button>
                 </td>
@@ -818,9 +668,7 @@ const SimulacaoView: React.FC<{
               <td colSpan={2} className="px-4 py-2 text-right">
                 Total:
               </td>
-              <td className="px-4 py-2 text-right">
-                {formatarMoeda(totalSimulado)}
-              </td>
+              <td className="px-4 py-2 text-right">{formatarMoeda(totalSimulado)}</td>
               <td></td>
             </tr>
           </tfoot>
@@ -828,10 +676,7 @@ const SimulacaoView: React.FC<{
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <button
-          onClick={handleConfirmarSimulacao}
-          className="px-4 py-2 bg-green-600 text-white rounded-lg"
-        >
+        <button onClick={handleConfirmarSimulacao} className="px-4 py-2 bg-green-600 text-white rounded-lg">
           Confirmar Saídas
         </button>
         <button
@@ -840,22 +685,13 @@ const SimulacaoView: React.FC<{
         >
           Salvar Simulação
         </button>
-        <button
-          onClick={() => setSimulacaoItens([])}
-          className="px-4 py-2 bg-red-600 text-white rounded-lg"
-        >
+        <button onClick={() => setSimulacaoItens([])} className="px-4 py-2 bg-red-600 text-white rounded-lg">
           Limpar
         </button>
-        <button
-          onClick={() => handleExportarPDF(false)}
-          className="px-4 py-2 bg-gray-700 text-white rounded-lg"
-        >
+        <button onClick={() => handleExportarPDF(false)} className="px-4 py-2 bg-gray-700 text-white rounded-lg">
           PDF Completo
         </button>
-        <button
-          onClick={() => handleExportarPDF(true)}
-          className="px-4 py-2 bg-gray-500 text-white rounded-lg"
-        >
+        <button onClick={() => handleExportarPDF(true)} className="px-4 py-2 bg-gray-500 text-white rounded-lg">
           PDF Simplificado
         </button>
       </div>
@@ -863,20 +699,12 @@ const SimulacaoView: React.FC<{
   );
 };
 
-// =======================================
-// VIEW: SIMULAÇÕES SALVAS
-// =======================================
+// View para a Aba de Simulações Salvas
 const SimulacoesSalvasView: React.FC<{
   simulacoesSalvas: SimulacaoSalva[];
-  setSimulacoesSalvas: React.Dispatch<
-    React.SetStateAction<SimulacaoSalva[]>
-  >;
+  setSimulacoesSalvas: React.Dispatch<React.SetStateAction<SimulacaoSalva[]>>;
   restaurarSimulacao: (simulacao: SimulacaoSalva) => void;
-}> = ({
-  simulacoesSalvas,
-  setSimulacoesSalvas,
-  restaurarSimulacao,
-}) => {
+}> = ({ simulacoesSalvas, setSimulacoesSalvas, restaurarSimulacao }) => {
   const handleExcluir = async (id: string) => {
     if (window.confirm('Deseja excluir esta simulação salva?')) {
       try {
@@ -904,25 +732,15 @@ const SimulacoesSalvasView: React.FC<{
           <tbody>
             {simulacoesSalvas.map((sim) => (
               <tr key={sim.id} className="border-b">
-                <td className="px-4 py-2">
-                  {new Date(sim.data).toLocaleString('pt-BR')}
-                </td>
+                <td className="px-4 py-2">{new Date(sim.data).toLocaleString('pt-BR')}</td>
                 <td className="px-4 py-2">{sim.municipio}</td>
                 <td className="px-4 py-2">{sim.edital}</td>
-                <td className="px-4 py-2 text-center">
-                  {sim.itens.length}
-                </td>
+                <td className="px-4 py-2 text-center">{sim.itens.length}</td>
                 <td className="px-4 py-2 text-center space-x-2">
-                  <button
-                    onClick={() => restaurarSimulacao(sim)}
-                    className="text-blue-600"
-                  >
-                    Restaurar
+                  <button onClick={() => restaurarSimulacao(sim)} className="text-blue-600">
+                    Restarar
                   </button>
-                  <button
-                    onClick={() => handleExcluir(sim.id)}
-                    className="text-red-600"
-                  >
+                  <button onClick={() => handleExcluir(sim.id)} className="text-red-600">
                     Excluir
                   </button>
                 </td>
@@ -942,9 +760,7 @@ const SimulacoesSalvasView: React.FC<{
   );
 };
 
-// =======================================
-// VIEW: IMPORTAR
-// =======================================
+// View para a Aba de Importar
 const ImportarView: React.FC<{
   data: Municipio[];
   onUpdate: () => void;
@@ -956,9 +772,7 @@ const ImportarView: React.FC<{
     const file = importFileRef.current?.files?.[0];
     const { munNome, edNome } = target;
     if (!file || !munNome.trim() || !edNome.trim()) {
-      alert(
-        'Selecione um arquivo e preencha o nome do Município e do Edital de destino.'
-      );
+      alert('Selecione um arquivo e preencha o nome do Município e do Edital de destino.');
       return;
     }
 
@@ -968,97 +782,66 @@ const ImportarView: React.FC<{
         const workbook = XLSX.read(e.target?.result, { type: 'binary' });
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
-        const importedItems: any[] = XLSX.utils.sheet_to_json(sheet, {
-          header: 1,
+        const importedItems: any[] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+        const novosItens: Omit<EstoqueItem, 'id'>[] = importedItems.slice(1).map((row, i) => {
+          const [descricao, marca, unidade, quantidade, valorUnitario] = row;
+          const qtdNum = parseFloat(quantidade);
+          const valorNum = parseFloat(valorUnitario);
+          if (!descricao || !unidade || isNaN(qtdNum) || isNaN(valorNum))
+            throw new Error(`Linha ${i + 2} da planilha está inválida.`);
+          return {
+            descricao,
+            marca: marca || '',
+            unidade,
+            quantidade: qtdNum,
+            valorUnitario: valorNum,
+            valorTotal: qtdNum * valorNum
+          };
         });
 
-        const novosItens: Omit<EstoqueItem, 'id'>[] = importedItems
-          .slice(1)
-          .map((row, i) => {
-            const [descricao, marca, unidade, quantidade, valorUnitario] =
-              row;
-            const qtdNum = parseFloat(quantidade);
-            const valorNum = parseFloat(valorUnitario);
-            if (
-              !descricao ||
-              !unidade ||
-              isNaN(qtdNum) ||
-              isNaN(valorNum)
-            )
-              throw new Error(
-                `Linha ${i + 2} da planilha está inválida.`
-              );
-            return {
-              descricao,
-              marca: marca || '',
-              unidade,
-              quantidade: qtdNum,
-              valorUnitario: valorNum,
-              valorTotal: qtdNum * valorNum,
-            };
-          });
-
-        // 1) Encontra ou cria o Município
+        // 1. Encontra ou cria o Município
         let municipio: Municipio | undefined = data.find(
           (m) => m.nome.toLowerCase() === munNome.trim().toLowerCase()
         );
         if (!municipio) {
-          const newMunicipio = await api.post('/api/municipios', {
-            nome: munNome.trim(),
-          });
+          const newMunicipio = await api.post('/api/municipios', { nome: munNome.trim() });
           if (!newMunicipio || !newMunicipio.id) {
-            throw new Error(
-              'Falha ao criar o município. O servidor não retornou um objeto válido.'
-            );
+            throw new Error('Falha ao criar o município. O servidor não retornou um objeto válido.');
           }
           municipio = { ...newMunicipio, editais: [] };
         }
 
         if (!municipio) {
-          throw new Error(
-            'Município não pôde ser encontrado ou criado. A importação foi cancelada.'
-          );
+          throw new Error('Município não pôde ser encontrado ou criado. A importação foi cancelada.');
         }
 
-        // 2) Encontra ou cria o Edital
+        // 2. Encontra ou cria o Edital
         let edital: Edital | undefined = municipio.editais.find(
           (e) => e.nome.toLowerCase() === edNome.trim().toLowerCase()
         );
         if (!edital) {
-          const newEdital = await api.post(
-            `/api/municipios/${municipio.id}/editais`,
-            { nome: edNome.trim() }
-          );
+          const newEdital = await api.post(`/api/municipios/${municipio.id}/editais`, {
+            nome: edNome.trim()
+          });
           if (!newEdital || !newEdital.id) {
-            throw new Error(
-              'Falha ao criar o edital. O servidor não retornou um objeto válido.'
-            );
+            throw new Error('Falha ao criar o edital. O servidor não retornou um objeto válido.');
           }
           edital = { ...newEdital, itens: [], saidas: [], empenhos: [] };
         }
 
         if (!edital) {
-          throw new Error(
-            'Edital não pôde ser encontrado ou criado. A importação foi cancelada.'
-          );
+          throw new Error('Edital não pôde ser encontrado ou criado. A importação foi cancelada.');
         }
 
-        // 3) Atualiza SÓ os itens deste edital
-        const updatedItensPayload = [
-          ...(edital.itens || []),
-          ...novosItens.map((item) => ({
-            ...item,
-            id: `new-${Date.now()}-${Math.random()}`,
-          })),
-        ];
+        // 3. Atualiza o Edital com os novos itens (somente itens)
+        const itensExistentes = edital.itens || [];
+        const itensComNovosIds = novosItens.map((item) => ({ ...item, id: `new-${Date.now()}-${Math.random()}` }));
+        const itensFinal = [...itensExistentes, ...itensComNovosIds];
 
-        await api.put(`/api/editais/${edital.id}/itens`, {
-          itens: updatedItensPayload,
-        });
+        await saveEditalItens(edital.id, itensFinal);
 
-        alert(
-          `${novosItens.length} itens importados com sucesso para ${munNome} / ${edNome}!`
-        );
+        alert(`${novosItens.length} itens importados com sucesso para ${munNome} / ${edNome}!`);
         onUpdate();
       } catch (error) {
         alert(`Erro ao importar: ${(error as Error).message}`);
@@ -1069,30 +852,23 @@ const ImportarView: React.FC<{
 
   return (
     <div className="space-y-4 p-4 border rounded-lg bg-light">
-      <h3 className="font-semibold text-lg">
-        Importar Itens de Planilha Excel (.xlsx)
-      </h3>
+      <h3 className="font-semibold text-lg">Importar Itens de Planilha Excel (.xlsx)</h3>
       <p className="text-sm text-gray-600">
-        A planilha deve ter o cabeçalho: Descrição, Marca, Unidade,
-        Quantidade, Valor Unitário (nessa ordem).
+        A planilha deve ter o cabeçalho: Descrição, Marca, Unidade, Quantidade, Valor Unitário (nessa ordem).
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <input
           type="text"
           placeholder="Nome do Município de Destino"
           value={target.munNome}
-          onChange={(e) =>
-            setTarget({ ...target, munNome: e.target.value })
-          }
+          onChange={(e) => setTarget({ ...target, munNome: e.target.value })}
           className="border-gray-300 rounded-md"
         />
         <input
           type="text"
           placeholder="Nome do Edital de Destino"
           value={target.edNome}
-          onChange={(e) =>
-            setTarget({ ...target, edNome: e.target.value })
-          }
+          onChange={(e) => setTarget({ ...target, edNome: e.target.value })}
           className="border-gray-300 rounded-md"
         />
       </div>
@@ -1102,44 +878,27 @@ const ImportarView: React.FC<{
         accept=".xlsx, .xls"
         className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
       />
-      <button
-        onClick={handleImportar}
-        className="px-4 py-2 bg-primary text-white rounded-lg"
-      >
+      <button onClick={handleImportar} className="px-4 py-2 bg-primary text-white rounded-lg">
         Importar Arquivo
       </button>
     </div>
   );
 };
 
-// =======================================
-// VIEW: RELATÓRIOS
-// =======================================
+// View para a Aba de Relatórios
 const RelatoriosView: React.FC<{ data: Municipio[] }> = ({ data }) => {
   const chartGeralRef = useRef<HTMLCanvasElement>(null);
   const chartInstance = useRef<Chart | null>(null);
 
   const relatorioGeral = useMemo(() => {
     const geral = { totalInicial: 0, totalEntregue: 0 };
-    const porMunicipio: {
-      [key: string]: { totalInicial: 0; totalEntregue: 0 };
-    } = {};
+    const porMunicipio: { [key: string]: { totalInicial: 0; totalEntregue: 0 } } = {};
 
     data.forEach((mun) => {
-      if (!porMunicipio[mun.nome])
-        porMunicipio[mun.nome] = {
-          totalInicial: 0,
-          totalEntregue: 0,
-        };
+      if (!porMunicipio[mun.nome]) porMunicipio[mun.nome] = { totalInicial: 0, totalEntregue: 0 };
       (mun.editais || []).forEach((ed) => {
-        const totalInicialEdital = (ed.itens || []).reduce(
-          (sum, item) => sum + item.valorTotal,
-          0
-        );
-        const totalEntregueEdital = (ed.saidas || []).reduce(
-          (sum, s) => sum + s.valorTotal,
-          0
-        );
+        const totalInicialEdital = (ed.itens || []).reduce((sum, item) => sum + item.valorTotal, 0);
+        const totalEntregueEdital = (ed.saidas || []).reduce((sum, s) => sum + s.valorTotal, 0);
 
         geral.totalInicial += totalInicialEdital;
         geral.totalEntregue += totalEntregueEdital;
@@ -1157,34 +916,19 @@ const RelatoriosView: React.FC<{ data: Municipio[] }> = ({ data }) => {
       const ctx = chartGeralRef.current.getContext('2d');
       if (ctx) {
         const labels = Object.keys(relatorioGeral.porMunicipio);
-        const dataInicial = labels.map(
-          (l) => relatorioGeral.porMunicipio[l].totalInicial
-        );
-        const dataEntregue = labels.map(
-          (l) => relatorioGeral.porMunicipio[l].totalEntregue
-        );
+        const dataInicial = labels.map((l) => relatorioGeral.porMunicipio[l].totalInicial);
+        const dataEntregue = labels.map((l) => relatorioGeral.porMunicipio[l].totalEntregue);
 
         chartInstance.current = new Chart(ctx, {
           type: 'bar',
           data: {
             labels,
             datasets: [
-              {
-                label: 'Valor Total Inicial',
-                data: dataInicial,
-                backgroundColor: 'rgba(54, 162, 235, 0.6)',
-              },
-              {
-                label: 'Valor Total Entregue',
-                data: dataEntregue,
-                backgroundColor: 'rgba(75, 192, 192, 0.6)',
-              },
-            ],
+              { label: 'Valor Total Inicial', data: dataInicial, backgroundColor: 'rgba(54, 162, 235, 0.6)' },
+              { label: 'Valor Total Entregue', data: dataEntregue, backgroundColor: 'rgba(75, 192, 192, 0.6)' }
+            ]
           },
-          options: {
-            responsive: true,
-            scales: { y: { beginAtZero: true } },
-          },
+          options: { responsive: true, scales: { y: { beginAtZero: true } } }
         });
       }
     }
@@ -1199,23 +943,16 @@ const RelatoriosView: React.FC<{ data: Municipio[] }> = ({ data }) => {
       <div className="p-4 bg-light rounded-lg border">
         <p>
           Total Geral dos Editais:{' '}
-          <span className="font-bold">
-            {formatarMoeda(relatorioGeral.geral.totalInicial)}
-          </span>
+          <span className="font-bold">{formatarMoeda(relatorioGeral.geral.totalInicial)}</span>
         </p>
         <p>
           Total Geral Entregue:{' '}
-          <span className="font-bold">
-            {formatarMoeda(relatorioGeral.geral.totalEntregue)}
-          </span>
+          <span className="font-bold">{formatarMoeda(relatorioGeral.geral.totalEntregue)}</span>
         </p>
         <p>
           Saldo Geral:{' '}
           <span className="font-bold">
-            {formatarMoeda(
-              relatorioGeral.geral.totalInicial -
-                relatorioGeral.geral.totalEntregue
-            )}
+            {formatarMoeda(relatorioGeral.geral.totalInicial - relatorioGeral.geral.totalEntregue)}
           </span>
         </p>
       </div>
@@ -1226,9 +963,7 @@ const RelatoriosView: React.FC<{ data: Municipio[] }> = ({ data }) => {
   );
 };
 
-// =======================================
-// ADMIN PANEL
-// =======================================
+// --- COMPONENTE DE ADMINISTRAÇÃO ---
 const AdminPanel: React.FC<{
   data: Municipio[];
   setData: React.Dispatch<React.SetStateAction<Municipio[]>>;
@@ -1240,9 +975,7 @@ const AdminPanel: React.FC<{
     const nome = prompt('Nome do novo município:');
     if (nome && nome.trim()) {
       try {
-        const newMunicipio = await api.post('/api/municipios', {
-          nome: nome.trim(),
-        });
+        const newMunicipio = await api.post('/api/municipios', { nome: nome.trim() });
         setData((prev) => [...prev, { ...newMunicipio, editais: [] }]);
       } catch (error) {
         alert(`Erro ao adicionar município: ${(error as Error).message}`);
@@ -1251,11 +984,7 @@ const AdminPanel: React.FC<{
   };
 
   const handleRemoveMunicipio = async (id: string, nome: string) => {
-    if (
-      window.confirm(
-        `Tem certeza que deseja remover "${nome}" e todos os seus editais?`
-      )
-    ) {
+    if (window.confirm(`Tem certeza que deseja remover "${nome}" e todos os seus editais?`)) {
       try {
         await api.delete(`/api/municipios/${id}`);
         setData((prev) => prev.filter((m) => m.id !== id));
@@ -1269,10 +998,7 @@ const AdminPanel: React.FC<{
     const nome = prompt('Nome do novo edital:');
     if (nome && nome.trim()) {
       try {
-        const newEdital = await api.post(
-          `/api/municipios/${munId}/editais`,
-          { nome: nome.trim() }
-        );
+        const newEdital = await api.post(`/api/municipios/${munId}/editais`, { nome: nome.trim() });
         setData((prev) =>
           prev.map((mun) => {
             if (mun.id === munId) {
@@ -1288,17 +1014,13 @@ const AdminPanel: React.FC<{
   };
 
   const handleRemoveEdital = async (editalId: string, editalNome: string) => {
-    if (
-      window.confirm(
-        `Tem certeza que deseja remover o edital "${editalNome}"?`
-      )
-    ) {
+    if (window.confirm(`Tem certeza que deseja remover o edital "${editalNome}"?`)) {
       try {
         await api.delete(`/api/editais/${editalId}`);
         setData((prev) =>
           prev.map((mun) => ({
             ...mun,
-            editais: mun.editais.filter((ed) => ed.id !== editalId),
+            editais: mun.editais.filter((ed) => ed.id !== editalId)
           }))
         );
       } catch (error) {
@@ -1317,9 +1039,7 @@ const AdminPanel: React.FC<{
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `backup_materiais_${new Date()
-      .toISOString()
-      .slice(0, 10)}.json`;
+    a.download = `backup_materiais_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -1337,6 +1057,7 @@ const AdminPanel: React.FC<{
         const parsedJson = JSON.parse(text);
         let municipiosToRestore: Municipio[];
 
+        // formato antigo
         if (
           parsedJson &&
           typeof parsedJson === 'object' &&
@@ -1344,79 +1065,54 @@ const AdminPanel: React.FC<{
           'municipios' in parsedJson &&
           Array.isArray(parsedJson.municipios)
         ) {
-          console.log('Detectado formato de backup antigo. Convertendo...');
-          municipiosToRestore = parsedJson.municipios.map(
-            (mun: any, munIndex: number): Municipio => ({
-              id: `migrated-mun-${Date.now()}-${munIndex}`,
-              nome: mun.nome,
-              editais: (mun.editais || []).map(
-                (ed: any, edIndex: number): Edital => ({
-                  id: `migrated-ed-${Date.now()}-${edIndex}`,
-                  nome: ed.nome,
-                  itens: (ed.itens || []).map(
-                    (item: any, itemIndex: number): EstoqueItem => ({
-                      id: `migrated-item-${Date.now()}-${itemIndex}`,
-                      descricao: item.descricao || '',
-                      marca: item.marca || '',
-                      unidade: item.unidade || '',
-                      quantidade: parseFloat(item.quantidade) || 0,
-                      valorUnitario: parseFloat(item.valorUnitario) || 0,
-                      valorTotal:
-                        parseFloat(item.valorTotal) ||
-                        (parseFloat(item.quantidade) *
-                          parseFloat(item.valorUnitario)) ||
-                        0,
-                    })
-                  ),
-                  saidas: (ed.saidas || []).map(
-                    (saida: any, saidaIndex: number): SaidaItem => ({
-                      id: `migrated-saida-${Date.now()}-${saidaIndex}`,
-                      itemIndex:
-                        typeof saida.itemIndex === 'string'
-                          ? parseInt(saida.itemIndex, 10)
-                          : saida.itemIndex,
-                      descricao: saida.descricao || '',
-                      marca: saida.marca || '',
-                      quantidade: parseFloat(saida.quantidade) || 0,
-                      valorUnitario: parseFloat(saida.valorUnitario) || 0,
-                      valorTotal: parseFloat(saida.valorTotal) || 0,
-                      data: saida.data || '',
-                      notaFiscal: saida.notaFiscal || '',
-                    })
-                  ),
-                  empenhos: [],
-                })
-              ),
-            })
-          );
-        } else if (
-          Array.isArray(parsedJson) &&
-          (parsedJson.length === 0 ||
-            ('nome' in parsedJson[0] && 'editais' in parsedJson[0]))
-        ) {
-          console.log('Detectado formato de backup novo.');
+          municipiosToRestore = parsedJson.municipios.map((mun: any, munIndex: number): Municipio => ({
+            id: `migrated-mun-${Date.now()}-${munIndex}`,
+            nome: mun.nome,
+            editais: (mun.editais || []).map((ed: any, edIndex: number): Edital => ({
+              id: `migrated-ed-${Date.now()}-${edIndex}`,
+              nome: ed.nome,
+              itens: (ed.itens || []).map((item: any, itemIndex: number): EstoqueItem => ({
+                id: `migrated-item-${Date.now()}-${itemIndex}`,
+                descricao: item.descricao || '',
+                marca: item.marca || '',
+                unidade: item.unidade || '',
+                quantidade: parseFloat(item.quantidade) || 0,
+                valorUnitario: parseFloat(item.valorUnitario) || 0,
+                valorTotal:
+                  parseFloat(item.valorTotal) ||
+                  (parseFloat(item.quantidade) * parseFloat(item.valorUnitario)) ||
+                  0
+              })),
+              saidas: (ed.saidas || []).map((saida: any, saidaIndex: number): SaidaItem => ({
+                id: `migrated-saida-${Date.now()}-${saidaIndex}`,
+                itemIndex:
+                  typeof saida.itemIndex === 'string' ? parseInt(saida.itemIndex, 10) : saida.itemIndex,
+                descricao: saida.descricao || '',
+                marca: saida.marca || '',
+                quantidade: parseFloat(saida.quantidade) || 0,
+                valorUnitario: parseFloat(saida.valorUnitario) || 0,
+                valorTotal: parseFloat(saida.valorTotal) || 0,
+                data: saida.data || '',
+                notaFiscal: saida.notaFiscal || ''
+              })),
+              empenhos: []
+            }))
+          }));
+        }
+        // formato novo
+        else if (Array.isArray(parsedJson) && (parsedJson.length === 0 || ('nome' in parsedJson[0] && 'editais' in parsedJson[0]))) {
           municipiosToRestore = parsedJson;
         } else {
-          throw new Error(
-            'Formato de arquivo de backup inválido ou não reconhecido.'
-          );
+          throw new Error('Formato de arquivo de backup inválido ou não reconhecido.');
         }
 
-        if (
-          window.confirm(
-            'Isso irá substituir TODOS os dados de materiais. Continuar?'
-          )
-        ) {
+        if (window.confirm('Isso irá substituir TODOS os dados de materiais. Continuar?')) {
           await api.post('/api/materiais/restore', municipiosToRestore);
           setData(municipiosToRestore);
           alert('Backup restaurado com sucesso! Os dados serão atualizados.');
         }
       } catch (error) {
-        alert(
-          `Erro ao restaurar backup: ${
-            error instanceof Error ? error.message : String(error)
-          }`
-        );
+        alert(`Erro ao restaurar backup: ${error instanceof Error ? error.message : String(error)}`);
       } finally {
         if (event.target) event.target.value = '';
       }
@@ -1426,27 +1122,15 @@ const AdminPanel: React.FC<{
 
   return (
     <div className="bg-gray-50 p-4 rounded-lg shadow-md mt-8">
-      <div
-        onClick={() => setIsAdminOpen(!isAdminOpen)}
-        className="flex justify-between items-center cursor-pointer"
-      >
-        <h2 className="text-xl font-semibold text-gray-800">
-          Cadastro Geral
-        </h2>
+      <div onClick={() => setIsAdminOpen(!isAdminOpen)} className="flex justify-between items-center cursor-pointer">
+        <h2 className="text-xl font-semibold text-gray-800">Cadastro Geral</h2>
         <svg
-          className={`w-6 h-6 transform transition-transform ${
-            isAdminOpen ? 'rotate-180' : ''
-          }`}
+          className={`w-6 h-6 transform transition-transform ${isAdminOpen ? 'rotate-180' : ''}`}
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
         >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M19 9l-7 7-7-7"
-          />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
       </div>
       {isAdminOpen && (
@@ -1464,9 +1148,7 @@ const AdminPanel: React.FC<{
                       Adicionar Edital
                     </button>
                     <button
-                      onClick={() =>
-                        handleRemoveMunicipio(mun.id, mun.nome)
-                      }
+                      onClick={() => handleRemoveMunicipio(mun.id, mun.nome)}
                       className="text-xs text-red-600 hover:text-red-800"
                     >
                       Remover Município
@@ -1475,15 +1157,10 @@ const AdminPanel: React.FC<{
                 </div>
                 <ul className="mt-2 space-y-1 text-sm">
                   {mun.editais.map((ed) => (
-                    <li
-                      key={ed.id}
-                      className="flex justify-between items-center bg-gray-50 p-2 rounded"
-                    >
+                    <li key={ed.id} className="flex justify-between items-center bg-gray-50 p-2 rounded">
                       <span>{ed.nome}</span>
                       <button
-                        onClick={() =>
-                          handleRemoveEdital(ed.id, ed.nome)
-                        }
+                        onClick={() => handleRemoveEdital(ed.id, ed.nome)}
                         className="text-xs text-red-500 hover:text-red-700"
                       >
                         Remover
@@ -1527,48 +1204,30 @@ const AdminPanel: React.FC<{
   );
 };
 
-// =======================================
-// COMPONENTE PRINCIPAL
-// =======================================
+// --- COMPONENTE PRINCIPAL ---
 interface ControleMateriaisProps {
   data: Municipio[];
   setData: React.Dispatch<React.SetStateAction<Municipio[]>>;
   simulacoesSalvas: SimulacaoSalva[];
-  setSimulacoesSalvas: React.Dispatch<
-    React.SetStateAction<SimulacaoSalva[]>
-  >;
+  setSimulacoesSalvas: React.Dispatch<React.SetStateAction<SimulacaoSalva[]>>;
 }
-
 const ControleMateriais: React.FC<ControleMateriaisProps> = ({
   data,
   setData,
   simulacoesSalvas,
-  setSimulacoesSalvas,
+  setSimulacoesSalvas
 }) => {
   const [activeTab, setActiveTab] = useState('estoque');
   const [filtroMunicipioIdx, setFiltroMunicipioIdx] = useState<string>('0');
   const [filtroEditalIdx, setFiltroEditalIdx] = useState<string>('0');
   const [simulacaoItens, setSimulacaoItens] = useState<SimulacaoItem[]>([]);
 
-  // recarregar dados de materiais
   const onUpdate = useCallback(() => {
     api
       .get('/api/materiais')
       .then(setData)
-      .catch((e) =>
-        alert('Falha ao recarregar dados: ' + (e as Error).message)
-      );
+      .catch((e) => alert('Falha ao recarregar dados: ' + e.message));
   }, [setData]);
-
-  // >>> NOVO: carregar simulações salvas do backend
-  const fetchSimulacoes = useCallback(async () => {
-    try {
-      const sims = await api.get('/api/simulacoes');
-      setSimulacoesSalvas(sims || []);
-    } catch (error) {
-      console.warn('Erro ao carregar simulações salvas:', error);
-    }
-  }, [setSimulacoesSalvas]);
 
   const municipioAtual = useMemo(() => {
     const idx = parseInt(filtroMunicipioIdx, 10);
@@ -1578,35 +1237,23 @@ const ControleMateriais: React.FC<ControleMateriaisProps> = ({
   const editalAtual = useMemo(() => {
     const munIdx = parseInt(filtroMunicipioIdx, 10);
     const edIdx = parseInt(filtroEditalIdx, 10);
-    return !isNaN(munIdx) &&
-      !isNaN(edIdx) &&
-      data[munIdx]?.editais[edIdx]
+    return !isNaN(munIdx) && !isNaN(edIdx) && data[munIdx]?.editais[edIdx]
       ? data[munIdx].editais[edIdx]
       : null;
   }, [data, filtroMunicipioIdx, filtroEditalIdx]);
 
   const resumoFinanceiro = useMemo(() => {
     if (!editalAtual) return null;
-    const totalInicial = (editalAtual.itens || []).reduce(
-      (sum, item) => sum + item.valorTotal,
-      0
-    );
-    const totalEntregue = (editalAtual.saidas || []).reduce(
-      (sum, s) => sum + s.valorTotal,
-      0
-    );
+    const totalInicial = (editalAtual.itens || []).reduce((sum, item) => sum + item.valorTotal, 0);
+    const totalEntregue = (editalAtual.saidas || []).reduce((sum, s) => sum + s.valorTotal, 0);
 
     const restante = totalInicial - totalEntregue;
-    const percEntregue =
-      totalInicial > 0
-        ? Math.round((totalEntregue / totalInicial) * 100)
-        : 0;
+    const percEntregue = totalInicial > 0 ? Math.round((totalEntregue / totalInicial) * 100) : 0;
 
     return { totalInicial, totalEntregue, restante, percEntregue };
   }, [editalAtual]);
 
   useEffect(() => {
-    // quando o componente montar / dados mudarem
     if (data.length > 0 && filtroMunicipioIdx === '') {
       if (data[0] && data[0].editais.length > 0) {
         setFiltroMunicipioIdx('0');
@@ -1615,15 +1262,7 @@ const ControleMateriais: React.FC<ControleMateriaisProps> = ({
     }
   }, [data, filtroMunicipioIdx]);
 
-  // >>> AQUI: chama os dois (materiais + simulações)
-  useEffect(() => {
-    onUpdate();
-    fetchSimulacoes();
-  }, [onUpdate, fetchSimulacoes]);
-
-  const handleMunicipioChange = (
-    e: React.ChangeEvent<HTMLSelectElement>
-  ) => {
+  const handleMunicipioChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setFiltroMunicipioIdx(e.target.value);
     setFiltroEditalIdx('0');
   };
@@ -1632,10 +1271,7 @@ const ControleMateriais: React.FC<ControleMateriaisProps> = ({
     setFiltroEditalIdx(e.target.value);
   };
 
-  const salvarSimulacao = async (
-    municipio: string,
-    editalNome: string
-  ) => {
+  const salvarSimulacao = async (municipio: string, editalNome: string) => {
     if (simulacaoItens.length === 0) {
       alert('Adicione itens à simulação para poder salvar.');
       return;
@@ -1644,13 +1280,10 @@ const ControleMateriais: React.FC<ControleMateriaisProps> = ({
       data: new Date().toISOString(),
       municipio,
       edital: editalNome,
-      itens: simulacaoItens,
+      itens: simulacaoItens
     };
     try {
-      const savedSimulacao = await api.post(
-        '/api/simulacoes',
-        novaSimulacaoPayload
-      );
+      const savedSimulacao = await api.post('/api/simulacoes', novaSimulacaoPayload);
       setSimulacoesSalvas((prev) => [savedSimulacao, ...prev]);
       alert('Simulação salva com sucesso!');
     } catch (error) {
@@ -1664,9 +1297,7 @@ const ControleMateriais: React.FC<ControleMateriaisProps> = ({
       alert('Município da simulação não encontrado.');
       return;
     }
-    const edIdx = data[munIdx].editais.findIndex(
-      (e) => e.nome === simulacao.edital
-    );
+    const edIdx = data[munIdx].editais.findIndex((e) => e.nome === simulacao.edital);
     if (edIdx === -1) {
       alert('Edital da simulação não encontrado.');
       return;
@@ -1676,21 +1307,14 @@ const ControleMateriais: React.FC<ControleMateriaisProps> = ({
     setFiltroEditalIdx(edIdx.toString());
     setSimulacaoItens(simulacao.itens);
     setActiveTab('simulacao');
-    alert(
-      `Simulação de ${simulacao.municipio} restaurada. Navegando para a aba de simulação.`
-    );
+    alert(`Simulação de ${simulacao.municipio} restaurada. Navegando para a aba de simulação.`);
   };
 
-  const TabButton: React.FC<{ tabId: string; label: string }> = ({
-    tabId,
-    label,
-  }) => (
+  const TabButton: React.FC<{ tabId: string; label: string }> = ({ tabId, label }) => (
     <button
       onClick={() => setActiveTab(tabId)}
       className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-        activeTab === tabId
-          ? 'border-primary text-primary'
-          : 'border-transparent text-gray-500 hover:border-gray-300'
+        activeTab === tabId ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:border-gray-300'
       }`}
     >
       {label}
@@ -1699,9 +1323,7 @@ const ControleMateriais: React.FC<ControleMateriaisProps> = ({
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold text-gray-800">
-        Controle de Materiais
-      </h1>
+      <h1 className="text-3xl font-bold text-gray-800">Controle de Materiais</h1>
       <div className="bg-white p-4 rounded-lg shadow-md space-y-4">
         <h2 className="text-xl font-semibold">Filtro de Visualização</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1738,35 +1360,22 @@ const ControleMateriais: React.FC<ControleMateriaisProps> = ({
             </p>
             <div className="text-sm mt-2 grid grid-cols-2 md:grid-cols-4 gap-2">
               <p>
-                Total:{' '}
-                <span className="font-semibold">
-                  {formatarMoeda(resumoFinanceiro.totalInicial)}
-                </span>
+                Total: <span className="font-semibold">{formatarMoeda(resumoFinanceiro.totalInicial)}</span>
               </p>
               <p>
-                Entregue:{' '}
-                <span className="font-semibold">
-                  {formatarMoeda(resumoFinanceiro.totalEntregue)}
-                </span>
+                Entregue: <span className="font-semibold">{formatarMoeda(resumoFinanceiro.totalEntregue)}</span>
               </p>
               <p>
-                Restante:{' '}
-                <span className="font-semibold">
-                  {formatarMoeda(resumoFinanceiro.restante)}
-                </span>
+                Restante: <span className="font-semibold">{formatarMoeda(resumoFinanceiro.restante)}</span>
               </p>
               <div>
                 <div className="w-full bg-gray-200 rounded-full h-2.5 mt-1">
                   <div
                     className="bg-green-500 h-2.5 rounded-full"
-                    style={{
-                      width: `${resumoFinanceiro.percEntregue}%`,
-                    }}
+                    style={{ width: `${resumoFinanceiro.percEntregue}%` }}
                   ></div>
                 </div>
-                <p className="text-xs text-right">
-                  {resumoFinanceiro.percEntregue}%
-                </p>
+                <p className="text-xs text-right">{resumoFinanceiro.percEntregue}%</p>
               </div>
             </div>
           </div>
@@ -1786,16 +1395,10 @@ const ControleMateriais: React.FC<ControleMateriaisProps> = ({
 
       <div className="bg-white p-6 rounded-b-lg shadow-md min-h-[300px]">
         {!editalAtual && (
-          <div className="text-center py-10 text-gray-500">
-            Selecione um município e edital para ver os dados.
-          </div>
+          <div className="text-center py-10 text-gray-500">Selecione um município e edital para ver os dados.</div>
         )}
-        {editalAtual && activeTab === 'estoque' && (
-          <EstoqueView edital={editalAtual} onUpdate={onUpdate} />
-        )}
-        {editalAtual && activeTab === 'saidas' && (
-          <SaidasView edital={editalAtual} onUpdate={onUpdate} />
-        )}
+        {editalAtual && activeTab === 'estoque' && <EstoqueView edital={editalAtual} onUpdate={onUpdate} />}
+        {editalAtual && activeTab === 'saidas' && <SaidasView edital={editalAtual} onUpdate={onUpdate} />}
         {editalAtual && municipioAtual && activeTab === 'simulacao' && (
           <SimulacaoView
             edital={editalAtual}
@@ -1813,9 +1416,7 @@ const ControleMateriais: React.FC<ControleMateriaisProps> = ({
             restaurarSimulacao={restaurarSimulacao}
           />
         )}
-        {activeTab === 'importar' && (
-          <ImportarView data={data} onUpdate={onUpdate} />
-        )}
+        {activeTab === 'importar' && <ImportarView data={data} onUpdate={onUpdate} />}
         {activeTab === 'relatorios' && <RelatoriosView data={data} />}
       </div>
       <AdminPanel data={data} setData={setData} />
