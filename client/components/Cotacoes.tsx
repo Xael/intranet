@@ -4,7 +4,7 @@ import {
   CotacaoItem,
   ValorReferencia,
   SimulacaoCotacaoItem,
-  SimulacaoCotacaoSalva
+  SimulacaoCotacaoSalva,
 } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
 import { TrashIcon } from './icons/TrashIcon';
@@ -12,12 +12,16 @@ import { SearchIcon } from './icons/SearchIcon';
 import { EditIcon } from './icons/EditIcon';
 import { api } from '../utils/api';
 
+// ✅ importa o jsPDF do pacote
+import jsPDF from 'jspdf';
+// ✅ importa o plugin e vamos usar na forma de função
+import autoTable from 'jspdf-autotable';
+
+// XLSX continua global porque você já usa assim no projeto
 declare var XLSX: any;
 
 const formatarMoeda = (valor: number) =>
   valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-
-type CotacoesTab = 'cotacoes' | 'simulacao' | 'simulacoes_salvas' | 'referencia';
 
 interface CotacoesProps {
   cotacoes: Cotacao[];
@@ -34,9 +38,11 @@ const Cotacoes: React.FC<CotacoesProps> = ({
   valoresReferencia,
   setValoresReferencia,
   simulacoesSalvas,
-  setSimulacoesSalvas
+  setSimulacoesSalvas,
 }) => {
-  const [activeTab, setActiveTab] = useState<CotacoesTab>('cotacoes');
+  const [activeTab, setActiveTab] = useState<
+    'cotacoes' | 'simulacao' | 'simulacoes_salvas' | 'referencia'
+  >('cotacoes');
   const [simulacaoItens, setSimulacaoItens] = useState<SimulacaoCotacaoItem[]>([]);
   const importFileRef = useRef<HTMLInputElement>(null);
 
@@ -55,7 +61,6 @@ const Cotacoes: React.FC<CotacoesProps> = ({
 
         if (json.length === 0) throw new Error('A planilha está vazia.');
 
-        // agrupa por (Local|Data)
         const groupedByCotacao = json.reduce<Record<string, any[]>>((acc, row) => {
           const local = String(row['Local da Cotação'] || 'N/A').trim();
           let data = String(row['Data'] || '').trim();
@@ -80,7 +85,7 @@ const Cotacoes: React.FC<CotacoesProps> = ({
               quantidade: qtd,
               valorUnitario: valUnit,
               valorTotal: qtd * valUnit,
-              marca: String(row['Marca'] || '')
+              marca: String(row['Marca'] || ''),
             });
           }
           return acc;
@@ -98,7 +103,7 @@ const Cotacoes: React.FC<CotacoesProps> = ({
         alert(`${novasCotacoes.length} cotação(ões) importada(s) com sucesso!`);
       } catch (error) {
         alert(
-          `Erro ao importar: ${(error as Error).message}. Verifique se a planilha tem as colunas: Produto, Unidade, Quantidade, Valor Unitário, Marca, Local da Cotação, Data.`
+          `Erro ao importar: ${(error as Error).message}. Verifique se a planilha tem as colunas: Produto, Unidade, Quantidade, Valor Unitário, Marca, Local da Cotação, Data.`,
         );
       } finally {
         if (importFileRef.current) importFileRef.current.value = '';
@@ -107,18 +112,19 @@ const Cotacoes: React.FC<CotacoesProps> = ({
     reader.readAsArrayBuffer(file);
   };
 
-  const TabButton: React.FC<{ tabId: CotacoesTab; label: string }> = ({ tabId, label }) => (
-    <button
-      onClick={() => setActiveTab(tabId)}
-      className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-        activeTab === tabId
-          ? 'border-primary text-primary'
-          : 'border-transparent text-gray-500 hover:border-gray-300'
-      }`}
-    >
-      {label}
-    </button>
-  );
+  const TabButton: React.FC<{ tabId: 'cotacoes' | 'simulacao' | 'simulacoes_salvas' | 'referencia'; label: string }> =
+    ({ tabId, label }) => (
+      <button
+        onClick={() => setActiveTab(tabId)}
+        className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+          activeTab === tabId
+            ? 'border-primary text-primary'
+            : 'border-transparent text-gray-500 hover:border-gray-300'
+        }`}
+      >
+        {label}
+      </button>
+    );
 
   return (
     <div className="space-y-6">
@@ -155,7 +161,7 @@ const Cotacoes: React.FC<CotacoesProps> = ({
             simulacoesSalvas={simulacoesSalvas}
             setSimulacoesSalvas={setSimulacoesSalvas}
             setSimulacaoItens={setSimulacaoItens}
-            setActiveTab={(tab: CotacoesTab) => setActiveTab(tab)}
+            setActiveTab={setActiveTab}
           />
         )}
         {activeTab === 'referencia' && (
@@ -165,7 +171,6 @@ const Cotacoes: React.FC<CotacoesProps> = ({
           />
         )}
       </div>
-
       <input
         type="file"
         ref={importFileRef}
@@ -177,7 +182,9 @@ const Cotacoes: React.FC<CotacoesProps> = ({
   );
 };
 
-// ================== SUB-COMPONENTES ==================
+// ======================
+// Sub-componentes
+// ======================
 
 const CotacoesSalvasView: React.FC<{
   cotacoes: Cotacao[];
@@ -207,9 +214,8 @@ const CotacoesSalvasView: React.FC<{
 
   const referenciaMap = useMemo(
     () => new Map(valoresReferencia.map((v) => [v.id, v.valor])),
-    [valoresReferencia]
+    [valoresReferencia],
   );
-
   const getComparisonClass = (produto: string, valor: number) => {
     const refValor = referenciaMap.get(produto.toLowerCase().trim());
     if (refValor === undefined) return '';
@@ -220,7 +226,7 @@ const CotacoesSalvasView: React.FC<{
     setSimulacaoItens((prev) => {
       const newItem: SimulacaoCotacaoItem = {
         ...item,
-        cotacaoOrigem: { id: cotacao.id, local: cotacao.local, data: cotacao.data }
+        cotacaoOrigem: { id: cotacao.id, local: cotacao.local, data: cotacao.data },
       };
       return [...prev, newItem];
     });
@@ -289,7 +295,7 @@ const CotacoesSalvasView: React.FC<{
                   <td
                     className={`px-4 py-2 text-right font-semibold ${getComparisonClass(
                       item.produto,
-                      item.valorUnitario
+                      item.valorUnitario,
                     )}`}
                   >
                     {formatarMoeda(item.valorUnitario)}
@@ -342,7 +348,7 @@ const CotacoesSalvasView: React.FC<{
                           <td
                             className={`px-2 py-1 text-right ${getComparisonClass(
                               item.produto,
-                              item.valorUnitario
+                              item.valorUnitario,
                             )}`}
                           >
                             {formatarMoeda(item.valorUnitario)}
@@ -377,14 +383,12 @@ const SimulacaoAtualView: React.FC<{
 }> = ({ simulacaoItens, setSimulacaoItens, setSimulacoesSalvas, valoresReferencia }) => {
   const totalSimulacao = useMemo(
     () => simulacaoItens.reduce((acc, item) => acc + item.valorTotal, 0),
-    [simulacaoItens]
+    [simulacaoItens],
   );
-
   const referenciaMap = useMemo(
     () => new Map(valoresReferencia.map((v) => [v.id, v.valor])),
-    [valoresReferencia]
+    [valoresReferencia],
   );
-
   const getComparisonClass = (produto: string, valor: number) => {
     const refValor = referenciaMap.get(produto.toLowerCase().trim());
     if (refValor === undefined) return '';
@@ -397,7 +401,7 @@ const SimulacaoAtualView: React.FC<{
       const novaSimulacaoPayload = {
         nome,
         data: new Date().toISOString(),
-        itens: simulacaoItens
+        itens: simulacaoItens,
       };
       try {
         const savedSimulacao = await api.post('/api/simulacoes-cotacoes', novaSimulacaoPayload);
@@ -409,55 +413,41 @@ const SimulacaoAtualView: React.FC<{
     }
   };
 
-  const handleExport = async (type: 'pdf' | 'excel') => {
+  const handleExport = (type: 'pdf' | 'excel') => {
     if (simulacaoItens.length === 0) return;
 
-    const head = [['Produto', 'Marca', 'Un.', 'Qtd.', 'V. Unit.', 'V. Total', 'Origem']];
-    const body = simulacaoItens.map((item) => [
-      item.produto,
-      item.marca,
-      item.unidade,
-      item.quantidade,
-      formatarMoeda(item.valorUnitario),
-      formatarMoeda(item.valorTotal),
-      `${item.cotacaoOrigem.local} (${new Date(
-        item.cotacaoOrigem.data + 'T00:00:00'
-      ).toLocaleDateString('pt-BR')})`
-    ]);
-
     if (type === 'pdf') {
-      // IMPORT DINÂMICO para evitar "jsPDF is not defined"
-      // @ts-ignore
-      const [{ default: jsPDF }, autoTable] = await Promise.all([
-        // @ts-ignore
-        import('jspdf'),
-        // @ts-ignore
-        import('jspdf-autotable')
-      ]);
-
+      // ✅ agora usamos a instância importada
       const doc = new jsPDF();
 
+      const head = [['Produto', 'Marca', 'Un.', 'Qtd.', 'V. Unit.', 'V. Total', 'Origem']];
+      const body = simulacaoItens.map((item) => [
+        item.produto,
+        item.marca,
+        item.unidade,
+        item.quantidade,
+        formatarMoeda(item.valorUnitario),
+        formatarMoeda(item.valorTotal),
+        `${item.cotacaoOrigem.local} (${new Date(
+          item.cotacaoOrigem.data + 'T00:00:00',
+        ).toLocaleDateString('pt-BR')})`,
+      ]);
+
       doc.text('Simulação de Cotação', 14, 20);
-
-      // algumas versões exportam default, outras função direta
-      const autoTableFn = (autoTable as any).default ? (autoTable as any).default : autoTable;
-
-      autoTableFn(doc, {
+      // ✅ usa o autoTable importado
+      autoTable(doc, {
         head,
         body,
-        startY: 30
+        startY: 30,
+        theme: 'grid',
+        styles: { fontSize: 8 },
       });
 
-      const finalY =
-        (doc as any).lastAutoTable && (doc as any).lastAutoTable.finalY
-          ? (doc as any).lastAutoTable.finalY
-          : 40;
-
+      const finalY = (doc as any).lastAutoTable?.finalY || 30;
       doc.text(`Total: ${formatarMoeda(totalSimulacao)}`, 14, finalY + 10);
 
       doc.save(`simulacao_cotacao_${Date.now()}.pdf`);
     } else {
-      // EXCEL
       const dataToExport = simulacaoItens.map((item) => ({
         Produto: item.produto,
         Marca: item.marca,
@@ -466,7 +456,7 @@ const SimulacaoAtualView: React.FC<{
         'Valor Unitário': item.valorUnitario,
         'Valor Total': item.valorTotal,
         'Origem Cotação': item.cotacaoOrigem.local,
-        'Data Cotação': item.cotacaoOrigem.data
+        'Data Cotação': item.cotacaoOrigem.data,
       }));
       dataToExport.push({ Produto: 'TOTAL', 'Valor Total': totalSimulacao } as any);
       const ws = XLSX.utils.json_to_sheet(dataToExport);
@@ -501,9 +491,9 @@ const SimulacaoAtualView: React.FC<{
                 <td
                     className={`px-4 py-2 text-right ${getComparisonClass(
                       item.produto,
-                      item.valorUnitario
+                      item.valorUnitario,
                     )}`}
-                >
+                  >
                   {formatarMoeda(item.valorUnitario)}
                 </td>
                 <td className="px-4 py-2 text-right">{item.quantidade}</td>
@@ -556,7 +546,9 @@ const SimulacoesSalvasView: React.FC<{
   simulacoesSalvas: SimulacaoCotacaoSalva[];
   setSimulacoesSalvas: React.Dispatch<React.SetStateAction<SimulacaoCotacaoSalva[]>>;
   setSimulacaoItens: React.Dispatch<React.SetStateAction<SimulacaoCotacaoItem[]>>;
-  setActiveTab: (tab: CotacoesTab) => void;
+  setActiveTab: React.Dispatch<
+    React.SetStateAction<'cotacoes' | 'simulacao' | 'simulacoes_salvas' | 'referencia'>
+  >;
 }> = ({ simulacoesSalvas, setSimulacoesSalvas, setSimulacaoItens, setActiveTab }) => {
   const handleRestore = (simulacao: SimulacaoCotacaoSalva) => {
     setSimulacaoItens(simulacao.itens);
@@ -592,7 +584,9 @@ const SimulacoesSalvasView: React.FC<{
             {simulacoesSalvas.map((sim) => (
               <tr key={sim.id} className="border-b hover:bg-gray-50">
                 <td className="px-4 py-2 font-medium">{sim.nome}</td>
-                <td className="px-4 py-2">{new Date(sim.data).toLocaleString('pt-BR')}</td>
+                <td className="px-4 py-2">
+                  {new Date(sim.data).toLocaleString('pt-BR')}
+                </td>
                 <td className="px-4 py-2 text-right">
                   {formatarMoeda(sim.itens.reduce((acc, item) => acc + item.valorTotal, 0))}
                 </td>
@@ -608,7 +602,7 @@ const SimulacoesSalvasView: React.FC<{
             ))}
             {simulacoesSalvas.length === 0 && (
               <tr>
-                <td colSpan={4} className="text-center py-4 text-gray-500">
+                <td colSpan={4} className="px-4 py-4 text-center text-gray-500">
                   Nenhuma simulação salva.
                 </td>
               </tr>
@@ -706,11 +700,7 @@ const ValoresReferenciaView: React.FC<{
             {editingId ? 'Salvar' : 'Adicionar'}
           </button>
           {editingId && (
-            <button
-              type="button"
-              onClick={handleCancelEdit}
-              className="px-4 py-2 bg-gray-300 rounded-lg"
-            >
+            <button type="button" onClick={handleCancelEdit} className="px-4 py-2 bg-gray-300 rounded-lg">
               Cancelar
             </button>
           )}
@@ -744,8 +734,8 @@ const ValoresReferenciaView: React.FC<{
             ))}
             {valoresReferencia.length === 0 && (
               <tr>
-                <td colSpan={3} className="text-center py-4 text-gray-500">
-                    Nenhum valor de referência cadastrado.
+                <td colSpan={3} className="px-4 py-4 text-center text-gray-400">
+                  Nenhum valor de referência cadastrado.
                 </td>
               </tr>
             )}
