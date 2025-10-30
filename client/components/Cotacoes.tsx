@@ -12,16 +12,27 @@ import { SearchIcon } from './icons/SearchIcon';
 import { EditIcon } from './icons/EditIcon';
 import { api } from '../utils/api';
 
-// ✅ importa o jsPDF do pacote
-import jsPDF from 'jspdf';
-// ✅ importa o plugin e vamos usar na forma de função
-import autoTable from 'jspdf-autotable';
-
-// XLSX continua global porque você já usa assim no projeto
+// XLSX ainda está vindo via CDN no index.html
 declare var XLSX: any;
 
 const formatarMoeda = (valor: number) =>
   valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+// --- Helpers de fallback para simulações antigas ---
+function ensureCotacaoOrigem(item: SimulacaoCotacaoItem): SimulacaoCotacaoItem {
+  // alguns itens salvos antes da mudança não têm cotacaoOrigem
+  if (!item.cotacaoOrigem) {
+    return {
+      ...item,
+      cotacaoOrigem: {
+        id: 'legacy',
+        local: 'Origem não informada',
+        data: new Date().toISOString().slice(0, 10),
+      },
+    };
+  }
+  return item;
+}
 
 interface CotacoesProps {
   cotacoes: Cotacao[];
@@ -103,7 +114,7 @@ const Cotacoes: React.FC<CotacoesProps> = ({
         alert(`${novasCotacoes.length} cotação(ões) importada(s) com sucesso!`);
       } catch (error) {
         alert(
-          `Erro ao importar: ${(error as Error).message}. Verifique se a planilha tem as colunas: Produto, Unidade, Quantidade, Valor Unitário, Marca, Local da Cotação, Data.`,
+          `Erro ao importar: ${(error as Error).message}. Verifique se a planilha tem as colunas: Produto, Unidade, Quantidade, Valor Unitário, Marca, Local da Cotação, Data.`
         );
       } finally {
         if (importFileRef.current) importFileRef.current.value = '';
@@ -112,19 +123,18 @@ const Cotacoes: React.FC<CotacoesProps> = ({
     reader.readAsArrayBuffer(file);
   };
 
-  const TabButton: React.FC<{ tabId: 'cotacoes' | 'simulacao' | 'simulacoes_salvas' | 'referencia'; label: string }> =
-    ({ tabId, label }) => (
-      <button
-        onClick={() => setActiveTab(tabId)}
-        className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-          activeTab === tabId
-            ? 'border-primary text-primary'
-            : 'border-transparent text-gray-500 hover:border-gray-300'
-        }`}
-      >
-        {label}
-      </button>
-    );
+  const TabButton: React.FC<{ tabId: typeof activeTab; label: string }> = ({ tabId, label }) => (
+    <button
+      onClick={() => setActiveTab(tabId)}
+      className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+        activeTab === tabId
+          ? 'border-primary text-primary'
+          : 'border-transparent text-gray-500 hover:border-gray-300'
+      }`}
+    >
+      {label}
+    </button>
+  );
 
   return (
     <div className="space-y-6">
@@ -182,10 +192,7 @@ const Cotacoes: React.FC<CotacoesProps> = ({
   );
 };
 
-// ======================
-// Sub-componentes
-// ======================
-
+// ===================== COTAÇÕES SALVAS =====================
 const CotacoesSalvasView: React.FC<{
   cotacoes: Cotacao[];
   setCotacoes: React.Dispatch<React.SetStateAction<Cotacao[]>>;
@@ -214,8 +221,9 @@ const CotacoesSalvasView: React.FC<{
 
   const referenciaMap = useMemo(
     () => new Map(valoresReferencia.map((v) => [v.id, v.valor])),
-    [valoresReferencia],
+    [valoresReferencia]
   );
+
   const getComparisonClass = (produto: string, valor: number) => {
     const refValor = referenciaMap.get(produto.toLowerCase().trim());
     if (refValor === undefined) return '';
@@ -295,7 +303,7 @@ const CotacoesSalvasView: React.FC<{
                   <td
                     className={`px-4 py-2 text-right font-semibold ${getComparisonClass(
                       item.produto,
-                      item.valorUnitario,
+                      item.valorUnitario
                     )}`}
                   >
                     {formatarMoeda(item.valorUnitario)}
@@ -348,7 +356,7 @@ const CotacoesSalvasView: React.FC<{
                           <td
                             className={`px-2 py-1 text-right ${getComparisonClass(
                               item.produto,
-                              item.valorUnitario,
+                              item.valorUnitario
                             )}`}
                           >
                             {formatarMoeda(item.valorUnitario)}
@@ -375,6 +383,7 @@ const CotacoesSalvasView: React.FC<{
   );
 };
 
+// ===================== SIMULAÇÃO ATUAL =====================
 const SimulacaoAtualView: React.FC<{
   simulacaoItens: SimulacaoCotacaoItem[];
   setSimulacaoItens: React.Dispatch<React.SetStateAction<SimulacaoCotacaoItem[]>>;
@@ -383,12 +392,14 @@ const SimulacaoAtualView: React.FC<{
 }> = ({ simulacaoItens, setSimulacaoItens, setSimulacoesSalvas, valoresReferencia }) => {
   const totalSimulacao = useMemo(
     () => simulacaoItens.reduce((acc, item) => acc + item.valorTotal, 0),
-    [simulacaoItens],
+    [simulacaoItens]
   );
+
   const referenciaMap = useMemo(
     () => new Map(valoresReferencia.map((v) => [v.id, v.valor])),
-    [valoresReferencia],
+    [valoresReferencia]
   );
+
   const getComparisonClass = (produto: string, valor: number) => {
     const refValor = referenciaMap.get(produto.toLowerCase().trim());
     if (refValor === undefined) return '';
@@ -413,42 +424,45 @@ const SimulacaoAtualView: React.FC<{
     }
   };
 
-  const handleExport = (type: 'pdf' | 'excel') => {
+  const handleExport = async (type: 'pdf' | 'excel') => {
     if (simulacaoItens.length === 0) return;
 
-    if (type === 'pdf') {
-      // ✅ agora usamos a instância importada
-      const doc = new jsPDF();
+    // normaliza todos os itens (para o caso de virem de simulações antigas sem origem)
+    const itensNormalizados = simulacaoItens.map(ensureCotacaoOrigem);
 
-      const head = [['Produto', 'Marca', 'Un.', 'Qtd.', 'V. Unit.', 'V. Total', 'Origem']];
-      const body = simulacaoItens.map((item) => [
-        item.produto,
-        item.marca,
-        item.unidade,
-        item.quantidade,
-        formatarMoeda(item.valorUnitario),
-        formatarMoeda(item.valorTotal),
-        `${item.cotacaoOrigem.local} (${new Date(
-          item.cotacaoOrigem.data + 'T00:00:00',
-        ).toLocaleDateString('pt-BR')})`,
-      ]);
+    const head = [['Produto', 'Marca', 'Un.', 'Qtd.', 'V. Unit.', 'V. Total', 'Origem']];
+    const body = itensNormalizados.map((item) => [
+      item.produto,
+      item.marca,
+      item.unidade,
+      item.quantidade,
+      formatarMoeda(item.valorUnitario),
+      formatarMoeda(item.valorTotal),
+      `${item.cotacaoOrigem.local} (${new Date(
+        item.cotacaoOrigem.data + 'T00:00:00'
+      ).toLocaleDateString('pt-BR')})`,
+    ]);
+
+    if (type === 'pdf') {
+      // import dinâmico para não quebrar no browser quando não existir window.jsPDF
+      const jsPDFModule = await import('jspdf');
+      const autoTableModule = await import('jspdf-autotable');
+
+      // compat: alguns bundles expõem como default, outros como .jsPDF
+      const DocClass: any = (jsPDFModule as any).jsPDF || (jsPDFModule as any).default;
+      const doc = new DocClass();
 
       doc.text('Simulação de Cotação', 14, 20);
-      // ✅ usa o autoTable importado
-      autoTable(doc, {
+      (autoTableModule as any).default(doc, {
         head,
         body,
         startY: 30,
-        theme: 'grid',
-        styles: { fontSize: 8 },
       });
-
-      const finalY = (doc as any).lastAutoTable?.finalY || 30;
+      const finalY = (doc as any).lastAutoTable?.finalY || 40;
       doc.text(`Total: ${formatarMoeda(totalSimulacao)}`, 14, finalY + 10);
-
       doc.save(`simulacao_cotacao_${Date.now()}.pdf`);
     } else {
-      const dataToExport = simulacaoItens.map((item) => ({
+      const dataToExport = itensNormalizados.map((item) => ({
         Produto: item.produto,
         Marca: item.marca,
         Unidade: item.unidade,
@@ -483,35 +497,38 @@ const SimulacaoAtualView: React.FC<{
             </tr>
           </thead>
           <tbody>
-            {simulacaoItens.map((item, index) => (
-              <tr key={`${item.id}-${index}`} className="border-b">
-                <td className="px-4 py-2">{item.produto}</td>
-                <td className="px-4 py-2">{item.unidade}</td>
-                <td className="px-4 py-2 text-xs text-gray-500">{item.cotacaoOrigem.local}</td>
-                <td
+            {simulacaoItens.map((rawItem, index) => {
+              const item = ensureCotacaoOrigem(rawItem);
+              return (
+                <tr key={`${item.id}-${index}`} className="border-b">
+                  <td className="px-4 py-2">{item.produto}</td>
+                  <td className="px-4 py-2">{item.unidade}</td>
+                  <td className="px-4 py-2 text-xs text-gray-500">{item.cotacaoOrigem.local}</td>
+                  <td
                     className={`px-4 py-2 text-right ${getComparisonClass(
                       item.produto,
-                      item.valorUnitario,
+                      item.valorUnitario
                     )}`}
                   >
-                  {formatarMoeda(item.valorUnitario)}
-                </td>
-                <td className="px-4 py-2 text-right">{item.quantidade}</td>
-                <td className="px-4 py-2 text-right font-semibold">
-                  {formatarMoeda(item.valorTotal)}
-                </td>
-                <td className="px-4 py-2 text-center">
-                  <button
-                    onClick={() =>
-                      setSimulacaoItens((prev) => prev.filter((_, i) => i !== index))
-                    }
-                    className="text-red-500"
-                  >
-                    <TrashIcon className="w-4 h-4" />
-                  </button>
-                </td>
-              </tr>
-            ))}
+                    {formatarMoeda(item.valorUnitario)}
+                  </td>
+                  <td className="px-4 py-2 text-right">{item.quantidade}</td>
+                  <td className="px-4 py-2 text-right font-semibold">
+                    {formatarMoeda(item.valorTotal)}
+                  </td>
+                  <td className="px-4 py-2 text-center">
+                    <button
+                      onClick={() =>
+                        setSimulacaoItens((prev) => prev.filter((_, i) => i !== index))
+                      }
+                      className="text-red-500"
+                    >
+                      <TrashIcon className="w-4 h-4" />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
           <tfoot>
             <tr className="font-bold bg-gray-50">
@@ -542,6 +559,7 @@ const SimulacaoAtualView: React.FC<{
   );
 };
 
+// ===================== SIMULAÇÕES SALVAS =====================
 const SimulacoesSalvasView: React.FC<{
   simulacoesSalvas: SimulacaoCotacaoSalva[];
   setSimulacoesSalvas: React.Dispatch<React.SetStateAction<SimulacaoCotacaoSalva[]>>;
@@ -551,7 +569,9 @@ const SimulacoesSalvasView: React.FC<{
   >;
 }> = ({ simulacoesSalvas, setSimulacoesSalvas, setSimulacaoItens, setActiveTab }) => {
   const handleRestore = (simulacao: SimulacaoCotacaoSalva) => {
-    setSimulacaoItens(simulacao.itens);
+    // normaliza todos os itens ao restaurar
+    const itensNormalizados = (simulacao.itens || []).map(ensureCotacaoOrigem);
+    setSimulacaoItens(itensNormalizados);
     setActiveTab('simulacao');
     alert(`Simulação '${simulacao.nome}' restaurada.`);
   };
@@ -584,11 +604,11 @@ const SimulacoesSalvasView: React.FC<{
             {simulacoesSalvas.map((sim) => (
               <tr key={sim.id} className="border-b hover:bg-gray-50">
                 <td className="px-4 py-2 font-medium">{sim.nome}</td>
-                <td className="px-4 py-2">
-                  {new Date(sim.data).toLocaleString('pt-BR')}
-                </td>
+                <td className="px-4 py-2">{new Date(sim.data).toLocaleString('pt-BR')}</td>
                 <td className="px-4 py-2 text-right">
-                  {formatarMoeda(sim.itens.reduce((acc, item) => acc + item.valorTotal, 0))}
+                  {formatarMoeda(
+                    (sim.itens || []).reduce((acc, item) => acc + (item.valorTotal || 0), 0)
+                  )}
                 </td>
                 <td className="px-4 py-2 text-center space-x-2">
                   <button onClick={() => handleRestore(sim)} className="text-blue-600">
@@ -602,7 +622,7 @@ const SimulacoesSalvasView: React.FC<{
             ))}
             {simulacoesSalvas.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-4 text-center text-gray-500">
+                <td colSpan={4} className="text-center py-4 text-gray-500">
                   Nenhuma simulação salva.
                 </td>
               </tr>
@@ -614,6 +634,7 @@ const SimulacoesSalvasView: React.FC<{
   );
 };
 
+// ===================== VALORES DE REFERÊNCIA =====================
 const ValoresReferenciaView: React.FC<{
   valoresReferencia: ValorReferencia[];
   setValoresReferencia: React.Dispatch<React.SetStateAction<ValorReferencia[]>>;
@@ -700,7 +721,11 @@ const ValoresReferenciaView: React.FC<{
             {editingId ? 'Salvar' : 'Adicionar'}
           </button>
           {editingId && (
-            <button type="button" onClick={handleCancelEdit} className="px-4 py-2 bg-gray-300 rounded-lg">
+            <button
+              type="button"
+              onClick={handleCancelEdit}
+              className="px-4 py-2 bg-gray-300 rounded-lg"
+            >
               Cancelar
             </button>
           )}
@@ -734,7 +759,7 @@ const ValoresReferenciaView: React.FC<{
             ))}
             {valoresReferencia.length === 0 && (
               <tr>
-                <td colSpan={3} className="px-4 py-4 text-center text-gray-400">
+                <td colSpan={3} className="text-center py-4 text-gray-500">
                   Nenhum valor de referência cadastrado.
                 </td>
               </tr>
