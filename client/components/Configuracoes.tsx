@@ -15,6 +15,7 @@ const UserModal: React.FC<{
         name: user?.name || '',
         username: user?.username || '',
         password: '',
+        role: user?.role || 'OPERACIONAL',
     });
     const isNew = !user?.id;
 
@@ -30,7 +31,7 @@ const UserModal: React.FC<{
                 await api.post('/api/users', formData);
             } else {
                 // Only include password if it's being changed
-                const payload: any = { name: formData.name, username: formData.username };
+                const payload: any = { name: formData.name, username: formData.username, role: formData.role };
                 if (formData.password) {
                     payload.password = formData.password;
                 }
@@ -62,6 +63,14 @@ const UserModal: React.FC<{
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Nova Senha</label>
                             <input type="password" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} required={isNew} placeholder={isNew ? 'Obrigatório' : 'Deixe em branco para não alterar'} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm" />
+                        </div>
+                         <div>
+                            <label className="block text-sm font-medium text-gray-700">Papel</label>
+                            {/* FIX: Cast the select's value to the correct type to match the state. */}
+                            <select value={formData.role} onChange={e => setFormData({...formData, role: e.target.value as User['role']})} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                                <option value="OPERACIONAL">Operacional</option>
+                                <option value="ADMIN">Administrador</option>
+                            </select>
                         </div>
                     </div>
                     <div className="p-6 bg-gray-50 flex justify-end gap-3">
@@ -143,6 +152,7 @@ const Configuracoes: React.FC = () => {
                             <tr>
                                 <th className="px-6 py-3">Nome Completo</th>
                                 <th className="px-6 py-3">Nome de Usuário</th>
+                                <th className="px-6 py-3">Papel</th>
                                 <th className="px-6 py-3">Criado em</th>
                                 <th className="px-6 py-3 text-center">Ações</th>
                             </tr>
@@ -152,6 +162,11 @@ const Configuracoes: React.FC = () => {
                                 <tr key={user.id} className="border-b hover:bg-gray-50">
                                     <td className="px-6 py-4 font-medium">{user.name}</td>
                                     <td className="px-6 py-4">{user.username}</td>
+                                    <td className="px-6 py-4">
+                                        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${user.role === 'ADMIN' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>
+                                           {user.role}
+                                        </span>
+                                    </td>
                                     <td className="px-6 py-4">{new Date(user.createdAt).toLocaleDateString('pt-BR')}</td>
                                     <td className="px-6 py-4 text-center space-x-2">
                                         <button onClick={() => handleOpenModal(user)} className="p-1 text-blue-600 hover:text-blue-800" title="Editar"><EditIcon className="w-5 h-5"/></button>
