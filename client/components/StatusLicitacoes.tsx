@@ -2,42 +2,34 @@ import React, { useState, FormEvent, useRef } from 'react';
 import { LicitacaoDetalhada, StatusLicitacaoDetalhada } from '../types';
 import { api } from '../utils/api';
 
-// Helper Functions
+// Helper: estilos por status
 const getStatusStyles = (status: StatusLicitacaoDetalhada) => {
   switch (status) {
-    // amarelo
     case StatusLicitacaoDetalhada.EM_ANDAMENTO:
       return {
-        border: 'border-l-yellow-500',
-        bg: 'bg-yellow-500',
-        text: 'text-white',
+        cardBorder: 'border-l-4 border-yellow-400',
+        badge: 'bg-yellow-500 text-white',
       };
-    // verde
     case StatusLicitacaoDetalhada.VENCIDA:
       return {
-        border: 'border-l-green-500',
-        bg: 'bg-green-500',
-        text: 'text-white',
+        cardBorder: 'border-l-4 border-green-500',
+        badge: 'bg-green-500 text-white',
       };
-    // cinza
     case StatusLicitacaoDetalhada.ENCERRADA:
       return {
-        border: 'border-l-gray-400',
-        bg: 'bg-gray-400',
-        text: 'text-white',
+        cardBorder: 'border-l-4 border-gray-400',
+        badge: 'bg-gray-500 text-white',
       };
-    // branco (quase sem destaque, como você falou)
     case StatusLicitacaoDetalhada.DESCLASSIFICADA:
       return {
-        border: 'border-l-white',
-        bg: 'bg-gray-200',
-        text: 'text-gray-700',
+        // mantém branco (quase imperceptível) porque você disse “como já está”
+        cardBorder: 'border-l-4 border-white',
+        badge: 'bg-gray-300 text-gray-700',
       };
     default:
       return {
-        border: 'border-l-gray-300',
-        bg: 'bg-gray-300',
-        text: 'text-white',
+        cardBorder: 'border-l-4 border-gray-200',
+        badge: 'bg-gray-300 text-gray-700',
       };
   }
 };
@@ -88,7 +80,6 @@ const normalizeStatus = (status: string): StatusLicitacaoDetalhada => {
   if (lowerStatus.includes('vencida')) return StatusLicitacaoDetalhada.VENCIDA;
   if (lowerStatus.includes('encerrada')) return StatusLicitacaoDetalhada.ENCERRADA;
   if (lowerStatus.includes('desclassificada')) return StatusLicitacaoDetalhada.DESCLASSIFICADA;
-
   return StatusLicitacaoDetalhada.ENCERRADA;
 };
 
@@ -116,21 +107,20 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const bidData = Object.fromEntries(formData.entries()) as Omit<LicitacaoDetalhada, 'id' | 'lastUpdated'>;
-
     const now = new Date().toISOString();
 
     try {
       if (editingBid) {
         const updatedBid = { ...editingBid, ...bidData, lastUpdated: now };
         const savedBid = await api.put(`/api/licitacoes/${editingBid.id}`, updatedBid);
-        setBids((currentBids) => currentBids.map((b) => (b.id === editingBid.id ? savedBid : b)));
+        setBids(currentBids => currentBids.map(b => (b.id === editingBid.id ? savedBid : b)));
       } else {
         const newBid: Omit<LicitacaoDetalhada, 'id'> = {
           ...bidData,
           lastUpdated: now,
         };
         const savedBid = await api.post('/api/licitacoes', newBid);
-        setBids((currentBids) => [...currentBids, savedBid]);
+        setBids(currentBids => [...currentBids, savedBid]);
       }
       closeModal();
     } catch (error) {
@@ -142,7 +132,7 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
     if (window.confirm('Tem certeza que deseja excluir esta licitação?')) {
       try {
         await api.delete(`/api/licitacoes/${bidId}`);
-        setBids((currentBids) => currentBids.filter((b) => b.id !== bidId));
+        setBids(currentBids => currentBids.filter(b => b.id !== bidId));
       } catch (error) {
         alert(`Falha ao excluir licitação: ${(error as Error).message}`);
       }
@@ -174,36 +164,29 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
     if (file.type !== 'application/json') {
       alert('Por favor, selecione um arquivo de backup .json válido.');
       return;
     }
-
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
         const text = e.target?.result as string;
-        if (!text) throw new Error('Arquivo vazio ou ilegível.');
+        if (!text) throw new Error("Arquivo vazio ou ilegível.");
 
         const data = JSON.parse(text);
-        const licitacoesToRestore =
-          data.bids && Array.isArray(data.bids) ? data.bids : Array.isArray(data) ? data : null;
+        const licitacoesToRestore = data.bids && Array.isArray(data.bids) ? data.bids : Array.isArray(data) ? data : null;
 
         if (!licitacoesToRestore) {
-          throw new Error('Formato do arquivo de backup inválido. Esperado um array de licitações ou um objeto com a chave "bids".');
+          throw new Error('Formato do arquivo de backup inválido.');
         }
 
         const normalizedBids = licitacoesToRestore.map((bid: any) => ({
           ...bid,
-          status: normalizeStatus(bid.status),
+          status: normalizeStatus(bid.status)
         }));
 
-        if (
-          window.confirm(
-            `Restaurar este backup irá substituir TODOS os dados de status atuais (${normalizedBids.length} registros encontrados). Deseja continuar?`,
-          )
-        ) {
+        if (window.confirm(`Restaurar este backup irá substituir TODOS os dados de status atuais (${normalizedBids.length} registros). Deseja continuar?`)) {
           await api.post('/api/restore-bids-backup', { licitacoes: normalizedBids });
           setBids(normalizedBids);
           alert('Backup restaurado com sucesso!');
@@ -223,23 +206,14 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
       <div className="flex flex-wrap justify-between items-center gap-4">
         <h2 className="text-3xl font-bold text-gray-800">Andamento das Licitações</h2>
         <div className="flex items-center gap-2">
-          <button
-            onClick={handleBackup}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700 transition-colors"
-          >
+          <button onClick={handleBackup} className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700 transition-colors">
             Fazer Backup
           </button>
-          <button
-            onClick={handleRestoreClick}
-            className="px-4 py-2 bg-gray-600 text-white rounded-lg shadow hover:bg-gray-700 transition-colors"
-          >
+          <button onClick={handleRestoreClick} className="px-4 py-2 bg-gray-600 text-white rounded-lg shadow hover:bg-gray-700 transition-colors">
             Restaurar Backup
           </button>
           <input type="file" ref={restoreInputRef} onChange={handleFileSelect} accept=".json" className="hidden" />
-          <button
-            onClick={() => showModal(null)}
-            className="px-4 py-2 bg-primary text-white rounded-lg shadow hover:bg-secondary transition-colors"
-          >
+          <button onClick={() => showModal(null)} className="px-4 py-2 bg-primary text-white rounded-lg shadow hover:bg-secondary transition-colors">
             Nova Licitação
           </button>
         </div>
@@ -248,34 +222,36 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
       {bids.length === 0 ? (
         <div className="text-center py-16 bg-white rounded-lg shadow">
           <h3 className="text-xl text-gray-700">Nenhuma licitação cadastrada ainda.</h3>
-          <p className="text-gray-500 mt-2">Clique em "Nova Licitação" para começar a organizar seus processos.</p>
+          <p className="text-gray-500 mt-2">Clique em "Nova Licitação" para começar.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {bids.map((bid) => (
-            <LicitacaoCard key={bid.id} bid={bid} onEdit={() => showModal(bid)} onDelete={() => handleDelete(bid.id)} />
+          {bids.map(bid => (
+            <LicitacaoCard
+              key={bid.id}
+              bid={bid}
+              onEdit={() => showModal(bid)}
+              onDelete={() => handleDelete(bid.id)}
+            />
           ))}
         </div>
       )}
 
-      {isModalOpen && <LicitacaoModal bid={editingBid} onClose={closeModal} onSubmit={handleFormSubmit} />}
+      {isModalOpen && (
+        <LicitacaoModal bid={editingBid} onClose={closeModal} onSubmit={handleFormSubmit} />
+      )}
     </div>
   );
 };
 
-const LicitacaoCard: React.FC<{ bid: LicitacaoDetalhada; onEdit: () => void; onDelete: () => void }> = ({
-  bid,
-  onEdit,
-  onDelete,
-}) => {
+const LicitacaoCard: React.FC<{ bid: LicitacaoDetalhada; onEdit: () => void; onDelete: () => void }> = ({ bid, onEdit, onDelete }) => {
   const statusStyles = getStatusStyles(bid.status);
   const highlightClass = getDateHighlightClass(bid);
 
   return (
     <div
-      className={`bg-white rounded-lg shadow-md p-5 flex flex-col gap-3 border-l-4 transition-all hover:shadow-xl hover:-translate-y-1 ${statusStyles.border} ${highlightClass} ${
-        bid.status === StatusLicitacaoDetalhada.DESCLASSIFICADA ? 'grayscale opacity-70' : ''
-      }`}
+      className={`bg-white rounded-lg shadow-md p-5 flex flex-col gap-3 transition-all hover:shadow-xl hover:-translate-y-1 border ${statusStyles.cardBorder} ${highlightClass} ${bid.status === StatusLicitacaoDetalhada.DESCLASSIFICADA ? 'grayscale opacity-70' : ''
+        }`}
     >
       <div className="flex justify-between items-start">
         <div>
@@ -284,37 +260,18 @@ const LicitacaoCard: React.FC<{ bid: LicitacaoDetalhada; onEdit: () => void; onD
         </div>
         <div className="flex gap-2">
           <button onClick={onEdit} className="text-gray-400 hover:text-primary p-1" aria-label="Editar">
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z"></path>
-              <path
-                fillRule="evenodd"
-                d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"
-                clipRule="evenodd"
-              ></path>
-            </svg>
+            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z"></path><path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd"></path></svg>
           </button>
           <button onClick={onDelete} className="text-gray-400 hover:text-red-600 p-1" aria-label="Excluir">
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-              <path
-                fillRule="evenodd"
-                d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z"
-                clipRule="evenodd"
-              ></path>
-            </svg>
+            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clipRule="evenodd"></path></svg>
           </button>
         </div>
       </div>
       <div className="text-sm space-y-2 text-gray-600">
-        <p>
-          <strong className="font-medium text-gray-800">Empresa:</strong> {bid.companyName}
-        </p>
-        <p>
-          <strong className="font-medium text-gray-800">Data:</strong> {formatDate(bid.realizationDate)}
-        </p>
+        <p><strong className="font-medium text-gray-800">Empresa:</strong> {bid.companyName}</p>
+        <p><strong className="font-medium text-gray-800">Data:</strong> {formatDate(bid.realizationDate)}</p>
         {bid.progressForecast && (
-          <p>
-            <strong className="font-medium text-gray-800">Previsão:</strong> {bid.progressForecast}
-          </p>
+          <p><strong className="font-medium text-gray-800">Previsão:</strong> {bid.progressForecast}</p>
         )}
         <p>
           <strong className="font-medium text-gray-800">Plataforma:</strong>{' '}
@@ -325,7 +282,7 @@ const LicitacaoCard: React.FC<{ bid: LicitacaoDetalhada; onEdit: () => void; onD
       </div>
       <div className="mt-auto pt-3 border-t border-gray-200 space-y-2">
         <div className="flex justify-between items-center text-sm">
-          <span className={`px-3 py-1 text-xs font-semibold rounded-full ${statusStyles.bg} ${statusStyles.text}`}>
+          <span className={`px-3 py-1 text-xs font-semibold rounded-full ${statusStyles.badge}`}>
             {bid.status}
           </span>
           {bid.placement && (
@@ -335,7 +292,9 @@ const LicitacaoCard: React.FC<{ bid: LicitacaoDetalhada; onEdit: () => void; onD
           )}
         </div>
         {bid.lastUpdated && (
-          <p className="text-xs text-gray-400 text-right">Atualizado em: {formatDateTime(bid.lastUpdated)}</p>
+          <p className="text-xs text-gray-400 text-right">
+            Atualizado em: {formatDateTime(bid.lastUpdated)}
+          </p>
         )}
       </div>
     </div>
@@ -348,14 +307,19 @@ const LicitacaoModal: React.FC<{
   onSubmit: (e: FormEvent<HTMLFormElement>) => void;
 }> = ({ bid, onClose, onSubmit }) => {
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4"
+      onClick={onClose}
+    >
       <div
         className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
+        onClick={e => e.stopPropagation()}
       >
         <form onSubmit={onSubmit}>
           <div className="p-6 border-b">
-            <h3 className="text-xl font-bold text-gray-800">{bid ? 'Editar Licitação' : 'Adicionar Licitação'}</h3>
+            <h3 className="text-xl font-bold text-gray-800">
+              {bid ? 'Editar Licitação' : 'Adicionar Licitação'}
+            </h3>
           </div>
           <div className="p-6 space-y-4">
             <div className="form-group">
@@ -437,7 +401,7 @@ const LicitacaoModal: React.FC<{
                   required
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
                 >
-                  {Object.values(StatusLicitacaoDetalhada).map((s) => (
+                  {Object.values(StatusLicitacaoDetalhada).map(s => (
                     <option key={s} value={s}>
                       {s}
                     </option>
