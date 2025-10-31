@@ -24,6 +24,7 @@ export interface EventoCalendario {
   resumo: string;
   data: string;
   licitacaoId: string;
+  documentationStatus?: 'OK' | 'PENDENTE';
 }
 
 // New types for "Controle de Materiais"
