@@ -6,7 +6,7 @@ import interactionPlugin, { DateClickArg } from '@fullcalendar/interaction';
 import { EventClickArg, EventDropArg, EventApi } from '@fullcalendar/core';
 import { api } from '../utils/api';
 
-// ---------- MODAL ----------
+// --- Modal Component ---
 interface EventoModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -17,6 +17,15 @@ interface EventoModalProps {
   dateStr?: string;
 }
 
+/**
+ * Vamos estender aqui o tipo vindo do types.ts para garantir
+ * que mesmo se o arquivo types.ts ainda não tiver sido atualizado,
+ * este componente não vai quebrar.
+ */
+type DetalhesEventoComDoc = DetalhesEvento & {
+  documentationStatus?: 'OK' | 'PENDENTE';
+};
+
 const EventoModal: React.FC<EventoModalProps> = ({
   isOpen,
   onClose,
@@ -24,11 +33,11 @@ const EventoModal: React.FC<EventoModalProps> = ({
   onDelete,
   isNew,
   eventData,
-  dateStr
+  dateStr,
 }) => {
   if (!isOpen) return null;
 
-  const initialDetails: DetalhesEvento = isNew
+  const initialDetails: DetalhesEventoComDoc = isNew
     ? {
         city: '',
         bid_number: '',
@@ -39,17 +48,27 @@ const EventoModal: React.FC<EventoModalProps> = ({
       }
     : {
         city: (eventData?.extendedProps as any)?.city || '',
-        bid_number: (eventData?.extendedProps as any)?.bid_number || (eventData as any)?.bid_number || '',
+        bid_number:
+          (eventData?.extendedProps as any)?.bid_number ||
+          (eventData as any)?.bid_number ||
+          eventData?.title ||
+          '',
         time: (eventData?.extendedProps as any)?.time || (eventData as any)?.time || '',
         location: (eventData?.extendedProps as any)?.location || (eventData as any)?.location || '',
-        description: (eventData?.extendedProps as any)?.description || (eventData as any)?.description || '',
-        documentationStatus: (eventData?.extendedProps as any)?.documentationStatus || 'PENDENTE',
+        description:
+          (eventData?.extendedProps as any)?.description ||
+          (eventData as any)?.description ||
+          '',
+        documentationStatus:
+          (eventData?.extendedProps as any)?.documentationStatus || 'PENDENTE',
       };
 
-  const [details, setDetails] = useState<DetalhesEvento>(initialDetails);
+  const [details, setDetails] = useState<DetalhesEventoComDoc>(initialDetails);
 
   const modalTitle = isNew ? 'Nova Licitação' : 'Editar Licitação';
-  const displayDate = new Date((dateStr || eventData?.startStr) + 'T00:00:00').toLocaleDateString('pt-BR');
+  const displayDate = new Date((dateStr || eventData?.startStr) + 'T00:00:00').toLocaleDateString(
+    'pt-BR'
+  );
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -82,7 +101,7 @@ const EventoModal: React.FC<EventoModalProps> = ({
           <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
               <label htmlFor="bid_number" className="block text-sm font-medium text-gray-700">
-                Identificação da Licitação (Entidade + nº)
+                Identificação da Licitação (Entidade + nº):
               </label>
               <input
                 type="text"
@@ -94,7 +113,6 @@ const EventoModal: React.FC<EventoModalProps> = ({
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
               />
             </div>
-
             <div>
               <label htmlFor="city" className="block text-sm font-medium text-gray-700">
                 Cidade:
@@ -108,7 +126,6 @@ const EventoModal: React.FC<EventoModalProps> = ({
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
               />
             </div>
-
             <div>
               <label htmlFor="time" className="block text-sm font-medium text-gray-700">
                 Horário:
@@ -124,6 +141,26 @@ const EventoModal: React.FC<EventoModalProps> = ({
               />
             </div>
 
+            {/* NOVO CAMPO: DOCUMENTAÇÃO */}
+            <div>
+              <label
+                htmlFor="documentationStatus"
+                className="block text-sm font-medium text-gray-700"
+              >
+                Documentação:
+              </label>
+              <select
+                name="documentationStatus"
+                id="documentationStatus"
+                value={details.documentationStatus || 'PENDENTE'}
+                onChange={handleChange}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
+              >
+                <option value="OK">✅ Documentação OK</option>
+                <option value="PENDENTE">⚠️ Documentação Pendente</option>
+              </select>
+            </div>
+
             <div className="md:col-span-2">
               <label htmlFor="location" className="block text-sm font-medium text-gray-700">
                 Local:
@@ -137,7 +174,6 @@ const EventoModal: React.FC<EventoModalProps> = ({
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
               />
             </div>
-
             <div className="md:col-span-2">
               <label htmlFor="description" className="block text-sm font-medium text-gray-700">
                 Descrição:
@@ -150,23 +186,6 @@ const EventoModal: React.FC<EventoModalProps> = ({
                 rows={3}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
               ></textarea>
-            </div>
-
-            {/* NOVO CAMPO */}
-            <div className="md:col-span-2">
-              <label htmlFor="documentationStatus" className="block text-sm font-medium text-gray-700">
-                Documentação:
-              </label>
-              <select
-                id="documentationStatus"
-                name="documentationStatus"
-                value={details.documentationStatus || 'PENDENTE'}
-                onChange={handleChange}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
-              >
-                <option value="OK">✅ Documentação OK</option>
-                <option value="PENDENTE">⚠️ Documentação Pendente</option>
-              </select>
             </div>
           </div>
           <div className="p-6 bg-gray-50 rounded-b-lg flex justify-between items-center gap-3">
@@ -203,7 +222,7 @@ const EventoModal: React.FC<EventoModalProps> = ({
   );
 };
 
-// ---------- MAIN COMPONENT ----------
+// --- Main Calendar Component ---
 interface CalendarioLicitacoesProps {
   events: EventoCalendarioDetalhado[];
   setEvents: React.Dispatch<React.SetStateAction<EventoCalendarioDetalhado[]>>;
@@ -236,13 +255,25 @@ const CalendarioLicitacoes: React.FC<CalendarioLicitacoesProps> = ({ events, set
     setModalState({ isOpen: false, isNew: true });
   };
 
-  const handleSaveEvent = async (details: DetalhesEvento) => {
+  // monta o título com o ícone da documentação
+  const buildEventTitle = (det: DetalhesEventoComDoc) => {
+    const base = det.bid_number || 'Licitação';
+    const icon = det.documentationStatus === 'OK' ? '✅' : '⚠️';
+    return `${base} ${icon}`;
+  };
+
+  const handleSaveEvent = async (details: DetalhesEventoComDoc) => {
     try {
       if (modalState.isNew && modalState.dateStr) {
         const newEventPayload = {
           start: modalState.dateStr,
-          title: details.bid_number,
-          ...details,
+          title: buildEventTitle(details),
+          city: details.city,
+          bid_number: details.bid_number,
+          time: details.time,
+          location: details.location,
+          description: details.description,
+          documentationStatus: details.documentationStatus || 'PENDENTE',
         };
         const savedEvent = await api.post('/api/events', newEventPayload);
         setEvents((currentEvents) => [...currentEvents, savedEvent]);
@@ -253,10 +284,14 @@ const CalendarioLicitacoes: React.FC<CalendarioLicitacoesProps> = ({ events, set
 
         const updatedEventPayload = {
           ...originalEvent,
-          title: details.bid_number,
-          ...details,
+          title: buildEventTitle(details),
+          city: details.city,
+          bid_number: details.bid_number,
+          time: details.time,
+          location: details.location,
+          description: details.description,
+          documentationStatus: details.documentationStatus || 'PENDENTE',
         };
-
         const savedEvent = await api.put(`/api/events/${eventId}`, updatedEventPayload);
         setEvents((currentEvents) => currentEvents.map((e) => (e.id === eventId ? savedEvent : e)));
       }
@@ -339,9 +374,20 @@ const CalendarioLicitacoes: React.FC<CalendarioLicitacoesProps> = ({ events, set
         if (!eventsToRestore) {
           throw new Error('Formato do arquivo de backup inválido. Chave "events" não encontrada.');
         }
-        if (window.confirm('Restaurar este backup irá substituir TODOS os dados atuais do calendário. Deseja continuar?')) {
-          await api.post('/api/events/restore', { events: eventsToRestore });
-          setEvents(eventsToRestore);
+        // normalizar para garantir o novo campo
+        const normalized = eventsToRestore.map((ev: any) => ({
+          ...ev,
+          documentationStatus: ev.documentationStatus || 'PENDENTE',
+          title: ev.title || `${ev.bid_number || 'Licitação'} ${ev.documentationStatus === 'OK' ? '✅' : '⚠️'}`,
+        }));
+
+        if (
+          window.confirm(
+            'Restaurar este backup irá substituir TODOS os dados atuais do calendário. Deseja continuar?'
+          )
+        ) {
+          await api.post('/api/events/restore', { events: normalized });
+          setEvents(normalized);
           alert('Backup do calendário restaurado com sucesso!');
         }
       } catch (error) {
@@ -352,33 +398,6 @@ const CalendarioLicitacoes: React.FC<CalendarioLicitacoesProps> = ({ events, set
       }
     };
     reader.readAsText(file);
-  };
-
-  // 👉 aqui montamos o conteúdo do evento com o ícone
-  const renderEventContent = (eventInfo: any) => {
-    const docStatus = eventInfo.event.extendedProps?.documentationStatus || 'PENDENTE';
-    const icon =
-      docStatus === 'OK' ? (
-        <span className="ml-2 inline-block text-green-600 font-bold" title="Documentação OK">
-          ✓
-        </span>
-      ) : (
-        <span className="ml-2 inline-block text-yellow-500 font-bold" title="Documentação pendente">
-          !
-        </span>
-      );
-
-    return (
-      <div className="flex flex-col">
-        <span className="flex items-center text-xs sm:text-sm font-semibold text-gray-800">
-          {eventInfo.event.title}
-          {icon}
-        </span>
-        {eventInfo.event.extendedProps?.city && (
-          <span className="text-[10px] text-gray-500">{eventInfo.event.extendedProps.city}</span>
-        )}
-      </div>
-    );
   };
 
   return (
@@ -420,7 +439,9 @@ const CalendarioLicitacoes: React.FC<CalendarioLicitacoesProps> = ({ events, set
             className="hidden"
           />
           <button
-            onClick={() => openModalForNew({ dateStr: new Date().toISOString().split('T')[0] } as any)}
+            onClick={() =>
+              openModalForNew({ dateStr: new Date().toISOString().split('T')[0] } as any)
+            }
             className="px-4 py-2 bg-primary text-white rounded-lg shadow hover:bg-secondary transition-colors"
           >
             Novo Evento
@@ -444,11 +465,13 @@ const CalendarioLicitacoes: React.FC<CalendarioLicitacoesProps> = ({ events, set
           dateClick={openModalForNew}
           eventClick={openModalForEdit}
           eventDrop={handleEventDrop}
-          eventContent={renderEventContent}
           eventDataTransform={(eventInfo) => {
             return {
               ...eventInfo,
-              extendedProps: eventInfo,
+              extendedProps: {
+                ...eventInfo,
+                documentationStatus: (eventInfo as any).documentationStatus || 'PENDENTE',
+              },
             };
           }}
           dayCellDidMount={(arg) => {
