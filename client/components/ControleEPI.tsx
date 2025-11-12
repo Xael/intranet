@@ -5,9 +5,8 @@ import { TrashIcon } from './icons/TrashIcon';
 import { EditIcon } from './icons/EditIcon';
 import { api } from '../utils/api'; // Import da API
 
-// Se você usa Heroicons (recomendado para os ícones de navegação)
-import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/solid'; 
-// Se você não usa, pode substituir pelos seus ícones ou usar HTML/caracteres.
+// REMOVIDO: import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/solid'; 
+// Substituímos por caracteres simples (< e >) para evitar o erro TS2307.
 
 declare var XLSX: any;
 
@@ -52,7 +51,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas, estoqu
     }, [estoque, entregas]);
 
 
-    // --- HANDLERS DE ESTOQUE (MANTIDOS) ---
+    // --- HANDLERS DE ESTOQUE ---
     const handleAddEstoque = async (e: FormEvent) => { 
       e.preventDefault();
       const name = newEstoque.name.trim();
@@ -125,7 +124,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas, estoqu
     };
 
 
-    // --- HANDLERS DE ENTREGAS (MANTIDOS) ---
+    // --- HANDLERS DE ENTREGAS ---
     const handleAddEntrega = async (e: FormEvent) => {
       e.preventDefault();
       const quantidadeNum = parseInt(newEntrega.quantidade, 10);
@@ -174,7 +173,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas, estoqu
       }
     };
 
-    // --- IMPORTAÇÃO / EXPORTAÇÃO (MANTIDOS) ---
+    // --- IMPORTAÇÃO / EXPORTAÇÃO ---
     const handleExport = (type: 'estoque' | 'entregas') => {
       if (type === 'estoque') {
           if(estoque.length === 0) return alert('Não há dados de estoque para exportar.');
@@ -304,7 +303,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas, estoqu
         <div className="space-y-8">
             <h1 className="text-3xl font-bold text-gray-800">Controle de Estoque de EPIs</h1>
 
-            {/* Seção de Estoque (SEM MUDANÇAS) */}
+            {/* Seção de Estoque */}
             <div className="bg-white p-6 rounded-lg shadow-md space-y-4">
                 <h2 className="text-2xl font-bold text-gray-800">Estoque de EPI</h2>
                 <div className="flex flex-wrap gap-2 items-start">
@@ -451,7 +450,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas, estoqu
                             disabled={currentPage === 1}
                             className="p-1 border rounded-md text-gray-600 disabled:opacity-50"
                         >
-                            <ChevronLeftIcon className="w-5 h-5"/>
+                            <span className="w-5 h-5 block leading-none text-xl font-bold">{'<'}</span> 
                         </button>
                         
                         <span className="text-sm font-medium">
@@ -463,7 +462,7 @@ const ControleEPI: React.FC<ControleEPIProps> = ({ entregas, setEntregas, estoqu
                             disabled={currentPage === totalPages}
                             className="p-1 border rounded-md text-gray-600 disabled:opacity-50"
                         >
-                             <ChevronRightIcon className="w-5 h-5"/>
+                             <span className="w-5 h-5 block leading-none text-xl font-bold">{'>'}</span> 
                         </button>
                         
                         {/* Exibe o número da última página clicável */}
