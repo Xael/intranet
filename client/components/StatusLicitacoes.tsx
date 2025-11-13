@@ -5,34 +5,39 @@ import { api } from '../utils/api';
 // 1) Helper de estilos por status
 const getStatusStyles = (status: StatusLicitacaoDetalhada) => {
   switch (status) {
-    // amarelo
+    // amarelo pastel
     case StatusLicitacaoDetalhada.EM_ANDAMENTO:
       return {
         border: 'border-yellow-400',
         pill: 'bg-yellow-400 text-white',
+        background: 'bg-yellow-50', // Tom pastel amarelo
       };
-    // verde
+    // verde pastel
     case StatusLicitacaoDetalhada.VENCIDA:
       return {
         border: 'border-green-500',
         pill: 'bg-green-500 text-white',
+        background: 'bg-green-50', // Tom pastel verde
       };
-    // cinza / azul claro
+    // azul pastel
     case StatusLicitacaoDetalhada.ENCERRADA:
       return {
-        border: 'border-slate-400',
-        pill: 'bg-slate-400 text-white',
+        border: 'border-blue-400', // Mudei para azul
+        pill: 'bg-blue-400 text-white', // Mudei para azul
+        background: 'bg-blue-50', // Tom pastel azul
       };
-    // branco (como você falou)
+    // cinza claro (sem cor)
     case StatusLicitacaoDetalhada.DESCLASSIFICADA:
       return {
-        border: 'border-white',  // praticamente some
+        border: 'border-gray-300', // Borda mais visível
         pill: 'bg-gray-300 text-gray-700',
+        background: 'bg-gray-100', // Tom pastel acinzentado
       };
     default:
       return {
         border: 'border-slate-200',
         pill: 'bg-slate-200 text-slate-700',
+        background: 'bg-slate-50', // Padrão pastel
       };
   }
 };
@@ -254,7 +259,7 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
   );
 };
 
-// 2) Card com a borda vindo por último
+// 2) Card com a borda e o fundo vindo por último
 const LicitacaoCard: React.FC<{ bid: LicitacaoDetalhada; onEdit: () => void; onDelete: () => void }> = ({ bid, onEdit, onDelete }) => {
   const statusStyles = getStatusStyles(bid.status);
   const highlightClass = getDateHighlightClass(bid);
@@ -262,9 +267,10 @@ const LicitacaoCard: React.FC<{ bid: LicitacaoDetalhada; onEdit: () => void; onD
   return (
     <div
       className={`
-        bg-white rounded-lg shadow-md p-5 flex flex-col gap-3
+        rounded-lg shadow-md p-5 flex flex-col gap-3
         border
-        ${statusStyles.border}   /* <- AQUI vem por último, então ganha */
+        ${statusStyles.background} /* Nova classe de fundo */
+        ${statusStyles.border}   /* A borda vem por último, então ganha */
         transition-all hover:shadow-xl hover:-translate-y-1
         ${highlightClass}
         ${bid.status === StatusLicitacaoDetalhada.DESCLASSIFICADA ? 'grayscale opacity-70' : ''}
