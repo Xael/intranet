@@ -19,11 +19,12 @@ interface LicitacaoDetalhada {
   companyName: string;
   platformLink: string;
   realizationDate: string;
-  // CORREÇÃO DO ERRO DE BUILD: O tipo real espera 'StatusLicitacaoDetalhada' (o enum).
+  // O tipo real espera 'StatusLicitacaoDetalhada' (o enum).
   status: StatusLicitacaoDetalhada; 
-  // CORREÇÃO DO ERRO ANTERIOR: O tipo real espera 'string' (obrigatório).
+  // O tipo real espera 'string' (obrigatório).
   placement: string; 
-  progressForecast?: string;
+  // CORREÇÃO DO ERRO DE BUILD: O tipo real espera 'string' (obrigatório).
+  progressForecast: string; 
   lastUpdated: string;
 }
 
@@ -43,7 +44,7 @@ const api = {
         realizationDate: new Date().toISOString(),
         status: 'EM_ANDAMENTO', // <-- DADO NÃO NORMALIZADO (string)
         placement: '1º Lugar', 
-        progressForecast: 'Aguardando homologação',
+        progressForecast: 'Aguardando homologação', // Agora é string
         lastUpdated: new Date().toISOString(),
       },
       {
@@ -55,7 +56,7 @@ const api = {
         realizationDate: '2025-11-20T10:00:00Z',
         status: StatusLicitacaoDetalhada.ENCERRADA, // Dado normalizado (enum)
         placement: '3º Lugar', 
-        progressForecast: 'Finalizado',
+        progressForecast: 'Finalizado', // Agora é string
         lastUpdated: new Date().toISOString(),
       },
     ];
@@ -204,7 +205,10 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
         ...bid,
         // Usamos 'as string' pois sabemos que 'bid.status' PODE SER uma string
         // em runtime, apesar do tipo 'StatusLicitacaoDetalhada'.
-        status: normalizeStatus(bid.status as string) 
+        status: normalizeStatus(bid.status as string),
+        // Garantimos que os campos obrigatórios sejam strings
+        placement: bid.placement || "",
+        progressForecast: bid.progressForecast || ""
       }));
       
       // 2. Atualizamos o nosso estado interno com os dados normalizados
@@ -223,7 +227,9 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
           const data = await api.get('/api/licitacoes'); // Chama nosso mock
           const normalized = data.map(bid => ({
             ...bid,
-            status: normalizeStatus(bid.status as string)
+            status: normalizeStatus(bid.status as string),
+            placement: bid.placement || "",
+            progressForecast: bid.progressForecast || ""
           }));
           setNormalizedBids(normalized); // Atualiza o estado interno
           // No seu app real, o setBids viria do componente pai
@@ -257,13 +263,14 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
 
     try {
       if (editingBid) {
-        // Garante que 'placement' seja uma string, mesmo que vazia, para bater com o tipo
+        // Garante que 'placement' e 'progressForecast' sejam strings, mesmo que vazias
         const updatedBid = { 
           ...editingBid, 
           ...bidData, 
           lastUpdated: now, 
           status: normalizeStatus(bidData.status as string),
-          placement: bidData.placement || "" // Garante que placement seja string
+          placement: bidData.placement || "", 
+          progressForecast: bidData.progressForecast || ""
         };
         const savedBid = await api.put(`/api/licitacoes/${editingBid.id}`, updatedBid);
         
@@ -274,7 +281,8 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
           ...(bidData as Omit<LicitacaoDetalhada, 'id' | 'lastUpdated'>), // Cast para o tipo base
           lastUpdated: now,
           status: normalizeStatus(bidData.status as string),
-          placement: bidData.placement || "" // Garante que placement seja string
+          placement: bidData.placement || "", 
+          progressForecast: bidData.progressForecast || ""
         };
         const savedBid = await api.post('/api/licitacoes', newBid);
         // Atualiza o estado PAI
@@ -350,7 +358,8 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
         const normalizedBidsFromFile = licitacoesToRestore.map((bid: any) => ({
           ...bid,
           status: normalizeStatus(bid.status),
-          placement: bid.placement || "" // Garante que 'placement' seja string
+          placement: bid.placement || "", // Garante que 'placement' seja string
+          progressForecast: bid.progressForecast || "" // Garante que 'progressForecast' seja string
         }));
 
         // Substituindo window.confirm por um log
@@ -457,6 +466,7 @@ const LicitacaoCard: React.FC<{ bid: LicitacaoDetalhada; onEdit: () => void; onD
       <div className="text-sm space-y-2 text-gray-600">
         <p><strong className="font-medium text-gray-800">Empresa:</strong> {bid.companyName}</p>
         <p><strong className="font-medium text-gray-800">Data:</strong> {formatDate(bid.realizationDate)}</p>
+        {/* Este check funciona para string vazia (que é 'falsy') */}
         {bid.progressForecast && (
           <p><strong className="font-medium text-gray-800">Previsão:</strong> {bid.progressForecast}</p>
         )}
@@ -539,7 +549,8 @@ const LicitacaoModal: React.FC<{ bid: LicitacaoDetalhada | null; onClose: () => 
             </div>
             <div>
               <label htmlFor="progressForecast" className="block text-sm font-medium text-gray-700">Previsão de Andamento</label>
-              <textarea id="progressForecast" name="progressForecast" defaultValue={bid?.progressForecast ?? ''} rows={3} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm" placeholder="Ex: Aguardando resultado, Em fase de recurso, etc."></textarea>
+               {/* O 'defaultValue' funciona bem com string obrigatória */}
+              <textarea id="progressForecast" name="progressForecast" defaultValue={bid?.progressForecast} rows={3} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm" placeholder="Ex: Aguardando resultado, Em fase de recurso, etc."></textarea>
             </div>
           </div>
           <div className="p-6 bg-gray-50 rounded-b-lg flex justify-end gap-3">
