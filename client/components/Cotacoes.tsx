@@ -542,6 +542,7 @@ const SimulacaoAtualView: React.FC<{
     }
   };
 
+  // ================== FUNÇÃO handleExport ATUALIZADA ==================
   const handleExport = async (type: 'pdf' | 'excel') => {
     if (simulacaoItens.length === 0) return;
 
@@ -586,7 +587,6 @@ const SimulacaoAtualView: React.FC<{
       const autoTableModule = await import('jspdf-autotable');
       const DocClass: any = (jsPDFModule as any).jsPDF || (jsPDFModule as any).default;
       
-      // ATUALIZADO: PDF em paisagem
       const doc = new DocClass({ orientation: 'landscape' });
 
       doc.setFontSize(14);
@@ -595,7 +595,6 @@ const SimulacaoAtualView: React.FC<{
       const styles = { font: 'helvetica', fontSize: 8 };
       const headStyles = { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' };
       
-      // ATUALIZADO: Estilos de coluna
       const columnStyles = {
         0: { cellWidth: 45, overflow: 'linebreak' }, // Produto/Un.
         1: { cellWidth: 15, halign: 'right' }, // Qtd
@@ -609,7 +608,7 @@ const SimulacaoAtualView: React.FC<{
       };
 
       (autoTableModule as any).default(doc, {
-        head: [head], // autoTable espera um array de arrays
+        head: [head],
         body,
         startY: 25,
         styles: styles,
@@ -621,19 +620,29 @@ const SimulacaoAtualView: React.FC<{
 
       const finalY = (doc as any).lastAutoTable?.finalY || 40;
       
-      // ATUALIZADO: Totais
       doc.setFontSize(12);
       doc.setFont('helvetica', 'bold');
+      
+      // Reseta a cor para preto (padrão)
+      doc.setTextColor('#000000');
       doc.text(`Total Cotação: ${formatarMoeda(totalCotacao)}`, 14, finalY + 10);
       doc.text(`Total Referência: ${formatarMoeda(totalReferencia)}`, 14, finalY + 16);
+      
       doc.setFont('helvetica', 'bold');
-      doc.setTextColor(totalCotacao <= totalReferencia ? [0, 100, 0] : [200, 0, 0]); // Verde ou Vermelho
+      
+      // CORREÇÃO: Usar string Hexadecimal ao invés de array RGB
+      const diffColor = totalCotacao <= totalReferencia ? '#006400' : '#C80000'; // Verde escuro / Vermelho escuro
+      doc.setTextColor(diffColor);
+      
       doc.text(`Diferença (Cotação - Ref.): ${formatarMoeda(totalCotacao - totalReferencia)}`, 14, finalY + 22);
+      
+      // Reseta a cor novamente para garantir
+      doc.setTextColor('#000000'); 
 
       doc.save(`simulacao_comparativa_${Date.now()}.pdf`);
 
     } else {
-      // ATUALIZADO: Exportação Excel
+      // Lógica do Excel (mantida)
       const dataToExport = itensNormalizados.map((item, index) => {
          const refUnit = referenciaValues[index] || 0;
          const totalCot = item.valorTotal;
@@ -653,8 +662,7 @@ const SimulacaoAtualView: React.FC<{
           'Data Cotação': item.cotacaoOrigem.data,
         };
       });
-      // Adiciona totais
-      dataToExport.push({} as any); // Linha em branco
+      dataToExport.push({} as any); 
       dataToExport.push({
         'Produto': 'TOTAIS',
         'V. Total (Cotação)': totalCotacao,
@@ -668,6 +676,8 @@ const SimulacaoAtualView: React.FC<{
       XLSX.writeFile(wb, `simulacao_comparativa_${Date.now()}.xlsx`);
     }
   };
+  // ================== FIM DA FUNÇÃO ATUALIZADA ==================
+
 
   return (
     <div className="space-y-4">
