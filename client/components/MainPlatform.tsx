@@ -10,7 +10,7 @@ import ControleEmpenhos from './ControleEmpenhos';
 import Cotacoes from './Cotacoes';
 import Configuracoes from './Configuracoes';
 import Calculadora from './Calculadora';
-import { LicitacaoDetalhada, EventoCalendarioDetalhado, Municipio, EPIEntrega, SimulacaoSalva, Cotacao, ValorReferencia, SimulacaoCotacaoSalva, CalculadoraSalva, EPIEstoqueItem } from '../types';
+import { LicitacaoDetalhada, EventoCalendarioDetalhado, Municipio, EPIEntrega, SimulacaoSalva, Cotacao, SimulacaoCotacaoSalva, CalculadoraSalva, EPIEstoqueItem } from '../types';
 import { api } from '../utils/api';
 
 
@@ -42,7 +42,6 @@ const MainPlatform: React.FC = () => {
           epiEstoqueRes,
           simulacoesRes,
           cotacoesRes,
-          referenciaRes,
           simulacoesCotacoesRes,
           calculosRes,
         ] = await Promise.all([
@@ -64,7 +63,6 @@ const MainPlatform: React.FC = () => {
         if (epiEstoqueRes) setEpiEstoqueData(epiEstoqueRes);
         if (simulacoesRes) setSimulacoesSalvas(simulacoesRes);
         if (cotacoesRes) setCotacoesData(cotacoesRes);
-        if (referenciaRes) setReferenciaData(referenciaRes);
         if (simulacoesCotacoesRes) setSimulacoesCotacoesSalvas(simulacoesCotacoesRes);
         if (calculosRes) setCalculosSalvos(calculosRes);
 
