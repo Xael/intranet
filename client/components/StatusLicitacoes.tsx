@@ -21,7 +21,9 @@ interface LicitacaoDetalhada {
   realizationDate: string;
   // Permite string para que a normalização possa receber dados "sujos"
   status: StatusLicitacaoDetalhada | string; 
-  placement?: string;
+  // CORREÇÃO DO ERRO DE BUILD: A plataforma principal espera 'placement' como 'string' (obrigatório),
+  // e não 'string | undefined' (opcional).
+  placement: string; 
   progressForecast?: string;
   lastUpdated: string;
 }
@@ -41,7 +43,7 @@ const api = {
         platformLink: 'http://example.com',
         realizationDate: new Date().toISOString(),
         status: 'EM_ANDAMENTO', // <-- DADO NÃO NORMALIZADO PARA TESTE
-        placement: '1º Lugar',
+        placement: '1º Lugar', // 'placement' agora é string
         progressForecast: 'Aguardando homologação',
         lastUpdated: new Date().toISOString(),
       },
@@ -53,7 +55,7 @@ const api = {
         platformLink: 'http://example.com',
         realizationDate: '2025-11-20T10:00:00Z',
         status: StatusLicitacaoDetalhada.ENCERRADA, // Dado normalizado
-        placement: '3º Lugar',
+        placement: '3º Lugar', // 'placement' agora é string
         progressForecast: 'Finalizado',
         lastUpdated: new Date().toISOString(),
       },
@@ -240,22 +242,31 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
   const handleFormSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const bidData = Object.fromEntries(formData.entries()) as Omit<LicitacaoDetalhada, 'id' | 'lastUpdated'>;
+    // Remove 'id' e 'lastUpdated' dos dados do formulário
+    const { id, lastUpdated, ...bidData } = Object.fromEntries(formData.entries()) as any as LicitacaoDetalhada;
 
     const now = new Date().toISOString();
 
     try {
       if (editingBid) {
-        const updatedBid = { ...editingBid, ...bidData, lastUpdated: now, status: normalizeStatus(bidData.status as string) };
+        // Garante que 'placement' seja uma string, mesmo que vazia, para bater com o tipo
+        const updatedBid = { 
+          ...editingBid, 
+          ...bidData, 
+          lastUpdated: now, 
+          status: normalizeStatus(bidData.status as string),
+          placement: bidData.placement || "" // Garante que placement seja string
+        };
         const savedBid = await api.put(`/api/licitacoes/${editingBid.id}`, updatedBid);
         
         // Atualiza o estado PAI (que aciona o useEffect e normaliza de novo)
         setBids(currentBids => currentBids.map(b => (b.id === editingBid.id ? savedBid : b)));
       } else {
         const newBid: Omit<LicitacaoDetalhada, 'id'> = {
-          ...bidData,
+          ...(bidData as Omit<LicitacaoDetalhada, 'id' | 'lastUpdated'>), // Cast para o tipo base
           lastUpdated: now,
-          status: normalizeStatus(bidData.status as string)
+          status: normalizeStatus(bidData.status as string),
+          placement: bidData.placement || "" // Garante que placement seja string
         };
         const savedBid = await api.post('/api/licitacoes', newBid);
         // Atualiza o estado PAI
@@ -331,7 +342,8 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
         // A função de restore já normalizava, o que é ótimo!
         const normalizedBidsFromFile = licitacoesToRestore.map((bid: any) => ({
           ...bid,
-          status: normalizeStatus(bid.status)
+          status: normalizeStatus(bid.status),
+          placement: bid.placement || "" // Garante que 'placement' seja string
         }));
 
         // Substituindo window.confirm por um log
@@ -455,6 +467,7 @@ const LicitacaoCard: React.FC<{ bid: LicitacaoDetalhada; onEdit: () => void; onD
           <span className={`px-3 py-1 text-xs font-semibold rounded-full ${statusStyles.pill}`}>
             {bid.status}
           </span>
+          {/* Este check funciona para string vazia (que é 'falsy') */}
           {bid.placement && (
             <span>
               <strong className="font-medium">Colocação:</strong> {bid.placement}
@@ -515,6 +528,7 @@ const LicitacaoModal: React.FC<{ bid: LicitacaoDetalhada | null; onClose: () => 
             </div>
             <div>
               <label htmlFor="placement" className="block text-sm font-medium text-gray-700">Colocação</label>
+              {/* O 'defaultValue' funciona bem com string obrigatória */}
               <input type="text" id="placement" name="placement" defaultValue={bid?.placement} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm" placeholder="Ex: 1º Lugar, Desclassificado, etc." />
             </div>
             <div>
