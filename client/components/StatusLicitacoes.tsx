@@ -19,10 +19,9 @@ interface LicitacaoDetalhada {
   companyName: string;
   platformLink: string;
   realizationDate: string;
-  // Permite string para que a normalização possa receber dados "sujos"
-  status: StatusLicitacaoDetalhada | string; 
-  // CORREÇÃO DO ERRO DE BUILD: A plataforma principal espera 'placement' como 'string' (obrigatório),
-  // e não 'string | undefined' (opcional).
+  // CORREÇÃO DO ERRO DE BUILD: O tipo real espera 'StatusLicitacaoDetalhada' (o enum).
+  status: StatusLicitacaoDetalhada; 
+  // CORREÇÃO DO ERRO ANTERIOR: O tipo real espera 'string' (obrigatório).
   placement: string; 
   progressForecast?: string;
   lastUpdated: string;
@@ -34,7 +33,7 @@ const api = {
   get: async (url: string): Promise<LicitacaoDetalhada[]> => {
     console.log(`MOCK API GET: ${url}`);
     // Simula dados vindo do banco (um com status não-normalizado para teste)
-    return Promise.resolve([
+    const mockBids = [
       {
         id: 'mock-1',
         bidNumber: '123/2024',
@@ -42,8 +41,8 @@ const api = {
         companyName: 'Tech Solutions',
         platformLink: 'http://example.com',
         realizationDate: new Date().toISOString(),
-        status: 'EM_ANDAMENTO', // <-- DADO NÃO NORMALIZADO PARA TESTE
-        placement: '1º Lugar', // 'placement' agora é string
+        status: 'EM_ANDAMENTO', // <-- DADO NÃO NORMALIZADO (string)
+        placement: '1º Lugar', 
         progressForecast: 'Aguardando homologação',
         lastUpdated: new Date().toISOString(),
       },
@@ -54,12 +53,16 @@ const api = {
         companyName: 'Infra Co.',
         platformLink: 'http://example.com',
         realizationDate: '2025-11-20T10:00:00Z',
-        status: StatusLicitacaoDetalhada.ENCERRADA, // Dado normalizado
-        placement: '3º Lugar', // 'placement' agora é string
+        status: StatusLicitacaoDetalhada.ENCERRADA, // Dado normalizado (enum)
+        placement: '3º Lugar', 
         progressForecast: 'Finalizado',
         lastUpdated: new Date().toISOString(),
       },
-    ]);
+    ];
+    // Usamos 'as any' para enganar o TypeScript, já que 'EM_ANDAMENTO' (string)
+    // não bateria com o tipo 'status: StatusLicitacaoDetalhada' (enum).
+    // Isso simula o seu problema de dados "sujos" vindo da API.
+    return Promise.resolve(mockBids as any as LicitacaoDetalhada[]);
   },
   put: async (url: string, data: any): Promise<any> => {
     console.log(`MOCK API PUT: ${url}`, data);
@@ -199,34 +202,39 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
       // 1. Criamos um novo array onde cada 'bid' passou pela função 'normalizeStatus'
       const normalized = bids.map(bid => ({
         ...bid,
-        // Garantimos que o status seja uma string antes de normalizar
+        // Usamos 'as string' pois sabemos que 'bid.status' PODE SER uma string
+        // em runtime, apesar do tipo 'StatusLicitacaoDetalhada'.
         status: normalizeStatus(bid.status as string) 
       }));
       
       // 2. Atualizamos o nosso estado interno com os dados normalizados
       setNormalizedBids(normalized);
     } 
-    // Se 'bids' for indefinido ou vazio, o estado 'normalizedBids' ficará vazio,
-    // o que é o comportamento esperado.
   }, [bids]); // O 'bids' na dependência garante que isso rode quando os dados carregarem
 
   // Se o componente fosse responsável por carregar os dados, faríamos assim:
-  // useEffect(() => {
-  //   const fetchBids = async () => {
-  //     try {
-  //       const data = await api.get('/api/licitacoes'); // Chama nosso mock
-  //       const normalized = data.map(bid => ({
-  //         ...bid,
-  //         status: normalizeStatus(bid.status as string)
-  //       }));
-  //       setNormalizedBids(normalized); // Atualiza o estado interno
-  //       setBids(normalized); // Atualiza o estado do pai
-  //     } catch (error) {
-  //        console.error('Erro ao buscar licitações:', error);
-  //     }
-  //   };
-  //   fetchBids();
-  // }, [setBids]); // Roda apenas uma vez no carregamento
+  useEffect(() => {
+    // Este efeito só vai rodar se 'bids' não for fornecido (ex: undefined)
+    // Isso é só para o nosso mock funcionar. No seu app real, o useEffect
+    // anterior (que depende de 'bids') é o que vai funcionar.
+    if (!bids) { 
+      const fetchBids = async () => {
+        try {
+          const data = await api.get('/api/licitacoes'); // Chama nosso mock
+          const normalized = data.map(bid => ({
+            ...bid,
+            status: normalizeStatus(bid.status as string)
+          }));
+          setNormalizedBids(normalized); // Atualiza o estado interno
+          // No seu app real, o setBids viria do componente pai
+          // setBids(normalized); 
+        } catch (error) {
+           console.error('Erro ao buscar licitações (mock):', error);
+        }
+      };
+      fetchBids();
+    }
+  }, [bids]); // Roda se 'bids' mudar (ou for indefinido)
 
 
   const showModal = (bid: LicitacaoDetalhada | null) => {
@@ -281,7 +289,6 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
   const handleDelete = async (bidId: string) => {
     // Substituindo window.confirm por um log no console
     console.log(`Tentativa de excluir licitação: ${bidId}. Simule a confirmação.`);
-    // Para testar, você pode descomentar a linha abaixo se estiver em um navegador
     // if (!window.confirm('Tem certeza que deseja excluir esta licitação?')) return;
     
     try {
@@ -348,12 +355,11 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
 
         // Substituindo window.confirm por um log
         console.log(`Restaurar este backup irá substituir TODOS os dados de status atuais (${normalizedBidsFromFile.length} registros encontrados). Simule a confirmação.`);
-        // Para testar, descomente abaixo
         // if (!window.confirm(`Restaurar este backup irá substituir TODOS os dados...`)) return;
 
         await api.post('/api/restore-bids-backup', { licitacoes: normalizedBidsFromFile });
         // Isso atualiza o pai, que vai acionar nosso 'useEffect' e manter tudo sincronizado.
-        setBids(normalizedBidsFromFile);
+        setBids(normalizedBidsFromFile as any); // Usamos 'as any' para o setBids aceitar
         console.log('Backup restaurado com sucesso!');
         
       } catch (error) {
