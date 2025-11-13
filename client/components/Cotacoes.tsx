@@ -450,18 +450,60 @@ const SimulacaoAtualView: React.FC<{
 
       // compat: alguns bundles expõem como default, outros como .jsPDF
       const DocClass: any = (jsPDFModule as any).jsPDF || (jsPDFModule as any).default;
-      const doc = new DocClass();
+      
+      // ================== INÍCIO DAS CORREÇÕES ==================
 
+      // ALTERADO: Definir orientação como 'landscape' (paisagem)
+      const doc = new DocClass({ orientation: 'landscape' });
+
+      doc.setFontSize(14);
       doc.text('Simulação de Cotação', 14, 20);
+
+      // NOVO: Adicionar estilos para a tabela
+      const styles = {
+        font: 'helvetica',
+        fontSize: 8,
+      };
+      const headStyles = {
+        fillColor: [41, 128, 185], // Um tom de azul (rgb)
+        textColor: 255,
+        fontStyle: 'bold',
+      };
+      // NOVO: Definir larguras, alinhamentos e quebra de linha
+      const columnStyles = {
+        0: { cellWidth: 60, overflow: 'linebreak' }, // Produto
+        1: { cellWidth: 40, overflow: 'linebreak' }, // Marca
+        2: { cellWidth: 15, halign: 'center' }, // Un.
+        3: { cellWidth: 20, halign: 'right' }, // Qtd.
+        4: { cellWidth: 30, halign: 'right' }, // V. Unit.
+        5: { cellWidth: 30, halign: 'right' }, // V. Total
+        6: { cellWidth: 'auto', overflow: 'linebreak' }, // Origem (usa o espaço restante)
+      };
+
       (autoTableModule as any).default(doc, {
         head,
         body,
-        startY: 30,
+        startY: 25, // Ajustado o Y inicial
+        styles: styles, // Estilos base
+        headStyles: headStyles, // Estilos do cabeçalho
+        columnStyles: columnStyles, // Estilos das colunas
+        alternateRowStyles: { fillColor: [245, 245, 245] }, // Linhas alternadas
+        margin: { top: 25, left: 14, right: 14 },
       });
+
       const finalY = (doc as any).lastAutoTable?.finalY || 40;
+      
+      // ALTERADO: Melhorar formatação do total
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
       doc.text(`Total: ${formatarMoeda(totalSimulacao)}`, 14, finalY + 10);
+      
+      // ================== FIM DAS CORREÇÕES ==================
+
       doc.save(`simulacao_cotacao_${Date.now()}.pdf`);
+
     } else {
+      // Lógica do Excel (mantida)
       const dataToExport = itensNormalizados.map((item) => ({
         Produto: item.produto,
         Marca: item.marca,
