@@ -19,7 +19,6 @@ export type ViewType = 'dashboard' | 'calendario' | 'status' | 'materiais' | 'em
 const MainPlatform: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('dashboard');
   const [isLoading, setIsLoading] = useState(true);
-
   const [licitacoes, setLicitacoes] = useState<LicitacaoDetalhada[]>([]);
   const [eventos, setEventos] = useState<EventoCalendarioDetalhado[]>([]);
   const [materiaisData, setMateriaisData] = useState<Municipio[]>([]);
@@ -27,7 +26,6 @@ const MainPlatform: React.FC = () => {
   const [epiEstoqueData, setEpiEstoqueData] = useState<EPIEstoqueItem[]>([]);
   const [simulacoesSalvas, setSimulacoesSalvas] = useState<SimulacaoSalva[]>([]);
   const [cotacoesData, setCotacoesData] = useState<Cotacao[]>([]);
-  const [referenciaData, setReferenciaData] = useState<ValorReferencia[]>([]);
   const [simulacoesCotacoesSalvas, setSimulacoesCotacoesSalvas] = useState<SimulacaoCotacaoSalva[]>([]);
   const [calculosSalvos, setCalculosSalvos] = useState<CalculadoraSalva[]>([]);
 
@@ -55,7 +53,6 @@ const MainPlatform: React.FC = () => {
           api.get('/api/epi-estoque'),
           api.get('/api/simulacoes'),
           api.get('/api/cotacoes'),
-          api.get('/api/valores-referencia'),
           api.get('/api/simulacoes-cotacoes'),
           api.get('/api/calculadora'),
         ]);
