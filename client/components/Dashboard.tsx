@@ -1,11 +1,11 @@
-
-
 import React from 'react';
 import { LicitacaoDetalhada, EventoCalendarioDetalhado, StatusLicitacaoDetalhada, Municipio, EPIEntrega } from '../types';
 import { CalendarIcon } from './icons/CalendarIcon';
 import { ClipboardListIcon } from './icons/ClipboardListIcon';
 import { ArchiveIcon } from './icons/ArchiveIcon';
 import { ShieldIcon } from './icons/ShieldIcon';
+// NOVO: Ícone para empenhos pendentes
+import { ExclamationCircleIcon } from './icons/ExclamationCircleIcon';
 
 const StatCard: React.FC<{ title: string; value: string | number; icon: React.FC<{className: string}> }> = ({ title, value, icon: Icon }) => (
     <div className="bg-white p-6 rounded-lg shadow-md flex items-center">
@@ -27,17 +27,33 @@ const Dashboard: React.FC<{ bids: LicitacaoDetalhada[], events: EventoCalendario
   hoje.setHours(0, 0, 0, 0);
   const proximosEventos = events.filter(e => new Date(e.start) >= hoje).length;
 
-  const { itensEmEstoque, totalSaidas } = React.useMemo(() => {
+  // ATUALIZADO: Adicionado 'empenhosPendentes' ao useMemo
+  const { itensEmEstoque, totalSaidas, empenhosPendentes } = React.useMemo(() => {
     let itemCount = 0;
     let outputCount = 0;
+    let pendingCount = 0; // Novo contador
+
     materiaisData.forEach(municipio => {
       municipio.editais.forEach(edital => {
-        itemCount += edital.itens.length;
-        outputCount += edital.saidas.length;
+        // Lógica existente (mantida com optional chaining por segurança)
+        itemCount += edital.itens?.length || 0;
+        outputCount += edital.saidas?.length || 0;
+
+        // NOVO: Lógica para contar empenhos pendentes
+        if (edital.empenhos) {
+          edital.empenhos.forEach(empenho => {
+            // Conta se a notaFiscalPDF NÃO existir
+            if (!empenho.notaFiscalPDF) {
+              pendingCount++;
+            }
+          });
+        }
       });
     });
+
     outputCount += epiData.length;
-    return { itensEmEstoque: itemCount, totalSaidas: outputCount };
+    // Retorna o novo valor
+    return { itensEmEstoque: itemCount, totalSaidas: outputCount, empenhosPendentes: pendingCount };
   }, [materiaisData, epiData]);
 
 
@@ -53,12 +69,15 @@ const Dashboard: React.FC<{ bids: LicitacaoDetalhada[], events: EventoCalendario
   return (
     <div className="space-y-8">
       <h2 className="text-3xl font-bold text-gray-800">Painel de Controle</h2>
-      
+        
+      {/* ATUALIZADO: Adicionado o novo StatCard */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard title="Licitações Ativas" value={licitacoesAtivas} icon={ClipboardListIcon} />
         <StatCard title="Próximos Eventos" value={proximosEventos} icon={CalendarIcon} />
         <StatCard title="Itens em Estoque" value={itensEmEstoque} icon={ArchiveIcon} />
         <StatCard title="Total de Saídas" value={totalSaidas} icon={ShieldIcon} />
+        {/* NOVO CARD ADICIONADO: Ele ficará ao lado do "Total de Saídas" em telas grandes ou quebra para a linha de baixo */}
+        <StatCard title="Empenhos Pendentes" value={empenhosPendentes} icon={ExclamationCircleIcon} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
