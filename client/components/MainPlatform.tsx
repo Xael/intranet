@@ -110,8 +110,6 @@ const MainPlatform: React.FC = () => {
         return <Cotacoes 
           cotacoes={cotacoesData}
           setCotacoes={setCotacoesData}
-          valoresReferencia={referenciaData}
-          setValoresReferencia={setReferenciaData}
           simulacoesSalvas={simulacoesCotacoesSalvas}
           setSimulacoesSalvas={setSimulacoesCotacoesSalvas}
         />;
