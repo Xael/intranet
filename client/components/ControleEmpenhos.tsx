@@ -4,16 +4,17 @@ import { PlusIcon } from './icons/PlusIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { CheckCircleIcon } from './icons/CheckCircleIcon';
 import { ExclamationCircleIcon } from './icons/ExclamationCircleIcon';
-import { EditIcon } from './icons/EditIcon'; 
+import { EditIcon } from './icons/EditIcon'; // NOVO: Import do ícone de edição
 import { api } from '../utils/api';
 
-// --- FUNÇÕES HELPER (Sem alterações) ---
+// --- FUNÇÕES HELPER ---
 const fileToBase64 = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = () => {
         const result = reader.result as string;
+        // Retorna apenas a parte base64 dos dados
         resolve(result.split(',')[1]);
     }
     reader.onerror = (error) => reject(error);
@@ -48,12 +49,10 @@ const formatDate = (dateString?: string) => {
       return dateString;
     }
 };
-// --- FIM FUNÇÕES HELPER ---
 
 
-// --- Componente de Administração (Sem alterações) ---
+// --- Componente de Administração (Mantido) ---
 const AdminPanel: React.FC<{data: Municipio[], setData: React.Dispatch<React.SetStateAction<Municipio[]>>}> = ({ data, setData }) => {
-    // ... (Todo o código do AdminPanel permanece o mesmo)
     const [isAdminOpen, setIsAdminOpen] = useState(false);
     
     const handleAddMunicipio = async () => {
@@ -149,7 +148,6 @@ const AdminPanel: React.FC<{data: Municipio[], setData: React.Dispatch<React.Set
         </div>
     );
 };
-// --- FIM AdminPanel ---
 
 
 // --- COMPONENTE PRINCIPAL ---
@@ -169,7 +167,7 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
   const [filtroMunicipioIdx, setFiltroMunicipioIdx] = useState<string>('');
   const [filtroEditalIdx, setFiltroEditalIdx] = useState<string>('');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [empenhoToEdit, setEmpenhoToEdit] = useState<Empenho | null>(null);
+  const [empenhoToEdit, setEmpenhoToEdit] = useState<Empenho | null>(null); // NOVO: Estado para edição
   
   const municipioAtual = useMemo(() => {
     const idx = parseInt(filtroMunicipioIdx, 10);
@@ -236,7 +234,7 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
     await updateEditalBackend(updatedEdital);
   }, [editalAtual, setData, municipioAtual]);
 
-  // Função para salvar a EDIÇÃO de um empenho
+  // NOVO: Função para salvar a EDIÇÃO de um empenho
   const handleSaveEditedEmpenho = useCallback(async (formData: Empenho) => {
     if (!editalAtual) return;
 
@@ -246,7 +244,7 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
     };
 
     await updateEditalBackend(updatedEdital);
-    setEmpenhoToEdit(null);
+    setEmpenhoToEdit(null); // Fecha o modal de edição
   }, [editalAtual, setData, municipioAtual]);
 
 
@@ -261,10 +259,12 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
     await updateEditalBackend(updatedEdital);
   }, [editalAtual, setData, municipioAtual]);
 
+  // Função para abrir o modal no modo edição
   const handleOpenEditModal = (empenho: Empenho) => {
     setEmpenhoToEdit(empenho);
   };
 
+  // Função para fechar os modais (novo ou edição)
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setEmpenhoToEdit(null);
@@ -322,6 +322,7 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
                                 {empenho.notaFiscalPDF && <button onClick={() => downloadBase64File(empenho.notaFiscalPDF!.dados, empenho.notaFiscalPDF!.nome, empenho.notaFiscalPDF!.tipo)} className="text-green-600 hover:underline text-xs">Nota Fiscal</button>}
                             </td>
                             <td className="px-4 py-2 text-center space-x-2">
+                                {/* NOVO BOTÃO DE EDIÇÃO */}
                                 <button 
                                     onClick={() => handleOpenEditModal(empenho)} 
                                     className="text-blue-500 p-1 hover:text-blue-700"
@@ -329,6 +330,7 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
                                 >
                                     <EditIcon className="w-4 h-4"/>
                                 </button>
+                                {/* BOTÃO DE REMOVER (Mantido) */}
                                 <button onClick={() => handleRemoveEmpenho(empenho.id)} className="text-red-500 p-1 hover:text-red-700" title="Excluir Empenho"><TrashIcon className="w-4 h-4"/></button>
                             </td>
                         </tr>
@@ -377,19 +379,19 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
   );
 };
 
-
-// --- MODAL COMPONENT (Sem alterações) ---
+// --- MODAL COMPONENT (AGORA SUPORTA EDIÇÃO) ---
 interface EmpenhoModalProps {
     onClose: () => void;
-    onSave: (formData: any) => Promise<void>; 
+    onSave: (formData: any) => Promise<void>; // Aceita Omit<Empenho, 'id'> (New) ou Empenho (Edit)
     isNew: boolean;
-    empenho?: Empenho;
+    empenho?: Empenho; // Opcional, usado apenas na edição
 }
 
 const EmpenhoModal: React.FC<EmpenhoModalProps> = ({ onClose, onSave, isNew, empenho }) => {
-    // ... (Todo o código do EmpenhoModal permanece o mesmo)
+    // Inicializa o formulário com dados existentes se for edição, ou com valores padrão se for novo
     const [formData, setFormData] = useState<Partial<Empenho>>(empenho ? {
         ...empenho,
+        // Garante que a dataPedido esteja no formato YYYY-MM-DD
         dataPedido: empenho.dataPedido ? empenho.dataPedido.split('T')[0] : '', 
         dataNotaFiscal: empenho.dataNotaFiscal ? empenho.dataNotaFiscal.split('T')[0] : ''
     } : { dataPedido: new Date().toISOString().split('T')[0] });
@@ -418,15 +420,17 @@ const EmpenhoModal: React.FC<EmpenhoModalProps> = ({ onClose, onSave, isNew, emp
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         
+        // Validação básica
         if(!formData.dataPedido || !formData.numeroPedido || !formData.numeroProcesso) {
             alert("Preencha todos os campos obrigatórios do pedido.");
             return;
         }
 
-        let empenhoPDF: ArquivoAnexado | undefined = empenho?.empenhoPDF; 
-        let notaFiscalPDF: ArquivoAnexado | undefined = empenho?.notaFiscalPDF;
+        let empenhoPDF: ArquivoAnexado | undefined = empenho?.empenhoPDF; // Mantém o PDF existente na edição
+        let notaFiscalPDF: ArquivoAnexado | undefined = empenho?.notaFiscalPDF; // Mantém o NF existente na edição
         
         try {
+            // Processa novos arquivos
             if (files.empenho) {
                 const dados = await fileToBase64(files.empenho);
                 empenhoPDF = { nome: files.empenho.name, tipo: files.empenho.type, dados };
@@ -440,8 +444,9 @@ const EmpenhoModal: React.FC<EmpenhoModalProps> = ({ onClose, onSave, isNew, emp
             return;
         }
 
+        // Cria o objeto final de dados, incluindo o ID se for edição
         const finalData: Empenho | Omit<Empenho, 'id'> = {
-            ...(isNew ? {} : { id: empenho!.id }),
+            ...(isNew ? {} : { id: empenho!.id }), // Adiciona ID se não for novo
             dataPedido: formData.dataPedido!,
             numeroPedido: formData.numeroPedido!,
             numeroProcesso: formData.numeroProcesso!,
@@ -449,7 +454,7 @@ const EmpenhoModal: React.FC<EmpenhoModalProps> = ({ onClose, onSave, isNew, emp
             notaFiscalPDF,
             dataNotaFiscal: formData.dataNotaFiscal,
             valorNotaFiscal: typeof formData.valorNotaFiscal === 'number' ? formData.valorNotaFiscal : undefined,
-        } as Empenho; 
+        } as Empenho; // O cast garante que TypeScript aceite o retorno
 
         await onSave(finalData);
         onClose();
@@ -498,7 +503,6 @@ const EmpenhoModal: React.FC<EmpenhoModalProps> = ({ onClose, onSave, isNew, emp
         </div>
     );
 };
-// --- FIM MODAL ---
 
 
 export default ControleEmpenhos;
