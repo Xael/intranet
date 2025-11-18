@@ -1,5 +1,4 @@
 
-
 export enum StatusLicitacao {
   EM_ANALISE = "Em Análise",
   AGUARDANDO_DOCUMENTOS = "Aguardando Documentos",
@@ -66,6 +65,9 @@ export interface Empenho {
   notaFiscalPDF?: ArquivoAnexado;
   dataNotaFiscal?: string; // YYYY-MM-DD
   valorNotaFiscal?: number;
+  // Novos campos para controle de pagamento
+  statusPagamento?: 'PAGO' | 'PENDENTE';
+  dataPagamento?: string; // YYYY-MM-DD
 }
 
 
