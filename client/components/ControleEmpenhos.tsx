@@ -1,12 +1,10 @@
-
-
 import React, { useState, useMemo, useCallback } from 'react';
 import { Municipio, Edital, Empenho, ArquivoAnexado } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { CheckCircleIcon } from './icons/CheckCircleIcon';
 import { ExclamationCircleIcon } from './icons/ExclamationCircleIcon';
-import { EditIcon } from './icons/EditIcon'; // NOVO: Import do ícone de edição
+import { EditIcon } from './icons/EditIcon';
 import { api } from '../utils/api';
 
 declare var XLSX: any;
@@ -18,7 +16,6 @@ const fileToBase64 = (file: File): Promise<string> =>
     reader.readAsDataURL(file);
     reader.onload = () => {
         const result = reader.result as string;
-        // Retorna apenas a parte base64 dos dados
         resolve(result.split(',')[1]);
     }
     reader.onerror = (error) => reject(error);
@@ -45,9 +42,7 @@ const formatarMoeda = (valor?: number) => {
 const formatDate = (dateString?: string) => {
     if (!dateString) return 'N/A';
     try {
-        // Garante que a data está no formato YYYY-MM-DD para evitar problemas de fuso horário na exibição
         const cleanDateString = dateString.split('T')[0];
-        // Adiciona timeZone: 'UTC' para tratar a data como ela é, sem converter fuso
         return new Date(cleanDateString).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
     } catch {
       return dateString;
@@ -55,7 +50,7 @@ const formatDate = (dateString?: string) => {
 };
 
 
-// --- Componente de Administração (Mantido) ---
+// --- Componente de Administração ---
 const AdminPanel: React.FC<{data: Municipio[], setData: React.Dispatch<React.SetStateAction<Municipio[]>>}> = ({ data, setData }) => {
     const [isAdminOpen, setIsAdminOpen] = useState(false);
     
@@ -160,7 +155,6 @@ interface ControleEmpenhosProps {
   setData: React.Dispatch<React.SetStateAction<Municipio[]>>;
 }
 
-// Tipo para o item da lista de pendentes
 type PendingEmpenho = {
   municipioNome: string;
   editalNome: string;
@@ -171,7 +165,7 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
   const [filtroMunicipioIdx, setFiltroMunicipioIdx] = useState<string>('');
   const [filtroEditalIdx, setFiltroEditalIdx] = useState<string>('');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [empenhoToEdit, setEmpenhoToEdit] = useState<Empenho | null>(null); // NOVO: Estado para edição
+  const [empenhoToEdit, setEmpenhoToEdit] = useState<Empenho | null>(null);
   
   const municipioAtual = useMemo(() => {
     const idx = parseInt(filtroMunicipioIdx, 10);
@@ -184,14 +178,12 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
     return !isNaN(munIdx) && !isNaN(edIdx) && data[munIdx]?.editais[edIdx] ? data[munIdx].editais[edIdx] : null;
   }, [data, filtroMunicipioIdx, filtroEditalIdx]);
   
-  // NOVO: Memo para calcular TODOS os empenhos pendentes
   const allPendingEmpenhos = useMemo((): PendingEmpenho[] => {
     const pending: PendingEmpenho[] = [];
     data.forEach(municipio => {
       municipio.editais.forEach(edital => {
         if (edital.empenhos) {
           edital.empenhos.forEach(empenho => {
-            // Se não tiver notaFiscalPDF, é considerado pendente
             if (!empenho.notaFiscalPDF) {
               pending.push({
                 municipioNome: municipio.nome,
@@ -203,14 +195,13 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
         }
       });
     });
-    // Ordena por data do pedido, do mais antigo para o mais novo
     return pending.sort((a, b) => new Date(a.empenho.dataPedido).getTime() - new Date(b.empenho.dataPedido).getTime());
-  }, [data]); // Depende da lista 'data' completa
+  }, [data]);
 
 
   const updateEditalBackend = async (edital: Edital) => {
       try {
-          const updatedEdital = await api.put(`/api/editais/${edital.id}`, edital);
+          const updatedEdital = await api.put(`/api/editais/${edital.id}/empenhos`, { empenhos: edital.empenhos });
           setData(prevData => prevData.map(mun => {
               if (mun.id === municipioAtual?.id) {
                   return {
@@ -225,7 +216,6 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
       }
   };
   
-  // Função para salvar um NOVO empenho
   const handleSaveNewEmpenho = useCallback(async (formData: Omit<Empenho, 'id'>) => {
     if (!editalAtual) return;
 
@@ -238,7 +228,6 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
     await updateEditalBackend(updatedEdital);
   }, [editalAtual, setData, municipioAtual]);
 
-  // NOVO: Função para salvar a EDIÇÃO de um empenho
   const handleSaveEditedEmpenho = useCallback(async (formData: Empenho) => {
     if (!editalAtual) return;
 
@@ -248,7 +237,7 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
     };
 
     await updateEditalBackend(updatedEdital);
-    setEmpenhoToEdit(null); // Fecha o modal de edição
+    setEmpenhoToEdit(null);
   }, [editalAtual, setData, municipioAtual]);
 
 
@@ -263,12 +252,10 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
     await updateEditalBackend(updatedEdital);
   }, [editalAtual, setData, municipioAtual]);
 
-  // Função para abrir o modal no modo edição
   const handleOpenEditModal = (empenho: Empenho) => {
     setEmpenhoToEdit(empenho);
   };
 
-  // Função para fechar os modais (novo ou edição)
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setEmpenhoToEdit(null);
@@ -297,13 +284,11 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
                           'Status NF': emp.notaFiscalPDF ? 'Entregue' : 'Pendente',
                           'Status Pagamento': emp.statusPagamento || 'PENDENTE',
                           'Data Pagamento': formatDate(emp.dataPagamento),
-                          // NOVO: Inclui nomes dos arquivos para auditoria
                           'Arquivo Empenho': emp.empenhoPDF ? emp.empenhoPDF.nome : 'N/A',
                           'Arquivo NF': emp.notaFiscalPDF ? emp.notaFiscalPDF.nome : 'N/A'
                       });
                   });
               } else {
-                   // Inclui editais sem empenhos para constar no relatório
                    exportData.push({
                       'Município': municipio.nome,
                       'Edital': edital.nome,
@@ -328,7 +313,6 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
             </button>
         </div>
       
-      {/* Filtros */}
       <div className="bg-white p-4 rounded-lg shadow-md space-y-4">
         <h2 className="text-xl font-semibold">Filtro de Visualização</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -337,7 +321,6 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
         </div>
       </div>
       
-      {/* Tabela de Empenhos */}
       <div className="bg-white rounded-lg shadow-md">
         <div className="flex justify-between items-center p-4 border-b">
             <h2 className="text-xl font-semibold">Registros de Empenho</h2>
@@ -384,7 +367,6 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
                                 {empenho.notaFiscalPDF && <button onClick={() => downloadBase64File(empenho.notaFiscalPDF!.dados, empenho.notaFiscalPDF!.nome, empenho.notaFiscalPDF!.tipo)} className="text-green-600 hover:underline text-xs">Nota Fiscal</button>}
                             </td>
                             <td className="px-4 py-2 text-center space-x-2">
-                                {/* NOVO BOTÃO DE EDIÇÃO */}
                                 <button 
                                     onClick={() => handleOpenEditModal(empenho)} 
                                     className="text-blue-500 p-1 hover:text-blue-700"
@@ -392,7 +374,6 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
                                 >
                                     <EditIcon className="w-4 h-4"/>
                                 </button>
-                                {/* BOTÃO DE REMOVER (Mantido) */}
                                 <button onClick={() => handleRemoveEmpenho(empenho.id)} className="text-red-500 p-1 hover:text-red-700" title="Excluir Empenho"><TrashIcon className="w-4 h-4"/></button>
                             </td>
                         </tr>
@@ -403,7 +384,6 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
         </div>
       </div>
 
-      {/* NOVO: Bloco de Resumo de Empenhos Pendentes */}
       <div className="bg-white p-6 rounded-lg shadow-md mt-8">
         <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
           <ExclamationCircleIcon className="w-6 h-6 text-yellow-500 mr-2" />
@@ -430,9 +410,7 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
           )}
         </div>
       </div>
-      {/* FIM DO NOVO BLOCO */}
 
-      {/* Renderiza o modal (Novo ou Edição) */}
       {isModalOpen && <EmpenhoModal isNew onSave={handleSaveNewEmpenho} onClose={handleCloseModal} />}
       {empenhoToEdit && <EmpenhoModal isNew={false} empenho={empenhoToEdit} onSave={handleSaveEditedEmpenho} onClose={handleCloseModal} />}
       
@@ -441,22 +419,20 @@ const ControleEmpenhos: React.FC<ControleEmpenhosProps> = ({ data, setData }) =>
   );
 };
 
-// --- MODAL COMPONENT (AGORA SUPORTA EDIÇÃO) ---
 interface EmpenhoModalProps {
     onClose: () => void;
-    onSave: (formData: any) => Promise<void>; // Aceita Omit<Empenho, 'id'> (New) ou Empenho (Edit)
+    onSave: (formData: any) => Promise<void>;
     isNew: boolean;
-    empenho?: Empenho; // Opcional, usado apenas na edição
+    empenho?: Empenho;
 }
 
 const EmpenhoModal: React.FC<EmpenhoModalProps> = ({ onClose, onSave, isNew, empenho }) => {
-    // Inicializa o formulário com dados existentes se for edição, ou com valores padrão se for novo
     const [formData, setFormData] = useState<Partial<Empenho>>(empenho ? {
         ...empenho,
-        // Garante que a dataPedido esteja no formato YYYY-MM-DD
         dataPedido: empenho.dataPedido ? empenho.dataPedido.split('T')[0] : '', 
         dataNotaFiscal: empenho.dataNotaFiscal ? empenho.dataNotaFiscal.split('T')[0] : '',
-        dataPagamento: empenho.dataPagamento ? empenho.dataPagamento.split('T')[0] : ''
+        dataPagamento: empenho.dataPagamento ? empenho.dataPagamento.split('T')[0] : '',
+        statusPagamento: empenho.statusPagamento || 'PENDENTE' // Default para registros antigos
     } : { 
         dataPedido: new Date().toISOString().split('T')[0],
         statusPagamento: 'PENDENTE'
@@ -473,30 +449,27 @@ const EmpenhoModal: React.FC<EmpenhoModalProps> = ({ onClose, onSave, isNew, emp
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value, type } = e.target;
-        
         let formattedValue: string | number = value;
         if (type === 'number') {
             formattedValue = parseFloat(value);
-            if (isNaN(formattedValue)) formattedValue = ''; // Lida com input vazio
+            if (isNaN(formattedValue)) formattedValue = ''; 
         }
-
-        setFormData(prev => ({ ...prev, [name]: formattedValue }));
+        // Cast para qualquer tipo para evitar erro no 'statusPagamento' que é um enum
+        setFormData(prev => ({ ...prev, [name]: formattedValue as any }));
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         
-        // Validação básica
         if(!formData.dataPedido || !formData.numeroPedido || !formData.numeroProcesso) {
             alert("Preencha todos os campos obrigatórios do pedido.");
             return;
         }
 
-        let empenhoPDF: ArquivoAnexado | undefined = empenho?.empenhoPDF; // Mantém o PDF existente na edição
-        let notaFiscalPDF: ArquivoAnexado | undefined = empenho?.notaFiscalPDF; // Mantém o NF existente na edição
+        let empenhoPDF: ArquivoAnexado | undefined = empenho?.empenhoPDF;
+        let notaFiscalPDF: ArquivoAnexado | undefined = empenho?.notaFiscalPDF;
         
         try {
-            // Processa novos arquivos
             if (files.empenho) {
                 const dados = await fileToBase64(files.empenho);
                 empenhoPDF = { nome: files.empenho.name, tipo: files.empenho.type, dados };
@@ -510,9 +483,8 @@ const EmpenhoModal: React.FC<EmpenhoModalProps> = ({ onClose, onSave, isNew, emp
             return;
         }
 
-        // Cria o objeto final de dados, incluindo o ID se for edição
         const finalData: Empenho | Omit<Empenho, 'id'> = {
-            ...(isNew ? {} : { id: empenho!.id }), // Adiciona ID se não for novo
+            ...(isNew ? {} : { id: empenho!.id }),
             dataPedido: formData.dataPedido!,
             numeroPedido: formData.numeroPedido!,
             numeroProcesso: formData.numeroProcesso!,
@@ -520,9 +492,9 @@ const EmpenhoModal: React.FC<EmpenhoModalProps> = ({ onClose, onSave, isNew, emp
             notaFiscalPDF,
             dataNotaFiscal: formData.dataNotaFiscal,
             valorNotaFiscal: typeof formData.valorNotaFiscal === 'number' ? formData.valorNotaFiscal : undefined,
-            statusPagamento: formData.statusPagamento,
+            statusPagamento: (formData.statusPagamento as 'PAGO' | 'PENDENTE') || 'PENDENTE',
             dataPagamento: formData.statusPagamento === 'PAGO' ? formData.dataPagamento : undefined
-        } as Empenho; // O cast garante que TypeScript aceite o retorno
+        } as Empenho;
 
         await onSave(finalData);
         onClose();
@@ -539,63 +511,54 @@ const EmpenhoModal: React.FC<EmpenhoModalProps> = ({ onClose, onSave, isNew, emp
                         <fieldset className="border p-4 rounded-md">
                             <legend className="px-2 font-semibold text-sm">Dados do Pedido</legend>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div><label className="text-sm">Data</label><input type="date" name="dataPedido" value={formData.dataPedido || ''} onChange={handleChange} required className="w-full mt-1 border-gray-300 rounded-md"/></div>
-                                <div><label className="text-sm">N° Pedido</label><input type="text" name="numeroPedido" value={formData.numeroPedido || ''} onChange={handleChange} required className="w-full mt-1 border-gray-300 rounded-md"/></div>
-                                <div><label className="text-sm">N° Processo</label><input type="text" name="numeroProcesso" value={formData.numeroProcesso || ''} onChange={handleChange} required className="w-full mt-1 border-gray-300 rounded-md"/></div>
+                                <div><label className="text-sm">Data</label><input type="date" name="dataPedido" value={formData.dataPedido || ''} onChange={handleChange} required className="w-full mt-1 border-gray-300 rounded-md" /></div>
+                                <div><label className="text-sm">N° Pedido</label><input type="text" name="numeroPedido" value={formData.numeroPedido || ''} onChange={handleChange} required className="w-full mt-1 border-gray-300 rounded-md" /></div>
+                                <div><label className="text-sm">N° Processo</label><input type="text" name="numeroProcesso" value={formData.numeroProcesso || ''} onChange={handleChange} required className="w-full mt-1 border-gray-300 rounded-md" /></div>
                             </div>
                             <div className="mt-4">
-                                <label className="text-sm">Anexar Empenho (PDF)</label>
-                                <input type="file" name="empenho" onChange={handleFileChange} accept=".pdf" className="w-full mt-1 text-sm"/>
-                                {!isNew && empenho?.empenhoPDF && <span className="text-xs text-green-600">Arquivo atual: **{empenho.empenhoPDF.nome}** (Anexar novo irá substituir)</span>}
+                                <label className="block text-sm font-medium text-gray-700">Arquivo do Empenho (PDF)</label>
+                                <input type="file" name="empenho" accept="application/pdf" onChange={handleFileChange} className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+                                {empenho?.empenhoPDF && <p className="text-xs text-green-600 mt-1">Arquivo atual: {empenho.empenhoPDF.nome}</p>}
                             </div>
                         </fieldset>
+
                         <fieldset className="border p-4 rounded-md">
-                             <legend className="px-2 font-semibold text-sm">Dados da Nota Fiscal</legend>
-                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div><label className="text-sm">Data NF</label><input type="date" name="dataNotaFiscal" value={formData.dataNotaFiscal || ''} onChange={handleChange} className="w-full mt-1 border-gray-300 rounded-md"/></div>
-                                <div><label className="text-sm">Valor NF</label><input type="number" step="0.01" name="valorNotaFiscal" value={formData.valorNotaFiscal || ''} onChange={handleChange} placeholder="0.00" className="w-full mt-1 border-gray-300 rounded-md"/></div>
-                             </div>
-                             <div className="mt-4">
-                                 <label className="text-sm">Anexar Nota Fiscal (PDF)</label>
-                                 <input type="file" name="nf" onChange={handleFileChange} accept=".pdf" className="w-full mt-1 text-sm"/>
-                                 {!isNew && empenho?.notaFiscalPDF && <span className="text-xs text-green-600">Arquivo atual: **{empenho.notaFiscalPDF.nome}** (Anexar novo irá substituir)</span>}
-                             </div>
+                            <legend className="px-2 font-semibold text-sm">Dados da Nota Fiscal</legend>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div><label className="text-sm">Data da NF</label><input type="date" name="dataNotaFiscal" value={formData.dataNotaFiscal || ''} onChange={handleChange} className="w-full mt-1 border-gray-300 rounded-md" /></div>
+                                <div><label className="text-sm">Valor da NF (R$)</label><input type="number" step="0.01" name="valorNotaFiscal" value={formData.valorNotaFiscal || ''} onChange={handleChange} className="w-full mt-1 border-gray-300 rounded-md" /></div>
+                            </div>
+                            <div className="mt-4">
+                                <label className="block text-sm font-medium text-gray-700">Arquivo da Nota Fiscal (PDF)</label>
+                                <input type="file" name="nf" accept="application/pdf" onChange={handleFileChange} className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+                                {empenho?.notaFiscalPDF && <p className="text-xs text-green-600 mt-1">Arquivo atual: {empenho.notaFiscalPDF.nome}</p>}
+                            </div>
                         </fieldset>
-                        
-                        {/* NOVO: Controle de Pagamento */}
-                        <fieldset className="border p-4 rounded-md bg-gray-50">
-                            <legend className="px-2 font-semibold text-sm text-blue-700">Baixa de Pagamento</legend>
+
+                        <fieldset className="border p-4 rounded-md">
+                            <legend className="px-2 font-semibold text-sm">Pagamento</legend>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <label className="text-sm">Status</label>
-                                    <select name="statusPagamento" value={formData.statusPagamento || 'PENDENTE'} onChange={handleChange} className="w-full mt-1 border-gray-300 rounded-md">
+                                    <select name="statusPagamento" value={formData.statusPagamento} onChange={handleChange} className="w-full mt-1 border-gray-300 rounded-md">
                                         <option value="PENDENTE">Pendente</option>
                                         <option value="PAGO">Pago</option>
                                     </select>
                                 </div>
-                                <div>
-                                    <label className="text-sm">Data do Pagamento</label>
-                                    <input 
-                                        type="date" 
-                                        name="dataPagamento" 
-                                        value={formData.dataPagamento || ''} 
-                                        onChange={handleChange} 
-                                        disabled={formData.statusPagamento !== 'PAGO'}
-                                        className="w-full mt-1 border-gray-300 rounded-md disabled:bg-gray-200 disabled:text-gray-400"
-                                    />
-                                </div>
+                                {formData.statusPagamento === 'PAGO' && (
+                                    <div><label className="text-sm">Data do Pagamento</label><input type="date" name="dataPagamento" value={formData.dataPagamento || ''} onChange={handleChange} required className="w-full mt-1 border-gray-300 rounded-md" /></div>
+                                )}
                             </div>
                         </fieldset>
                     </div>
-                    <div className="p-6 bg-gray-50 flex justify-end gap-3">
-                        <button type="button" onClick={onClose} className="px-4 py-2 bg-white border rounded-md">Cancelar</button>
-                        <button type="submit" className="px-4 py-2 bg-primary text-white rounded-md">{isNew ? "Salvar" : "Salvar Alterações"}</button>
+                    <div className="p-6 bg-gray-50 flex justify-end gap-3 border-t">
+                        <button type="button" onClick={onClose} className="px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50">Cancelar</button>
+                        <button type="submit" className="px-4 py-2 bg-primary border border-transparent rounded-md shadow-sm text-sm font-medium text-white hover:bg-secondary">Salvar</button>
                     </div>
                 </form>
             </div>
         </div>
     );
 };
-
 
 export default ControleEmpenhos;
