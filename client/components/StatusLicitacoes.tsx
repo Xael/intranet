@@ -1,86 +1,7 @@
+
 import React, { useState, FormEvent, useRef, useEffect } from 'react';
-
-// --- INÍCIO DA CORREÇÃO DE ERROS ---
-// As importações '../types' e '../utils/api' não existem neste ambiente.
-// Criei simulações (mocks) deles abaixo para que o código possa funcionar.
-
-// Mock para '../types'
-enum StatusLicitacaoDetalhada {
-  EM_ANDAMENTO = "Em Andamento",
-  VENCIDA = "Vencida",
-  ENCERRADA = "Encerrada",
-  DESCLASSIFICADA = "Desclassificada",
-}
-
-interface LicitacaoDetalhada {
-  id: string;
-  bidNumber: string;
-  city: string;
-  companyName: string;
-  platformLink: string;
-  realizationDate: string;
-  // O tipo real espera 'StatusLicitacaoDetalhada' (o enum).
-  status: StatusLicitacaoDetalhada; 
-  // O tipo real espera 'string' (obrigatório).
-  placement: string; 
-  // CORREÇÃO DO ERRO DE BUILD: O tipo real espera 'string' (obrigatório).
-  progressForecast: string; 
-  lastUpdated: string;
-}
-
-// Mock para '../utils/api'
-// Simula um objeto de API para evitar erros
-const api = {
-  get: async (url: string): Promise<LicitacaoDetalhada[]> => {
-    console.log(`MOCK API GET: ${url}`);
-    // Simula dados vindo do banco (um com status não-normalizado para teste)
-    const mockBids = [
-      {
-        id: 'mock-1',
-        bidNumber: '123/2024',
-        city: 'São Paulo (Mock)',
-        companyName: 'Tech Solutions',
-        platformLink: 'http://example.com',
-        realizationDate: new Date().toISOString(),
-        status: 'EM_ANDAMENTO', // <-- DADO NÃO NORMALIZADO (string)
-        placement: '1º Lugar', 
-        progressForecast: 'Aguardando homologação', // Agora é string
-        lastUpdated: new Date().toISOString(),
-      },
-      {
-        id: 'mock-2',
-        bidNumber: '456/2024',
-        city: 'Rio de Janeiro (Mock)',
-        companyName: 'Infra Co.',
-        platformLink: 'http://example.com',
-        realizationDate: '2025-11-20T10:00:00Z',
-        status: StatusLicitacaoDetalhada.ENCERRADA, // Dado normalizado (enum)
-        placement: '3º Lugar', 
-        progressForecast: 'Finalizado', // Agora é string
-        lastUpdated: new Date().toISOString(),
-      },
-    ];
-    // Usamos 'as any' para enganar o TypeScript, já que 'EM_ANDAMENTO' (string)
-    // não bateria com o tipo 'status: StatusLicitacaoDetalhada' (enum).
-    // Isso simula o seu problema de dados "sujos" vindo da API.
-    return Promise.resolve(mockBids as any as LicitacaoDetalhada[]);
-  },
-  put: async (url: string, data: any): Promise<any> => {
-    console.log(`MOCK API PUT: ${url}`, data);
-    return Promise.resolve(data); // Retorna o dado atualizado
-  },
-  post: async (url: string, data: any): Promise<any> => {
-    console.log(`MOCK API POST: ${url}`, data);
-    // Retorna o novo dado com um ID mock
-    return Promise.resolve({ ...data, id: `mock-${Math.random().toString(36).substring(7)}` });
-  },
-  delete: async (url: string): Promise<void> => {
-    console.log(`MOCK API DELETE: ${url}`);
-    return Promise.resolve();
-  },
-};
-// --- FIM DA CORREÇÃO DE ERROS ---
-
+import { LicitacaoDetalhada, StatusLicitacaoDetalhada } from '../types';
+import { api } from '../utils/api';
 
 // 1) Helper de estilos por status
 const getStatusStyles = (status: StatusLicitacaoDetalhada | string) => {
@@ -114,8 +35,6 @@ const getStatusStyles = (status: StatusLicitacaoDetalhada | string) => {
         background: 'bg-gray-100', // Tom pastel acinzentado
       };
     default:
-      // Isso agora vai pegar 'EM_ANDAMENTO' ou qualquer outro status não normalizado
-      console.warn(`Status desconhecido recebido: '${status}', usando estilo padrão.`);
       return {
         border: 'border-slate-200',
         pill: 'bg-slate-200 text-slate-700',
@@ -158,9 +77,8 @@ const formatDateTime = (isoString: string): string => {
   return date.toLocaleString('pt-BR');
 };
 
-// Esta é a função-chave para corrigir o problema das cores
+// Função para garantir que o status venha correto do banco ou do input
 const normalizeStatus = (status: string): StatusLicitacaoDetalhada => {
-  // Adiciona uma verificação extra para caso o status já venha nulo ou indefinido
   if (!status) return StatusLicitacaoDetalhada.ENCERRADA;
 
   const value = status.trim();
@@ -171,14 +89,13 @@ const normalizeStatus = (status: string): StatusLicitacaoDetalhada => {
     }
   }
 
-  // Tenta normalizar baseado no texto (ex: 'EM_ANDAMENTO' ou 'encerrada')
+  // Tenta normalizar baseado no texto
   const lowerStatus = value.toLowerCase();
   if (lowerStatus.includes('andamento')) return StatusLicitacaoDetalhada.EM_ANDAMENTO;
   if (lowerStatus.includes('vencida')) return StatusLicitacaoDetalhada.VENCIDA;
   if (lowerStatus.includes('encerrada')) return StatusLicitacaoDetalhada.ENCERRADA;
   if (lowerStatus.includes('desclassificada')) return StatusLicitacaoDetalhada.DESCLASSIFICADA;
   
-  // Retorna um padrão se não conseguir identificar
   return StatusLicitacaoDetalhada.ENCERRADA;
 };
 
@@ -192,56 +109,20 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
   const [editingBid, setEditingBid] = useState<LicitacaoDetalhada | null>(null);
   const restoreInputRef = useRef<HTMLInputElement>(null);
 
-  // Criamos um estado interno para guardar os dados normalizados
+  // Estado interno para guardar os dados normalizados para exibição
   const [normalizedBids, setNormalizedBids] = useState<LicitacaoDetalhada[]>([]);
 
-  // Este é o "coração" da correção.
-  // Este efeito vai rodar sempre que a prop 'bids' (vinda do componente pai) mudar.
   useEffect(() => {
-    // Verificamos se 'bids' realmente existe
     if (bids) {
-      // 1. Criamos um novo array onde cada 'bid' passou pela função 'normalizeStatus'
       const normalized = bids.map(bid => ({
         ...bid,
-        // Usamos 'as string' pois sabemos que 'bid.status' PODE SER uma string
-        // em runtime, apesar do tipo 'StatusLicitacaoDetalhada'.
         status: normalizeStatus(bid.status as string),
-        // Garantimos que os campos obrigatórios sejam strings
         placement: bid.placement || "",
         progressForecast: bid.progressForecast || ""
       }));
-      
-      // 2. Atualizamos o nosso estado interno com os dados normalizados
       setNormalizedBids(normalized);
     } 
-  }, [bids]); // O 'bids' na dependência garante que isso rode quando os dados carregarem
-
-  // Se o componente fosse responsável por carregar os dados, faríamos assim:
-  useEffect(() => {
-    // Este efeito só vai rodar se 'bids' não for fornecido (ex: undefined)
-    // Isso é só para o nosso mock funcionar. No seu app real, o useEffect
-    // anterior (que depende de 'bids') é o que vai funcionar.
-    if (!bids) { 
-      const fetchBids = async () => {
-        try {
-          const data = await api.get('/api/licitacoes'); // Chama nosso mock
-          const normalized = data.map(bid => ({
-            ...bid,
-            status: normalizeStatus(bid.status as string),
-            placement: bid.placement || "",
-            progressForecast: bid.progressForecast || ""
-          }));
-          setNormalizedBids(normalized); // Atualiza o estado interno
-          // No seu app real, o setBids viria do componente pai
-          // setBids(normalized); 
-        } catch (error) {
-           console.error('Erro ao buscar licitações (mock):', error);
-        }
-      };
-      fetchBids();
-    }
-  }, [bids]); // Roda se 'bids' mudar (ou for indefinido)
-
+  }, [bids]);
 
   const showModal = (bid: LicitacaoDetalhada | null) => {
     setEditingBid(bid);
@@ -256,62 +137,65 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
   const handleFormSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    // Remove 'id' e 'lastUpdated' dos dados do formulário
+    // Remove 'id' e 'lastUpdated' dos dados do formulário, pois serão gerados/atualizados pelo back ou aqui
     const { id, lastUpdated, ...bidData } = Object.fromEntries(formData.entries()) as any as LicitacaoDetalhada;
 
     const now = new Date().toISOString();
+    // Normaliza o status antes de enviar
+    const statusNormalizado = normalizeStatus(bidData.status as string);
 
     try {
       if (editingBid) {
-        // Garante que 'placement' e 'progressForecast' sejam strings, mesmo que vazias
         const updatedBid = { 
           ...editingBid, 
           ...bidData, 
           lastUpdated: now, 
-          status: normalizeStatus(bidData.status as string),
+          status: statusNormalizado,
           placement: bidData.placement || "", 
           progressForecast: bidData.progressForecast || ""
         };
+        
+        // CHAMADA REAL PARA A API
         const savedBid = await api.put(`/api/licitacoes/${editingBid.id}`, updatedBid);
         
-        // Atualiza o estado PAI (que aciona o useEffect e normaliza de novo)
         setBids(currentBids => currentBids.map(b => (b.id === editingBid.id ? savedBid : b)));
       } else {
-        const newBid: Omit<LicitacaoDetalhada, 'id'> = {
-          ...(bidData as Omit<LicitacaoDetalhada, 'id' | 'lastUpdated'>), // Cast para o tipo base
+        const newBidPayload = {
+          ...bidData,
           lastUpdated: now,
-          status: normalizeStatus(bidData.status as string),
+          status: statusNormalizado,
           placement: bidData.placement || "", 
           progressForecast: bidData.progressForecast || ""
         };
-        const savedBid = await api.post('/api/licitacoes', newBid);
-        // Atualiza o estado PAI
+
+        // CHAMADA REAL PARA A API
+        const savedBid = await api.post('/api/licitacoes', newBidPayload);
+        
         setBids(currentBids => [...currentBids, savedBid]);
       }
       closeModal();
     } catch (error) {
       console.error(`Falha ao salvar licitação: ${(error as Error).message}`);
+      alert(`Erro ao salvar: ${(error as Error).message}`);
     }
   };
 
   const handleDelete = async (bidId: string) => {
-    // Substituindo window.confirm por um log no console
-    console.log(`Tentativa de excluir licitação: ${bidId}. Simule a confirmação.`);
-    // if (!window.confirm('Tem certeza que deseja excluir esta licitação?')) return;
+    if (!window.confirm('Tem certeza que deseja excluir esta licitação?')) return;
     
     try {
+      // CHAMADA REAL PARA A API
       await api.delete(`/api/licitacoes/${bidId}`);
-      // Atualiza o estado PAI
       setBids(currentBids => currentBids.filter(b => b.id !== bidId));
     } catch (error) {
       console.error(`Falha ao excluir licitação: ${(error as Error).message}`);
+      alert(`Erro ao excluir: ${(error as Error).message}`);
     }
   };
 
   const handleBackup = () => {
-    // Usamos 'normalizedBids' para garantir que o backup tenha os dados corretos
     if (normalizedBids.length === 0) {
-      console.warn('Não há dados para fazer backup.');
+      alert('Não há dados para fazer backup.');
       return;
     }
     
@@ -337,7 +221,7 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
     if (!file) return;
 
     if (file.type !== 'application/json') {
-      console.error('Por favor, selecione um arquivo de backup .json válido.');
+      alert('Por favor, selecione um arquivo de backup .json válido.');
       return;
     }
 
@@ -351,28 +235,27 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
         const licitacoesToRestore = data.bids && Array.isArray(data.bids) ? data.bids : Array.isArray(data) ? data : null;
 
         if (!licitacoesToRestore) {
-          throw new Error('Formato do arquivo de backup inválido. Esperado um array de licitações ou um objeto com a chave "bids".');
+          throw new Error('Formato inválido. Esperado array de licitações.');
         }
 
-        // A função de restore já normalizava, o que é ótimo!
         const normalizedBidsFromFile = licitacoesToRestore.map((bid: any) => ({
           ...bid,
           status: normalizeStatus(bid.status),
-          placement: bid.placement || "", // Garante que 'placement' seja string
-          progressForecast: bid.progressForecast || "" // Garante que 'progressForecast' seja string
+          placement: bid.placement || "",
+          progressForecast: bid.progressForecast || ""
         }));
 
-        // Substituindo window.confirm por um log
-        console.log(`Restaurar este backup irá substituir TODOS os dados de status atuais (${normalizedBidsFromFile.length} registros encontrados). Simule a confirmação.`);
-        // if (!window.confirm(`Restaurar este backup irá substituir TODOS os dados...`)) return;
+        if (!window.confirm(`Restaurar este backup irá substituir TODOS os dados atuais (${normalizedBidsFromFile.length} registros encontrados). Continuar?`)) return;
 
+        // CHAMADA REAL PARA A API
         await api.post('/api/restore-bids-backup', { licitacoes: normalizedBidsFromFile });
-        // Isso atualiza o pai, que vai acionar nosso 'useEffect' e manter tudo sincronizado.
-        setBids(normalizedBidsFromFile as any); // Usamos 'as any' para o setBids aceitar
-        console.log('Backup restaurado com sucesso!');
+        
+        // Atualiza o estado local
+        setBids(normalizedBidsFromFile as any); 
+        alert('Backup restaurado com sucesso!');
         
       } catch (error) {
-        console.error(`Ocorreu um erro ao restaurar o arquivo de backup: ${(error as Error).message}`);
+        alert(`Erro ao restaurar: ${(error as Error).message}`);
       } finally {
         if (restoreInputRef.current) restoreInputRef.current.value = '';
       }
@@ -398,15 +281,13 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
         </div>
       </div>
 
-      {/* Verificamos o 'normalizedBids.length' */}
       {normalizedBids.length === 0 ? (
         <div className="text-center py-16 bg-white rounded-lg shadow">
           <h3 className="text-xl text-gray-700">Nenhuma licitação cadastrada ainda.</h3>
-          <p className="text-gray-500 mt-2">Clique em "Nova Licitação" para começar a organizar seus processos.</p>
+          <p className="text-gray-500 mt-2">Clique em "Nova Licitação" para começar.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {/* Fazemos o map em 'normalizedBids' */}
           {normalizedBids.map(bid => (
             <LicitacaoCard
               key={bid.id}
@@ -429,10 +310,7 @@ const StatusLicitacoes: React.FC<StatusLicitacoesProps> = ({ bids, setBids }) =>
   );
 };
 
-// 2) Card com a borda e o fundo vindo por último
 const LicitacaoCard: React.FC<{ bid: LicitacaoDetalhada; onEdit: () => void; onDelete: () => void }> = ({ bid, onEdit, onDelete }) => {
-  // Esta função agora sempre receberá um status normalizado (ex: "Em Andamento")
-  // por causa da nossa correção lá em cima.
   const statusStyles = getStatusStyles(bid.status);
   const highlightClass = getDateHighlightClass(bid);
 
@@ -441,8 +319,8 @@ const LicitacaoCard: React.FC<{ bid: LicitacaoDetalhada; onEdit: () => void; onD
       className={`
         rounded-lg shadow-md p-5 flex flex-col gap-3
         border
-        ${statusStyles.background} /* Nova classe de fundo */
-        ${statusStyles.border}   /* A borda vem por último, então ganha */
+        ${statusStyles.background}
+        ${statusStyles.border}
         transition-all hover:shadow-xl hover:-translate-y-1
         ${highlightClass}
         ${bid.status === StatusLicitacaoDetalhada.DESCLASSIFICADA ? 'grayscale opacity-70' : ''}
@@ -466,7 +344,6 @@ const LicitacaoCard: React.FC<{ bid: LicitacaoDetalhada; onEdit: () => void; onD
       <div className="text-sm space-y-2 text-gray-600">
         <p><strong className="font-medium text-gray-800">Empresa:</strong> {bid.companyName}</p>
         <p><strong className="font-medium text-gray-800">Data:</strong> {formatDate(bid.realizationDate)}</p>
-        {/* Este check funciona para string vazia (que é 'falsy') */}
         {bid.progressForecast && (
           <p><strong className="font-medium text-gray-800">Previsão:</strong> {bid.progressForecast}</p>
         )}
@@ -483,7 +360,6 @@ const LicitacaoCard: React.FC<{ bid: LicitacaoDetalhada; onEdit: () => void; onD
           <span className={`px-3 py-1 text-xs font-semibold rounded-full ${statusStyles.pill}`}>
             {bid.status}
           </span>
-          {/* Este check funciona para string vazia (que é 'falsy') */}
           {bid.placement && (
             <span>
               <strong className="font-medium">Colocação:</strong> {bid.placement}
@@ -500,7 +376,6 @@ const LicitacaoCard: React.FC<{ bid: LicitacaoDetalhada; onEdit: () => void; onD
   );
 };
 
-// Modal continua igual
 const LicitacaoModal: React.FC<{ bid: LicitacaoDetalhada | null; onClose: () => void; onSubmit: (e: FormEvent<HTMLFormElement>) => void }> = ({ bid, onClose, onSubmit }) => {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4" onClick={onClose}>
@@ -544,12 +419,10 @@ const LicitacaoModal: React.FC<{ bid: LicitacaoDetalhada | null; onClose: () => 
             </div>
             <div>
               <label htmlFor="placement" className="block text-sm font-medium text-gray-700">Colocação</label>
-              {/* O 'defaultValue' funciona bem com string obrigatória */}
               <input type="text" id="placement" name="placement" defaultValue={bid?.placement} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm" placeholder="Ex: 1º Lugar, Desclassificado, etc." />
             </div>
             <div>
               <label htmlFor="progressForecast" className="block text-sm font-medium text-gray-700">Previsão de Andamento</label>
-               {/* O 'defaultValue' funciona bem com string obrigatória */}
               <textarea id="progressForecast" name="progressForecast" defaultValue={bid?.progressForecast} rows={3} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm" placeholder="Ex: Aguardando resultado, Em fase de recurso, etc."></textarea>
             </div>
           </div>
