@@ -587,7 +587,7 @@ const SaidasView: React.FC<{
   );
 };
 
-// -------------------- SIMULAÇÃO --------------------
+// -------------------- SIMULAÇÃO (ATUALIZADO) --------------------
 const SimulacaoView: React.FC<{
   edital: Edital;
   simulacaoItens: SimulacaoItem[];
@@ -606,6 +606,23 @@ const SimulacaoView: React.FC<{
   const [selectedItemIndex, setSelectedItemIndex] = useState<string>('');
   const [simulacaoQtd, setSimulacaoQtd] = useState<string>('1');
 
+  // 1. LÓGICA DE SALDO (Copiada do EstoqueView para saber quanto já saiu)
+  const saidasPorItem = useMemo(() => {
+    const map = new Map<number, number>();
+    (edital.saidas || []).forEach((saida) => {
+      map.set(saida.itemIndex, (map.get(saida.itemIndex) || 0) + saida.quantidade);
+    });
+    return map;
+  }, [edital.saidas]);
+
+  // Função auxiliar para pegar o saldo atual de um item específico
+  const getSaldoAtual = (itemIndex: number) => {
+    const item = edital.itens[itemIndex];
+    if (!item) return 0;
+    const qtdSaida = saidasPorItem.get(itemIndex) || 0;
+    return item.quantidade - qtdSaida;
+  };
+
   const totalSimulado = useMemo(
     () => simulacaoItens.reduce((acc, item) => acc + item.valorTotal, 0),
     [simulacaoItens]
@@ -618,6 +635,15 @@ const SimulacaoView: React.FC<{
     if (isNaN(itemIndex) || !edital.itens[itemIndex] || isNaN(quantidade) || quantidade <= 0) {
       alert('Selecione um item e uma quantidade válida.');
       return;
+    }
+
+    // Opcional: Avisar na hora de adicionar se já excede o estoque, 
+    // mas permitiremos adicionar para ajustar depois se quiser.
+    const saldo = getSaldoAtual(itemIndex);
+    if (quantidade > saldo) {
+        if(!window.confirm(`ATENÇÃO: Você está adicionando ${quantidade} itens, mas só existem ${saldo} em estoque. Deseja continuar mesmo assim?`)) {
+            return;
+        }
     }
 
     const item = edital.itens[itemIndex];
@@ -657,6 +683,16 @@ const SimulacaoView: React.FC<{
       alert('Nenhum item na simulação.');
       return;
     }
+
+    // 2. VALIDAÇÃO DE ESTOQUE (Impede confirmar se faltar item)
+    for (const item of simulacaoItens) {
+        const saldo = getSaldoAtual(item.itemIndex);
+        if (item.quantidade > saldo) {
+            alert(`ERRO BLOQUEANTE:\nO item "${item.descricao}" tem ${item.quantidade} na simulação, mas apenas ${saldo} em estoque.\n\nAjuste a quantidade ou remova o item para prosseguir.`);
+            return; // Para a execução aqui
+        }
+    }
+
     const notaFiscal = prompt('Digite o número da Nota Fiscal para estas saídas:');
     if (!notaFiscal || !notaFiscal.trim()) return;
 
@@ -678,58 +714,56 @@ const SimulacaoView: React.FC<{
   };
 
   const handleExportarPDF = (simplificado: boolean) => {
-  if (simulacaoItens.length === 0) return;
+    if (simulacaoItens.length === 0) return;
 
-  // cria o PDF
-  const doc = new jsPDF();
-  const title = simplificado
-    ? `Lista de Materiais - ${municipioNome} - ${edital.nome}`
-    : `Simulação de Saída - ${municipioNome} - ${edital.nome}`;
+    // cria o PDF
+    const doc = new jsPDF();
+    const title = simplificado
+      ? `Lista de Materiais - ${municipioNome} - ${edital.nome}`
+      : `Simulação de Saída - ${municipioNome} - ${edital.nome}`;
 
-  doc.text(title, 14, 20);
+    doc.text(title, 14, 20);
 
-  const head = simplificado
-    ? [['Descrição', 'Marca', 'Unidade', 'Quantidade']]
-    : [['Descrição', 'Marca', 'Unidade', 'Qtd', 'V. Unit.', 'V. Total']];
+    const head = simplificado
+      ? [['Descrição', 'Marca', 'Unidade', 'Quantidade']]
+      : [['Descrição', 'Marca', 'Unidade', 'Qtd', 'V. Unit.', 'V. Total']];
 
-  const body = simulacaoItens.map((item) =>
-    simplificado
-      ? [item.descricao, item.marca, item.unidade, item.quantidade]
-      : [
-          item.descricao,
-          item.marca,
-          item.unidade,
-          item.quantidade,
-          item.valorUnitario.toLocaleString('pt-BR', {
-            style: 'currency',
-            currency: 'BRL',
-          }),
-          item.valorTotal.toLocaleString('pt-BR', {
-            style: 'currency',
-            currency: 'BRL',
-          }),
-        ]
-  );
+    const body = simulacaoItens.map((item) =>
+      simplificado
+        ? [item.descricao, item.marca, item.unidade, item.quantidade]
+        : [
+            item.descricao,
+            item.marca,
+            item.unidade,
+            item.quantidade,
+            item.valorUnitario.toLocaleString('pt-BR', {
+              style: 'currency',
+              currency: 'BRL',
+            }),
+            item.valorTotal.toLocaleString('pt-BR', {
+              style: 'currency',
+              currency: 'BRL',
+            }),
+          ]
+    );
 
-  // usa o plugin que importamos
-  (doc as any).autoTable({
-    head,
-    body,
-    startY: 30,
-  });
+    (doc as any).autoTable({
+      head,
+      body,
+      startY: 30,
+    });
 
-  if (!simplificado) {
-    const finalY = (doc as any).lastAutoTable.finalY + 10;
-    doc.text(`Total Simulado: ${formatarMoeda(totalSimulado)}`, 14, finalY);
-  }
+    if (!simplificado) {
+      const finalY = (doc as any).lastAutoTable.finalY + 10;
+      doc.text(`Total Simulado: ${formatarMoeda(totalSimulado)}`, 14, finalY);
+    }
 
-  doc.save(
-    `simulacao_${simplificado ? 'simplificada' : 'completa'}_${new Date()
-      .toISOString()
-      .slice(0, 10)}.pdf`
-  );
-};
-  
+    doc.save(
+      `simulacao_${simplificado ? 'simplificada' : 'completa'}_${new Date()
+        .toISOString()
+        .slice(0, 10)}.pdf`
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -740,11 +774,15 @@ const SimulacaoView: React.FC<{
           className="w-full border-gray-300 rounded-md"
         >
           <option value="">Selecione um item...</option>
-          {edital.itens.map((item, index) => (
-            <option key={item.id} value={index}>
-              {item.descricao}
-            </option>
-          ))}
+          {edital.itens.map((item, index) => {
+             // Mostra saldo também no Dropdown para facilitar
+             const saldo = getSaldoAtual(index);
+             return (
+                <option key={item.id} value={index}>
+                  {item.descricao} (Estoque: {saldo})
+                </option>
+             );
+          })}
         </select>
         <input
           type="number"
@@ -756,7 +794,7 @@ const SimulacaoView: React.FC<{
         />
         <button
           onClick={handleAdicionarSimulacao}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg"
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
         >
           Adicionar à Simulação
         </button>
@@ -764,35 +802,53 @@ const SimulacaoView: React.FC<{
 
       <div className="overflow-x-auto border rounded-lg">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50">
+          <thead className="bg-gray-50 uppercase text-xs text-gray-700">
             <tr>
-              <th className="px-4 py-2">Descrição</th>
-              <th className="px-4 py-2">Qtd</th>
+              <th className="px-4 py-2 text-left">Descrição</th>
+              {/* 3. NOVA COLUNA DE ESTOQUE */}
+              <th className="px-4 py-2 text-center text-gray-500">Estoque Atual</th>
+              <th className="px-4 py-2 text-center">Qtd Simulada</th>
               <th className="px-4 py-2 text-right">V. Total</th>
               <th className="px-4 py-2 text-center">Ações</th>
             </tr>
           </thead>
           <tbody>
-            {simulacaoItens.map((item, index) => (
-              <tr key={index} className="border-b">
-                <td className="px-4 py-2">{item.descricao}</td>
-                <td className="px-4 py-2">{item.quantidade}</td>
-                <td className="px-4 py-2 text-right">
-                  {formatarMoeda(item.valorTotal)}
-                </td>
-                <td className="px-4 py-2 text-center">
-                  <button
-                    onClick={() => handleRemoverSimulacao(index)}
-                    className="text-red-500"
-                  >
-                    <TrashIcon className="w-4 h-4" />
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {simulacaoItens.map((item, index) => {
+              const saldo = getSaldoAtual(item.itemIndex);
+              // Verifica se a simulação estoura o estoque
+              const isCritico = item.quantidade > saldo;
+
+              return (
+                <tr key={index} className={`border-b ${isCritico ? 'bg-red-50' : ''}`}>
+                  <td className="px-4 py-2">{item.descricao}</td>
+                  
+                  {/* Célula do Estoque com formatação condicional */}
+                  <td className={`px-4 py-2 text-center font-bold ${isCritico ? 'text-red-600' : 'text-gray-600'}`}>
+                    {saldo}
+                  </td>
+
+                  <td className={`px-4 py-2 text-center ${isCritico ? 'text-red-600 font-bold' : ''}`}>
+                    {item.quantidade}
+                  </td>
+                  
+                  <td className="px-4 py-2 text-right">
+                    {formatarMoeda(item.valorTotal)}
+                  </td>
+                  <td className="px-4 py-2 text-center">
+                    <button
+                      onClick={() => handleRemoverSimulacao(index)}
+                      className="text-red-500 hover:text-red-700"
+                      title="Remover"
+                    >
+                      <TrashIcon className="w-4 h-4" />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
             {simulacaoItens.length === 0 && (
               <tr>
-                <td colSpan={4} className="text-center py-4 text-gray-400">
+                <td colSpan={5} className="text-center py-4 text-gray-400">
                   Nenhum item na simulação.
                 </td>
               </tr>
@@ -800,8 +856,8 @@ const SimulacaoView: React.FC<{
           </tbody>
           <tfoot>
             <tr className="font-bold bg-gray-50">
-              <td colSpan={2} className="px-4 py-2 text-right">
-                Total:
+              <td colSpan={3} className="px-4 py-2 text-right">
+                Total Simulado:
               </td>
               <td className="px-4 py-2 text-right">
                 {formatarMoeda(totalSimulado)}
@@ -815,31 +871,31 @@ const SimulacaoView: React.FC<{
       <div className="flex flex-wrap gap-2">
         <button
           onClick={handleConfirmarSimulacao}
-          className="px-4 py-2 bg-green-600 text-white rounded-lg"
+          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
         >
           Confirmar Saídas
         </button>
         <button
           onClick={() => salvarSimulacao(municipioNome, edital.nome)}
-          className="px-4 py-2 bg-orange-500 text-white rounded-lg"
+          className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600"
         >
           Salvar Simulação
         </button>
         <button
           onClick={() => setSimulacaoItens([])}
-          className="px-4 py-2 bg-red-600 text-white rounded-lg"
+          className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
         >
           Limpar
         </button>
         <button
           onClick={() => handleExportarPDF(false)}
-          className="px-4 py-2 bg-gray-700 text-white rounded-lg"
+          className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800"
         >
           PDF Completo
         </button>
         <button
           onClick={() => handleExportarPDF(true)}
-          className="px-4 py-2 bg-gray-500 text-white rounded-lg"
+          className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
         >
           PDF Simplificado
         </button>
