@@ -29,6 +29,8 @@ const MainPlatform: React.FC = () => {
   const [cotacoesData, setCotacoesData] = useState<Cotacao[]>([]);
   const [simulacoesCotacoesSalvas, setSimulacoesCotacoesSalvas] = useState<SimulacaoCotacaoSalva[]>([]);
   const [calculosSalvos, setCalculosSalvos] = useState<CalculadoraSalva[]>([]);
+  // Novo estado para controlar se NFe está habilitado globalmente
+  const [nfeEnabled, setNfeEnabled] = useState(true);
 
 
   useEffect(() => {
@@ -45,6 +47,7 @@ const MainPlatform: React.FC = () => {
           cotacoesRes,
           simulacoesCotacoesRes,
           calculosRes,
+          settingsRes, // Nova requisição
         ] = await Promise.all([
           api.get('/api/licitacoes'),
           api.get('/api/events'),
@@ -55,6 +58,7 @@ const MainPlatform: React.FC = () => {
           api.get('/api/cotacoes'),
           api.get('/api/simulacoes-cotacoes'),
           api.get('/api/calculadora'),
+          api.get('/api/settings'),
         ]);
 
         if (licitacoesRes) setLicitacoes(licitacoesRes);
@@ -66,6 +70,7 @@ const MainPlatform: React.FC = () => {
         if (cotacoesRes) setCotacoesData(cotacoesRes);
         if (simulacoesCotacoesRes) setSimulacoesCotacoesSalvas(simulacoesCotacoesRes);
         if (calculosRes) setCalculosSalvos(calculosRes);
+        if (settingsRes) setNfeEnabled(settingsRes.nfeEnabled);
 
       } catch (error) {
         console.error("Falha ao carregar dados da plataforma:", error);
@@ -111,8 +116,10 @@ const MainPlatform: React.FC = () => {
        case 'calculadora':
         return <Calculadora calculosSalvos={calculosSalvos} setCalculosSalvos={setCalculosSalvos} />;
       case 'configuracoes':
-        return <Configuracoes />;
+        return <Configuracoes nfeEnabled={nfeEnabled} setNfeEnabled={setNfeEnabled} />;
       case 'nfe':
+        // Proteção extra de rota
+        if (!nfeEnabled) return <div>Módulo desativado pelo administrador.</div>;
         return <NFeModule externalData={materiaisData} />;
       default:
         return <Dashboard bids={licitacoes} events={eventos} materiaisData={materiaisData} epiData={epiData} />;
@@ -121,7 +128,7 @@ const MainPlatform: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-gray-100">
-      <Sidebar currentView={currentView} setCurrentView={setCurrentView} />
+      <Sidebar currentView={currentView} setCurrentView={setCurrentView} nfeEnabled={nfeEnabled} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
         <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-4 md:p-8">
