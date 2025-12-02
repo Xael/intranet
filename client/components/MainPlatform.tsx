@@ -10,11 +10,12 @@ import ControleEmpenhos from './ControleEmpenhos';
 import Cotacoes from './Cotacoes';
 import Configuracoes from './Configuracoes';
 import Calculadora from './Calculadora';
+import NFeModule from './NFeModule';
 import { LicitacaoDetalhada, EventoCalendarioDetalhado, Municipio, EPIEntrega, SimulacaoSalva, Cotacao, SimulacaoCotacaoSalva, CalculadoraSalva, EPIEstoqueItem } from '../types';
 import { api } from '../utils/api';
 
 
-export type ViewType = 'dashboard' | 'calendario' | 'status' | 'materiais' | 'empenhos' | 'epi' | 'cotacoes' | 'configuracoes' | 'calculadora';
+export type ViewType = 'dashboard' | 'calendario' | 'status' | 'materiais' | 'empenhos' | 'epi' | 'cotacoes' | 'configuracoes' | 'calculadora' | 'nfe';
 
 const MainPlatform: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('dashboard');
@@ -97,7 +98,6 @@ const MainPlatform: React.FC = () => {
       case 'materiais':
         return <ControleMateriais data={materiaisData} setData={setMateriaisData} simulacoesSalvas={simulacoesSalvas} setSimulacoesSalvas={setSimulacoesSalvas} />;
       case 'empenhos':
-        // FIX: Pass the correct state setter function 'setMateriaisData' to the 'setData' prop.
         return <ControleEmpenhos data={materiaisData} setData={setMateriaisData} />;
       case 'epi':
         return <ControleEPI entregas={epiData} setEntregas={setEpiData} estoque={epiEstoqueData} setEstoque={setEpiEstoqueData} />;
@@ -112,6 +112,8 @@ const MainPlatform: React.FC = () => {
         return <Calculadora calculosSalvos={calculosSalvos} setCalculosSalvos={setCalculosSalvos} />;
       case 'configuracoes':
         return <Configuracoes />;
+      case 'nfe':
+        return <NFeModule externalData={materiaisData} />;
       default:
         return <Dashboard bids={licitacoes} events={eventos} materiaisData={materiaisData} epiData={epiData} />;
     }
