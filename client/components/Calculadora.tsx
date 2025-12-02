@@ -3,18 +3,10 @@ import { CalculadoraSalva, FuncionarioCusto, ItemCusto, CustoAdicional, Calculad
 import { api } from '../utils/api';
 import { PlusIcon } from './icons/PlusIcon';
 import { TrashIcon } from './icons/TrashIcon';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 declare var XLSX: any;
-
-// helper para carregar jsPDF + autotable só quando precisar
-const loadPdfLibs = async () => {
-  if (typeof window === 'undefined') return null;
-  // @ts-ignore – o TS não encontra o módulo no build, mas em runtime funciona
-  const jsPDFModule = await import('jspdf');
-  // @ts-ignore
-  await import('jspdf-autotable');
-  return jsPDFModule.default;
-};
 
 const formatarMoeda = (valor: number) =>
   valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -157,12 +149,6 @@ const CalculoAtualView: React.FC<{
     ];
 
     if (type === 'pdf') {
-      const jsPDF = await loadPdfLibs();
-      if (!jsPDF) {
-        alert('PDF não pôde ser carregado no navegador.');
-        return;
-      }
-
       const doc = new jsPDF();
       let y = 15;
       doc.setFontSize(16);
@@ -199,9 +185,9 @@ const CalculoAtualView: React.FC<{
           [{ content: `${f.cargo} - Salário Base`, styles: { fontStyle: 'bold' } }, formatarMoeda(f.salarioBase)],
           ...f.custosAdicionais.map((c) => [c.descricao, formatarMoeda(c.valor)]),
         ]);
-        (doc as any).autoTable({
+        autoTable(doc, {
           head: [['Descrição', 'Valor']],
-          body: funcBody,
+          body: funcBody as any,
           startY: y,
           theme: 'grid',
         });
@@ -212,7 +198,7 @@ const CalculoAtualView: React.FC<{
         doc.setFontSize(12);
         doc.text('Custos Operacionais', 14, y);
         y += 2;
-        (doc as any).autoTable({
+        autoTable(doc, {
           head: [['Descrição', 'Valor']],
           body: operacional.map((i) => [i.descricao, formatarMoeda(i.valor)]),
           startY: y,
@@ -225,7 +211,7 @@ const CalculoAtualView: React.FC<{
         doc.setFontSize(12);
         doc.text('Veículos', 14, y);
         y += 2;
-        (doc as any).autoTable({
+        autoTable(doc, {
           head: [['Descrição', 'Valor']],
           body: veiculos.map((i) => [i.descricao, formatarMoeda(i.valor)]),
           startY: y,
