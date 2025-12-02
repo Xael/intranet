@@ -1,18 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Entity, InvoiceData, Product, Step, ConfigData, InvoiceStatus, GlobalValues } from '../../../types';
-import { EntityForm } from '../../../components/EntityForm';
-import { ProductForm } from '../../../components/ProductForm';
-import { ConfigForm } from '../../../components/ConfigForm';
-import { RegistryManager } from '../../../components/RegistryManager';
-import { ProductSelector } from '../../../components/ProductSelector';
-import { InvoiceHistory } from '../../../components/InvoiceHistory';
-import { ProfileSelector } from '../../../components/ProfileSelector';
-import { PaymentAndObsForm } from '../../../components/PaymentAndObsForm';
-import { Danfe } from '../../../components/Danfe';
-import { generateNfeXml, generateAccessKey } from '../../../services/xmlGenerator';
-import { validateCNPJ, validateRequired } from '../../../utils/validators';
-import { calculateInvoiceTotals } from '../../../utils/taxCalculations';
-import { db } from '../../../services/storage';
+import { Entity, InvoiceData, Product, Step, ConfigData, InvoiceStatus } from '../types';
+import { EntityForm } from './EntityForm';
+import { ProductForm } from './ProductForm';
+import { ConfigForm } from './ConfigForm';
+import { RegistryManager } from './RegistryManager';
+import { ProductSelector } from './ProductSelector';
+import { InvoiceHistory } from './InvoiceHistory';
+import { ProfileSelector } from './ProfileSelector';
+import { PaymentAndObsForm } from './PaymentAndObsForm';
+import { Danfe } from './Danfe';
+import { generateNfeXml, generateAccessKey } from '../services/xmlGenerator';
+import { validateCNPJ, validateRequired } from '../utils/validators';
+import { calculateInvoiceTotals } from '../utils/taxCalculations';
+import { db } from '../services/storage';
 import { FileText, Users, ShoppingCart, Send, ArrowRight, ArrowLeft, Download, CheckCircle, Shield, Settings, Loader2, AlertCircle, LayoutDashboard, Box, Search, History, Printer, Building2, LogOut, CreditCard, Save } from 'lucide-react';
 import { Municipio } from '../types';
 
@@ -96,7 +96,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
                               origem: '0', baseCalculoIcms: 0, aliquotaIcms: 0, valorIcms: 0,
                               cstPis: '07', baseCalculoPis: 0, aliquotaPis: 0, valorPis: 0,
                               cstCofins: '07', baseCalculoCofins: 0, aliquotaCofins: 0, valorCofins: 0,
-                              cstIpi: '53'
+                              cstIpi: '53', baseCalculoIpi: 0, aliquotaIpi: 0, valorIpi: 0 // Added missing fields
                           }
                       });
                   });
@@ -243,7 +243,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
         }
     }
     if (currentStep === Step.PAGAMENTO) {
-        const totalPag = invoice.pagamento.reduce((acc, p) => acc + p.vPag, 0);
+        const totalPag = invoice.pagamento.reduce((acc: number, p: any) => acc + p.vPag, 0);
         if (Math.abs(totalPag - invoice.totais.vNF) > 0.01) {
             setErrorMsg(`Total dos pagamentos (R$ ${totalPag.toFixed(2)}) difere do total da nota (R$ ${invoice.totais.vNF.toFixed(2)}).`);
             return false;
@@ -334,7 +334,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
   const processEvent = async (invoice: InvoiceData, type: 'cancelamento' | 'cce', payload: string) => {
       if (invoice.status === 'draft' && type === 'cancelamento') {
           if(confirm("Deseja realmente excluir este rascunho permanentemente?")) {
-              await db.delete('invoices', invoice.id!);
+              if (invoice.id) await db.delete('invoices', invoice.id);
               setViewMode('history'); // Refresh
           }
           return;
@@ -442,7 +442,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
   };
 
   const renderRegistry = () => {
-    const EntityWrapper = ({ initial, onSave, onCancel }: { initial: Entity | null, onSave: (i: Entity) => void, onCancel: () => void }) => {
+    const EntityWrapper = ({ initial, onSave, onCancel }: { initial: Entity | null, onSave: (i: Entity) => Promise<void> | void, onCancel: () => void }) => {
         const [data, setData] = useState<Entity>(initial || { ...initialEntity, id: crypto.randomUUID() });
         return (
             <div>
@@ -810,7 +810,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
                                         <button onClick={saveDraft} className="flex items-center px-4 py-2 border border-blue-300 bg-blue-50 text-blue-700 rounded-md hover:bg-blue-100" title="Salvar como Rascunho para continuar depois">
                                             <Save className="w-4 h-4 mr-2" /> Salvar Rascunho
                                         </button>
-                                        <div className="w-px h-8 bg-gray-300 mx-1 self-center"></div>
+                                        <div className="w-px h-8 bg-gray-300 mx-2"></div>
                                         <button onClick={handleBack} disabled={currentStep === Step.CONFIG} className="flex items-center px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 disabled:opacity-50">
                                             <ArrowLeft className="w-4 h-4 mr-2" /> Voltar
                                         </button>
