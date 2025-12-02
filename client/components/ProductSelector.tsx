@@ -71,7 +71,11 @@ export const ProductSelector: React.FC<ProductSelectorProps> = ({ onSelect, onCl
                             <tr key={p.id} className="border-b hover:bg-blue-50 transition-colors">
                                 <td className="px-4 py-3 font-mono text-xs">
                                     {p.codigo}
-                                    {(p as any).isExternal && <Globe className="w-3 h-3 inline-block ml-1 text-blue-400" title="Origem: Intranet" />}
+                                    {(p as any).isExternal && (
+                                        <span title="Origem: Intranet">
+                                            <Globe className="w-3 h-3 inline-block ml-1 text-blue-400" />
+                                        </span>
+                                    )}
                                 </td>
                                 <td className="px-4 py-3">
                                     <div className="font-medium text-gray-900">{p.descricao}</div>
