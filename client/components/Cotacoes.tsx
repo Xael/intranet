@@ -11,6 +11,8 @@ import { TrashIcon } from './icons/TrashIcon';
 import { SearchIcon } from './icons/SearchIcon';
 import { EditIcon } from './icons/EditIcon';
 import { api } from '../utils/api';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // XLSX ainda está vindo via CDN no index.html
 declare var XLSX: any;
@@ -583,11 +585,7 @@ const SimulacaoAtualView: React.FC<{
     });
 
     if (type === 'pdf') {
-      const jsPDFModule = await import('jspdf');
-      const autoTableModule = await import('jspdf-autotable');
-      const DocClass: any = (jsPDFModule as any).jsPDF || (jsPDFModule as any).default;
-      
-      const doc = new DocClass({ orientation: 'landscape' });
+      const doc = new jsPDF({ orientation: 'landscape' });
 
       doc.setFontSize(14);
       doc.text('Simulação de Cotação Comparativa', 14, 20);
@@ -607,13 +605,13 @@ const SimulacaoAtualView: React.FC<{
         8: { cellWidth: 'auto', overflow: 'linebreak' }, // Origem
       };
 
-      (autoTableModule as any).default(doc, {
+      autoTable(doc, {
         head: [head],
-        body,
+        body: body as any,
         startY: 25,
-        styles: styles,
-        headStyles: headStyles,
-        columnStyles: columnStyles,
+        styles: styles as any,
+        headStyles: headStyles as any,
+        columnStyles: columnStyles as any,
         alternateRowStyles: { fillColor: [245, 245, 245] },
         margin: { top: 25, left: 14, right: 14 },
       });
