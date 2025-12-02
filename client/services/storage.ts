@@ -1,68 +1,36 @@
 import { Entity, Product, CollectionName } from '../types';
-import { api } from '../utils/api';
 
-// Mapeia os nomes das coleções do frontend para os endpoints da API
-const mapCollectionToEndpoint = (collection: CollectionName): string => {
-  switch (collection) {
-    case 'issuers': return 'emitentes';
-    case 'recipients': return 'destinatarios';
-    case 'products': return 'produtos';
-    case 'invoices': return 'notas';
-    default: return collection;
-  }
-};
+const STORAGE_PREFIX = 'nfe_ai_db_';
 
 export const db = {
-  // Agora retorna Promise<T[]>
-  get: async <T>(collection: CollectionName): Promise<T[]> => {
-    try {
-      const endpoint = `/api/nfe/${mapCollectionToEndpoint(collection)}`;
-      const data = await api.get(endpoint);
-      return data || [];
-    } catch (error) {
-      console.error(`Erro ao buscar ${collection}:`, error);
-      return [];
-    }
+  get: <T>(collection: CollectionName): T[] => {
+    const data = localStorage.getItem(`${STORAGE_PREFIX}${collection}`);
+    return data ? JSON.parse(data) : [];
   },
 
-  // Agora é async e faz POST ou PUT
-  save: async <T extends { id?: string }>(collection: CollectionName, item: T): Promise<T> => {
-    try {
-      const endpoint = `/api/nfe/${mapCollectionToEndpoint(collection)}`;
-      let savedItem;
-      
-      if (item.id) {
-        // Tenta atualizar. A lógica de "criar se não existir" para IDs gerados no front 
-        // pode ser tratada no backend ou tentando PUT e fallback para POST.
-        // No server.js implementamos o POST para tratar upsert se ID vier, ou o PUT direto.
-        // Vamos usar POST por padrão se o ID for novo (gerado por crypto no front), 
-        // mas se for edição de registro existente, usamos PUT.
-        
-        // Simplificação: Nossa API server.js no POST verifica se ID existe e faz upsert/update.
-        // Então POST é seguro para salvar (criar ou atualizar).
-        savedItem = await api.post(endpoint, item);
-      } else {
-        savedItem = await api.post(endpoint, item);
-      }
-      return savedItem;
-    } catch (error) {
-      console.error(`Erro ao salvar em ${collection}:`, error);
-      throw error;
+  save: <T extends { id?: string }>(collection: CollectionName, item: T): void => {
+    const items = db.get<T>(collection);
+    const existingIndex = items.findIndex(i => i.id === item.id);
+    
+    if (existingIndex >= 0) {
+      items[existingIndex] = item;
+    } else {
+      // Ensure ID
+      if (!item.id) item.id = crypto.randomUUID();
+      items.push(item);
     }
+    
+    localStorage.setItem(`${STORAGE_PREFIX}${collection}`, JSON.stringify(items));
   },
 
-  delete: async (collection: CollectionName, id: string): Promise<void> => {
-    try {
-      const endpoint = `/api/nfe/${mapCollectionToEndpoint(collection)}/${id}`;
-      await api.delete(endpoint);
-    } catch (error) {
-      console.error(`Erro ao deletar de ${collection}:`, error);
-      throw error;
-    }
+  delete: (collection: CollectionName, id: string): void => {
+    const items = db.get<any>(collection);
+    const filtered = items.filter(i => i.id !== id);
+    localStorage.setItem(`${STORAGE_PREFIX}${collection}`, JSON.stringify(filtered));
   },
 
-  exportData: async (collection: CollectionName): Promise<void> => {
-    const data = await db.get(collection);
+  exportData: (collection: CollectionName): void => {
+    const data = db.get(collection);
     const jsonString = JSON.stringify(data, null, 2);
     const blob = new Blob([jsonString], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -77,15 +45,21 @@ export const db = {
 
   importData: (collection: CollectionName, file: File, callback: (success: boolean) => void): void => {
     const reader = new FileReader();
-    reader.onload = async (e) => {
+    reader.onload = (e) => {
       try {
         const content = e.target?.result as string;
         const parsed = JSON.parse(content);
         if (Array.isArray(parsed)) {
-          // Importa um por um via API
-          for (const item of parsed) {
-             await db.save(collection, item);
-          }
+          // Merge strategy: Append distinct IDs, overwrite existing IDs
+          const current = db.get<any>(collection);
+          const currentMap = new Map(current.map(i => [i.id, i]));
+          
+          parsed.forEach(item => {
+             if(!item.id) item.id = crypto.randomUUID();
+             currentMap.set(item.id, item);
+          });
+          
+          localStorage.setItem(`${STORAGE_PREFIX}${collection}`, JSON.stringify(Array.from(currentMap.values())));
           callback(true);
         } else {
           callback(false);
