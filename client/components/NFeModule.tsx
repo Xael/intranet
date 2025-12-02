@@ -93,10 +93,12 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
                           valorUnitario: item.valorUnitario,
                           valorTotal: item.valorUnitario,
                           tax: { // Default tax
-                              origem: '0', baseCalculoIcms: 0, aliquotaIcms: 0, valorIcms: 0,
+                              origem: '0', 
+                              baseCalculoIcms: 0, aliquotaIcms: 0, valorIcms: 0,
                               cstPis: '07', baseCalculoPis: 0, aliquotaPis: 0, valorPis: 0,
                               cstCofins: '07', baseCalculoCofins: 0, aliquotaCofins: 0, valorCofins: 0,
-                              cstIpi: '53', baseCalculoIpi: 0, aliquotaIpi: 0, valorIpi: 0 // Added missing fields
+                              cstIpi: '53', baseCalculoIpi: 0, aliquotaIpi: 0, valorIpi: 0,
+                              cst: '00', csosn: '102', codigoEnquadramento: '999'
                           }
                       });
                   });
