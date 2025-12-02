@@ -17,25 +17,24 @@ export const RegistryManager: React.FC<RegistryManagerProps> = ({ collection, ti
   const [searchTerm, setSearchTerm] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const loadItems = async () => {
-    const data = await db.get(collection);
-    setItems(data);
+  const loadItems = () => {
+    setItems(db.get(collection));
   };
 
   useEffect(() => {
     loadItems();
   }, [collection]);
 
-  const handleSave = async (item: any) => {
-    await db.save(collection, item);
+  const handleSave = (item: any) => {
+    db.save(collection, item);
     setIsEditing(false);
     setCurrentItem(null);
     loadItems();
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = (id: string) => {
     if (confirm('Tem certeza que deseja excluir este registro?')) {
-      await db.delete(collection, id);
+      db.delete(collection, id);
       loadItems();
     }
   };

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../services/storage';
 import { InvoiceData, Entity } from '../types';
@@ -32,14 +33,14 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const loadData = async () => {
+  const loadData = () => {
     if (!activeProfile) return;
     
     // Clean CNPJ for comparison
     const cleanCnpj = (s: string) => s.replace(/\D/g, '');
     const activeCnpj = cleanCnpj(activeProfile.cnpj);
 
-    const allInvoices = await db.get<InvoiceData>('invoices');
+    const allInvoices = db.get<InvoiceData>('invoices');
     
     // Filter invoices where the Issuer CNPJ matches the Active Profile CNPJ
     const profileInvoices = allInvoices.filter(inv => 
@@ -70,10 +71,9 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
                 }
 
                 // Check for duplicates
-                const allInvoices = await db.get<InvoiceData>('invoices');
-                const exists = allInvoices.some(i => i.chaveAcesso === invoice.chaveAcesso);
+                const exists = db.get<InvoiceData>('invoices').some(i => i.chaveAcesso === invoice.chaveAcesso);
                 if (!exists) {
-                    await db.save('invoices', invoice);
+                    db.save('invoices', invoice);
                     importedCount++;
                 }
             } catch (err) {

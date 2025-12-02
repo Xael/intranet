@@ -1,3 +1,4 @@
+
 import React, { useEffect } from 'react';
 import { InvoiceData, PaymentMethod, GlobalValues } from '../types';
 import { Plus, Trash2, CreditCard, DollarSign, Truck } from 'lucide-react';

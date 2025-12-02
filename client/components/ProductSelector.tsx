@@ -14,13 +14,13 @@ export const ProductSelector: React.FC<ProductSelectorProps> = ({ onSelect, onCl
   const [search, setSearch] = useState('');
 
   useEffect(() => {
-    const loadData = async () => {
-        const localProducts = await db.get<Product>('products');
-        // Mark external products to distinguish them in UI (optional but helpful)
-        const markedExternal = (externalProducts || []).map(p => ({...p, isExternal: true}));
-        setProducts([...localProducts, ...markedExternal]);
-    };
-    loadData();
+    // Merge local products (from storage) with external products (from Intranet DB)
+    const localProducts = db.get<Product>('products');
+    
+    // Mark external products to distinguish them in UI (optional but helpful)
+    const markedExternal = (externalProducts || []).map(p => ({...p, isExternal: true}));
+    
+    setProducts([...localProducts, ...markedExternal]);
   }, [externalProducts]);
 
   const filtered = products.filter(p => 

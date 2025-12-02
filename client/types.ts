@@ -1,265 +1,4 @@
 
-export enum StatusLicitacao {
-  EM_ANALISE = "Em Análise",
-  AGUARDANDO_DOCUMENTOS = "Aguardando Documentos",
-  APROVADA = "Aprovada",
-  RECUSADA = "Recusada",
-  CONCLUIDA = "Concluída",
-}
-
-export interface Licitacao {
-  id: string;
-  numero: string;
-  objeto: string;
-  responsavel: string;
-  status: StatusLicitacao;
-  valorEstimado: number;
-  dataAbertura: string;
-}
-
-export interface EventoCalendario {
-  id: string;
-  titulo: string;
-  resumo: string;
-  data: string;
-  licitacaoId: string;
-  documentationStatus?: 'OK' | 'PENDENTE';
-}
-
-// New types for "Controle de Materiais"
-export interface EstoqueItem {
-  id: string; 
-  descricao: string;
-  marca: string;
-  unidade: string;
-  quantidade: number;
-  valorUnitario: number;
-  valorTotal: number;
-}
-
-export interface SaidaItem {
-  id: string;
-  itemIndex: number; 
-  descricao: string;
-  marca: string;
-  quantidade: number;
-  valorUnitario: number;
-  valorTotal: number;
-  data: string; // "DD/MM/YYYY" format
-  notaFiscal: string;
-}
-
-// New types for "Controle de Empenhos"
-export interface ArquivoAnexado {
-  nome: string;
-  tipo: string;
-  dados: string; // base64 encoded string data part
-}
-
-export interface Empenho {
-  id: string;
-  dataPedido: string; // YYYY-MM-DD
-  numeroPedido: string;
-  numeroProcesso: string;
-  empenhoPDF?: ArquivoAnexado;
-  notaFiscalPDF?: ArquivoAnexado;
-  dataNotaFiscal?: string; // YYYY-MM-DD
-  valorNotaFiscal?: number;
-  // Novos campos para controle de pagamento
-  statusPagamento?: 'PAGO' | 'PENDENTE';
-  dataPagamento?: string; // YYYY-MM-DD
-}
-
-
-export interface Edital {
-  id: string;
-  nome: string;
-  itens: EstoqueItem[];
-  saidas: SaidaItem[];
-  empenhos?: Empenho[];
-}
-
-export interface Municipio {
-  id: string;
-  nome: string;
-  editais: Edital[];
-}
-
-export interface SimulacaoItem {
-  itemIndex: number;
-  descricao: string;
-  marca: string;
-  unidade: string;
-  quantidade: number;
-  valorUnitario: number;
-  valorTotal: number;
-}
-
-export interface SimulacaoSalva {
-  id: string;
-  data: string; // ISO string
-  municipio: string;
-  edital: string;
-  itens: SimulacaoItem[];
-}
-
-export interface User {
-  id: string;
-  name: string;
-  username: string;
-  createdAt: string; // ISO string
-  role: 'ADMIN' | 'OPERACIONAL';
-}
-
-export interface InventoryItem {
-  id: string;
-  name: string;
-  qty: number;
-  outQty: number;
-  remaining: number;
-  manualOut: boolean;
-}
-
-export interface OutputItem {
-  id: string;
-  date: string;
-  product: string;
-  qty: number;
-  size: string;
-  employee: string;
-  responsible: string;
-}
-
-export interface EPIEntrega {
-  id: string;
-  funcionario: string;
-  item: string;
-  quantidade: number;
-  dataEntrega: string;
-}
-
-export interface EPIEstoqueItem {
-  id: string;
-  name: string;
-  qty: number;
-  manualOut: boolean;
-  manualOutQty: number;
-}
-
-export enum StatusLicitacaoDetalhada {
-  EM_ANDAMENTO = 'Em Andamento',
-  VENCIDA = 'Vencida',
-  ENCERRADA = 'Encerrada',
-  DESCLASSIFICADA = 'Desclassificada',
-}
-
-export interface LicitacaoDetalhada {
-  id: string;
-  city: string;
-  bidNumber: string;
-  realizationDate: string; // YYYY-MM-DD
-  placement: string;
-  status: StatusLicitacaoDetalhada;
-  companyName: string;
-  platformLink: string;
-  lastUpdated: string; // ISO String
-  progressForecast: string;
-}
-
-export interface DetalhesEvento {
-    city: string;
-    bid_number: string;
-    time: string;
-    location: string;
-    description: string;
-}
-
-export interface EventoCalendarioDetalhado extends DetalhesEvento {
-  id: string;
-  start: string; // YYYY-MM-DD date string
-  title: string;
-}
-
-export interface CotacaoItem {
-  id: string;
-  produto: string;
-  unidade: string;
-  quantidade: number;
-  valorUnitario: number;
-  valorTotal: number;
-  marca: string;
-}
-
-export interface Cotacao {
-  id: string;
-  local: string;
-  data: string; // YYYY-MM-DD
-  itens: CotacaoItem[];
-}
-
-export interface ValorReferencia {
-  id: string; // Normalized product name
-  produto: string;
-  valor: number;
-}
-
-export interface SimulacaoCotacaoItem {
-    id: string;
-    produto: string;
-    unidade: string;
-    quantidade: number;
-    valorUnitario: number;
-    valorTotal: number;
-    marca: string;
-    cotacaoOrigem: {
-        id: string; // Cotacao.id
-        local: string;
-        data: string;
-    };
-}
-
-export interface SimulacaoCotacaoSalva {
-    id: string;
-    nome: string;
-    data: string; // ISO String
-    itens: SimulacaoCotacaoItem[];
-}
-
-export interface CustoAdicional {
-    id: string;
-    descricao: string;
-    valor: number;
-}
-
-export interface FuncionarioCusto {
-    id: string;
-    cargo: string;
-    salarioBase: number;
-    custosAdicionais: CustoAdicional[];
-}
-
-export interface ItemCusto {
-    id: string;
-    descricao: string;
-    valor: number;
-}
-
-export interface CalculadoraState {
-    funcionarios: FuncionarioCusto[];
-    operacional: ItemCusto[];
-    veiculos: ItemCusto[];
-    impostos: number; // Percentage
-    valorLicitacao: number;
-}
-export interface CalculadoraSalva {
-    id: string;
-    nome: string;
-    data: string; // ISO String
-    custos: CalculadoraState;
-}
-
-// --- NFE MODULE TYPES ---
-
 export interface Address {
   logradouro: string;
   numero: string;
@@ -279,38 +18,42 @@ export interface Entity {
   inscricaoEstadual: string;
   endereco: Address;
   email?: string;
-  crt: CRT; 
+  crt: CRT; // Código de Regime Tributário
 }
 
 export interface TaxDetails {
-  origem: string; 
-  cst?: string; 
-  csosn?: string; 
+  // ICMS
+  origem: string; // 0, 1, 2...
+  cst?: string; // Para Regime Normal (00, 20, etc)
+  csosn?: string; // Para Simples Nacional (101, 102, etc)
   baseCalculoIcms: number;
   aliquotaIcms: number;
   valorIcms: number;
   
+  // PIS
   cstPis: string;
   baseCalculoPis: number;
   aliquotaPis: number;
   valorPis: number;
 
+  // COFINS
   cstCofins: string;
   baseCalculoCofins: number;
   aliquotaCofins: number;
   valorCofins: number;
 
-  cstIpi?: string; 
+  // IPI
+  cstIpi?: string; // 50, 51, 52, 53, 99...
   baseCalculoIpi?: number;
   aliquotaIpi?: number;
   valorIpi?: number;
-  codigoEnquadramento?: string; 
+  codigoEnquadramento?: string; // Default 999
 }
 
 export interface Product {
   id: string;
   codigo: string;
-  gtin: string; 
+  gtin: string; // EAN/Barcode
   descricao: string;
   ncm: string;
   cfop: string;
@@ -322,7 +65,7 @@ export interface Product {
 }
 
 export interface PaymentMethod {
-  tPag: string; 
+  tPag: string; // 01=Dinheiro, 03=Cartão Crédito, 17=PIX, etc
   vPag: number;
 }
 
@@ -340,7 +83,7 @@ export interface InvoiceTotals {
   vNF: number;
 }
 
-export type EnvironmentType = '1' | '2'; 
+export type EnvironmentType = '1' | '2'; // 1=Production, 2=Homologation
 
 export interface ConfigData {
   ambiente: EnvironmentType;
@@ -350,12 +93,13 @@ export interface ConfigData {
   serie: string;
 }
 
+// Global values that affect the invoice but might be input as a total
 export interface GlobalValues {
     frete: number;
     seguro: number;
     desconto: number;
     outrasDespesas: number;
-    modalidadeFrete: '0' | '1' | '9'; 
+    modalidadeFrete: '0' | '1' | '9'; // 0=Emitente, 1=Destinatario, 9=Sem Frete
 }
 
 export interface InvoiceData {
@@ -367,6 +111,7 @@ export interface InvoiceData {
   destinatario: Entity;
   produtos: Product[];
   
+  // Totais e Pagamento
   globalValues: GlobalValues;
   totais: InvoiceTotals;
   pagamento: PaymentMethod[];
