@@ -16,15 +16,17 @@ import { CalculatorIcon } from './icons/CalculatorIcon';
 interface SidebarProps {
   currentView: ViewType;
   setCurrentView: (view: ViewType) => void;
+  nfeEnabled: boolean; // Nova prop
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, nfeEnabled }) => {
   const { logout, user } = useAuth();
 
   const allNavItems = [
     { id: 'dashboard', label: 'Painel de Controle', icon: HomeIcon },
     { id: 'calendario', label: 'Calendário', icon: CalendarIcon },
     { id: 'status', label: 'Status', icon: ClipboardListIcon },
+    // NFe será filtrado dinamicamente abaixo
     { id: 'nfe', label: 'Emissor NFe', icon: DocumentTextIcon },
     { id: 'materiais', label: 'Controle de Materiais', icon: ArchiveIcon },
     { id: 'empenhos', label: 'Controle de Empenhos', icon: DocumentTextIcon },
@@ -34,14 +36,32 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView }) => {
     { id: 'configuracoes', label: 'Configurações', icon: CogIcon },
   ];
 
-  const operationalViews: ViewType[] = ['dashboard', 'calendario', 'status', 'cotacoes', 'epi', 'nfe'];
-
   // Garante que o usuário 'admincrb' seja sempre admin, além de checar o 'role'
   const isAdmin = user?.role === 'ADMIN' || user?.username === 'admincrb';
 
-  const navItems = isAdmin
-    ? allNavItems
-    : allNavItems.filter(item => operationalViews.includes(item.id as ViewType));
+  // Lógica de Visibilidade:
+  // 1. Configurações: Apenas Admin
+  // 2. NFe: Apenas Admin E se estiver habilitado globalmente (nfeEnabled)
+  // 3. Demais: Disponíveis para Operacional (exceto os acima)
+  
+  const operationalViews: ViewType[] = ['dashboard', 'calendario', 'status', 'cotacoes', 'epi'];
+
+  const visibleNavItems = allNavItems.filter(item => {
+      // Regra específica para NFe
+      if (item.id === 'nfe') {
+          return isAdmin && nfeEnabled;
+      }
+      // Regra específica para Configurações
+      if (item.id === 'configuracoes') {
+          return isAdmin;
+      }
+      // Regra geral para Admin (vê tudo, exceto o que foi filtrado acima se nfeEnabled for false)
+      if (isAdmin) {
+          return true;
+      }
+      // Regra para Operacional
+      return operationalViews.includes(item.id as ViewType);
+  });
 
 
   return (
@@ -50,7 +70,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView }) => {
         <h1 className="text-2xl font-bold">C.R.B Serviços</h1>
       </div>
       <nav className="flex-1 px-2 py-4 space-y-2">
-        {navItems.map((item) => (
+        {visibleNavItems.map((item) => (
           <a
             key={item.id}
             href="#"
