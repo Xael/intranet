@@ -25,6 +25,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView }) => {
     { id: 'dashboard', label: 'Painel de Controle', icon: HomeIcon },
     { id: 'calendario', label: 'Calendário', icon: CalendarIcon },
     { id: 'status', label: 'Status', icon: ClipboardListIcon },
+    { id: 'nfe', label: 'Emissor NFe', icon: DocumentTextIcon },
     { id: 'materiais', label: 'Controle de Materiais', icon: ArchiveIcon },
     { id: 'empenhos', label: 'Controle de Empenhos', icon: DocumentTextIcon },
     { id: 'epi', label: 'Controle de EPI', icon: ShieldIcon },
@@ -33,7 +34,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView }) => {
     { id: 'configuracoes', label: 'Configurações', icon: CogIcon },
   ];
 
-  const operationalViews: ViewType[] = ['dashboard', 'calendario', 'status', 'cotacoes', 'epi'];
+  const operationalViews: ViewType[] = ['dashboard', 'calendario', 'status', 'cotacoes', 'epi', 'nfe'];
 
   // Garante que o usuário 'admincrb' seja sempre admin, além de checar o 'role'
   const isAdmin = user?.role === 'ADMIN' || user?.username === 'admincrb';
