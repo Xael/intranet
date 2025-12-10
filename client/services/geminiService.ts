@@ -1,10 +1,27 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { NcmSuggestion } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// REMOVIDO DAQUI: A inicialização global travava o app se a chave faltasse.
+// const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const getNcmSuggestion = async (productDescription: string): Promise<NcmSuggestion> => {
+  // 1. Tenta pegar a chave apenas no momento que o usuário pede a sugestão
+  const apiKey = process.env.API_KEY;
+
+  // 2. Proteção: Se não tiver chave (por causa do Dockerignore), retorna vazio sem quebrar o site
+  if (!apiKey) {
+    console.warn("AVISO: API Key do Gemini não encontrada. O recurso de sugestão de NCM está desativado.");
+    return {
+      ncm: "",
+      descricao: productDescription, // Retorna a própria descrição digitada
+      cfop: ""
+    };
+  }
+
   try {
+    // 3. Inicializa a IA somente agora que sabemos que a chave existe
+    const ai = new GoogleGenAI({ apiKey });
+
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: `Suggest the most appropriate NCM (Nomenclatura Comum do Mercosul) code and a standard description for a product described as: "${productDescription}". Also suggest a common CFOP code for sales inside the state (Saída dentro do estado). Return JSON.`,
@@ -30,6 +47,11 @@ export const getNcmSuggestion = async (productDescription: string): Promise<NcmS
     return JSON.parse(text) as NcmSuggestion;
   } catch (error) {
     console.error("Error fetching NCM suggestion:", error);
-    throw error;
+    // Em caso de erro na IA, retorna vazio para não travar o formulário do usuário
+    return {
+        ncm: "",
+        descricao: productDescription,
+        cfop: ""
+    };
   }
 };
