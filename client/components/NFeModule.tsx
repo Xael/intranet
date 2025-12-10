@@ -491,7 +491,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
                     </div>
                 </div>
             )}
-            renderForm={async (item, onSave, onCancel) => <EntityWrapper initial={item} onSave={async (e) => { await onSave(e); setShowProfileSelector(true); }} onCancel={onCancel} />}
+            renderForm={(item, onSave, onCancel) => <EntityWrapper initial={item} onSave={async (e) => { await onSave(e); setShowProfileSelector(true); }} onCancel={onCancel} />}
         />
     }
     if (viewMode === 'recipients') {
