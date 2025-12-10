@@ -445,7 +445,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
 
   const renderRegistry = () => {
     const EntityWrapper = ({ initial, onSave, onCancel }: { initial: Entity | null, onSave: (i: Entity) => Promise<void> | void, onCancel: () => void }) => {
-        const [data, setData] = useState<Entity>(initial || { ...initialEntity, id: crypto.randomUUID() });
+        const [data, setData] = useState<Entity>(initial || { ...initialEntity, id: new Date().getTime().toString() });
         return (
             <div>
                 <EntityForm title="Dados do Cadastro" data={data} onChange={setData} />
