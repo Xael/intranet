@@ -1,10 +1,30 @@
-import React, { useState, useRef, FormEvent, ChangeEvent } from 'react';
+import React, { useState, useRef, FormEvent, ChangeEvent, useEffect } from 'react';
 import { DetalhesEvento } from '../types';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin, { DateClickArg } from '@fullcalendar/interaction';
 import { EventClickArg, EventDropArg, EventApi } from '@fullcalendar/core';
 import { api } from '../utils/api';
+
+// --- Função Auxiliar para Datas ---
+// Garante que a comparação seja feita apenas por ANO-MES-DIA, ignorando fuso horário
+const formatDateToYMD = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// --- Tipos ---
+export type DetalhesEventoComDoc = DetalhesEvento & {
+  documentationStatus?: 'OK' | 'PENDENTE';
+  estimatedValue?: string;
+  distance?: string;
+  avgEmployees?: string;
+  warranty?: string;
+  editalFile?: string; 
+  editalFileName?: string; 
+};
 
 // --- Modal Component ---
 interface EventoModalProps {
@@ -16,16 +36,6 @@ interface EventoModalProps {
   eventData?: EventApi;
   dateStr?: string;
 }
-
-export type DetalhesEventoComDoc = DetalhesEvento & {
-  documentationStatus?: 'OK' | 'PENDENTE';
-  estimatedValue?: string;
-  distance?: string;
-  avgEmployees?: string;
-  warranty?: string;
-  editalFile?: string; 
-  editalFileName?: string; 
-};
 
 const EventoModal: React.FC<EventoModalProps> = ({
   isOpen,
@@ -196,6 +206,7 @@ const EventoModal: React.FC<EventoModalProps> = ({
             </div>
           </div>
 
+          {/* Novos Campos */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">Valor Estimado</label>
@@ -341,7 +352,6 @@ const EventoModal: React.FC<EventoModalProps> = ({
 
 // --- Main Calendar Component ---
 const CalendarioLicitacoes: React.FC = () => {
-  // Use 'any[]' para evitar conflitos de tipagem entre a entrada do FullCalendar e a API
   const [events, setEvents] = useState<any[]>([]);
   const [modalState, setModalState] = useState<{
     isOpen: boolean;
@@ -350,7 +360,7 @@ const CalendarioLicitacoes: React.FC = () => {
     event?: EventApi;
   }>({ isOpen: false, isNew: false });
 
-  React.useEffect(() => {
+  useEffect(() => {
     fetchEvents();
   }, []);
 
@@ -360,8 +370,9 @@ const CalendarioLicitacoes: React.FC = () => {
       const formattedEvents = data.map((evt: any) => ({
         id: evt.id,
         title: `${evt.time || ''} - ${evt.city}`, 
-        start: evt.date || evt.start, // Fallback caso venha como 'start' ou 'date'
+        start: evt.date || evt.start, 
         allDay: true,
+        // Mantém cores como fallback, mas o dayCellDidMount terá prioridade
         backgroundColor: evt.documentationStatus === 'OK' ? '#C8E6C9' : '#FFF9C4',
         borderColor: evt.documentationStatus === 'OK' ? '#2E7D32' : '#FBC02D',
         textColor: '#000',
@@ -422,7 +433,7 @@ const CalendarioLicitacoes: React.FC = () => {
         editalFile: details.editalFile,
         editalFileName: details.editalFileName,
         date: modalState.isNew ? modalState.dateStr : modalState.event?.startStr,
-        start: modalState.isNew ? modalState.dateStr : modalState.event?.startStr, // Duplicar para garantir compatibilidade
+        start: modalState.isNew ? modalState.dateStr : modalState.event?.startStr,
         title: `${details.time} - ${details.city}`,
       };
 
@@ -471,6 +482,9 @@ const CalendarioLicitacoes: React.FC = () => {
     <div className="h-full flex flex-col p-4 bg-gray-100">
       <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md">
         <FullCalendar
+          // --- CORREÇÃO DE CORES ---
+          // A chave faz o React recriar o componente quando os eventos chegam, forçando a pintura das cores
+          key={events.length} 
           plugins={[dayGridPlugin, interactionPlugin]}
           initialView="dayGridMonth"
           locale="pt-br"
@@ -489,32 +503,32 @@ const CalendarioLicitacoes: React.FC = () => {
           eventContent={(arg) => {
               const props = arg.event.extendedProps;
               return (
-                  <div className="p-1 overflow-hidden">
+                  <div className="p-1 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity">
                       <div className="font-bold text-xs">{arg.timeText}</div>
                       <div className="font-bold text-xs truncate">{props.bid_number}</div>
                       <div className="text-xs truncate">{props.city}</div>
                       {props.documentationStatus === 'PENDENTE' && (
-                          <div className="text-[10px] text-red-600 font-bold">⚠️ DOC PENDENTE</div>
+                          <div className="text-[10px] text-red-600 font-bold bg-white/50 rounded px-1 mt-0.5">⚠️ PENDENTE</div>
                       )}
                   </div>
               )
           }}
           dayCellDidMount={(arg) => {
-            const dateStr = arg.date.toISOString().split('T')[0];
-            // CORREÇÃO AQUI: Comparando string com string
-            const hasEvent = events.some((e) => {
-                // Se 'e.start' for string, usamos direto. Se for objeto Date, converte.
-                const eDate = typeof e.start === 'string' ? e.start : (e.start instanceof Date ? e.start.toISOString().split('T')[0] : '');
-                return eDate === dateStr;
+            // Função para garantir que a comparação de data funcione independente do fuso horário
+            const cellDate = formatDateToYMD(arg.date);
+            
+            const eventOnThisDay = events.find((e) => {
+                const eDate = typeof e.start === 'string' 
+                    ? e.start 
+                    : (e.start instanceof Date ? formatDateToYMD(e.start) : '');
+                return eDate === cellDate;
             });
 
-            if (hasEvent) {
-                const evt = events.find(e => {
-                    const eDate = typeof e.start === 'string' ? e.start : (e.start instanceof Date ? e.start.toISOString().split('T')[0] : '');
-                    return eDate === dateStr;
-                });
-                const isPending = evt?.extendedProps.documentationStatus === 'PENDENTE';
-                arg.el.style.backgroundColor = isPending ? '#FFFDE7' : '#E8F5E9';
+            if (eventOnThisDay) {
+                const isPending = eventOnThisDay.extendedProps.documentationStatus === 'PENDENTE';
+                // Aplica as cores diretamente na célula do dia
+                arg.el.style.backgroundColor = isPending ? '#FFF9C4' : '#C8E6C9';
+                arg.el.style.border = isPending ? '1px solid #FBC02D' : '1px solid #2E7D32';
             }
           }}
           height="auto"
