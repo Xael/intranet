@@ -17,17 +17,14 @@ interface EventoModalProps {
   dateStr?: string;
 }
 
-/**
- * Estendemos o tipo para incluir os novos campos solicitados
- */
 export type DetalhesEventoComDoc = DetalhesEvento & {
   documentationStatus?: 'OK' | 'PENDENTE';
   estimatedValue?: string;
   distance?: string;
   avgEmployees?: string;
   warranty?: string;
-  editalFile?: string; // Armazenará o Base64 do PDF
-  editalFileName?: string; // Nome do arquivo para exibição
+  editalFile?: string; 
+  editalFileName?: string; 
 };
 
 const EventoModal: React.FC<EventoModalProps> = ({
@@ -41,7 +38,6 @@ const EventoModal: React.FC<EventoModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  // Helper para inicializar os estados
   const getInitialState = (): DetalhesEventoComDoc => {
     if (isNew) {
       return {
@@ -59,7 +55,6 @@ const EventoModal: React.FC<EventoModalProps> = ({
         editalFileName: ''
       };
     } else if (eventData) {
-      // Busca dados estendidos (extendedProps) do evento existente
       const props = eventData.extendedProps;
       return {
         city: props.city || '',
@@ -89,7 +84,6 @@ const EventoModal: React.FC<EventoModalProps> = ({
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Lógica para converter PDF em Base64
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -97,12 +91,11 @@ const EventoModal: React.FC<EventoModalProps> = ({
         alert('Por favor, selecione apenas arquivos PDF.');
         return;
       }
-      
       const reader = new FileReader();
       reader.onloadend = () => {
         setFormData(prev => ({
           ...prev,
-          editalFile: reader.result as string, // Base64 completo
+          editalFile: reader.result as string,
           editalFileName: file.name
         }));
       };
@@ -144,13 +137,10 @@ const EventoModal: React.FC<EventoModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          
-          {/* Data (Exibição apenas, pois vem do calendário) */}
           <div className="bg-blue-50 p-2 rounded text-blue-800 font-medium text-center">
              Data: {isNew ? dateStr?.split('-').reverse().join('/') : eventData?.startStr.split('-').reverse().join('/')}
           </div>
 
-          {/* Identificação e Horário */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700">Identificação (Entidade + nº)</label>
@@ -177,7 +167,6 @@ const EventoModal: React.FC<EventoModalProps> = ({
             </div>
           </div>
 
-          {/* Cidade e Status */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">Cidade</label>
@@ -207,7 +196,6 @@ const EventoModal: React.FC<EventoModalProps> = ({
             </div>
           </div>
 
-          {/* NOVOS CAMPOS - Linha 1 */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">Valor Estimado</label>
@@ -233,7 +221,6 @@ const EventoModal: React.FC<EventoModalProps> = ({
             </div>
           </div>
 
-          {/* NOVOS CAMPOS - Linha 2 */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">Média de Funcionários</label>
@@ -259,7 +246,6 @@ const EventoModal: React.FC<EventoModalProps> = ({
             </div>
           </div>
 
-          {/* Local (Site) */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Local (Site / Portal)</label>
             <input
@@ -272,7 +258,6 @@ const EventoModal: React.FC<EventoModalProps> = ({
             />
           </div>
 
-          {/* Descrição */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Descrição / Objeto</label>
             <textarea
@@ -285,7 +270,6 @@ const EventoModal: React.FC<EventoModalProps> = ({
             />
           </div>
 
-          {/* Campo de Anexo (Edital) */}
           <div className="border-t pt-4 mt-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">Edital (PDF)</label>
             
@@ -357,7 +341,8 @@ const EventoModal: React.FC<EventoModalProps> = ({
 
 // --- Main Calendar Component ---
 const CalendarioLicitacoes: React.FC = () => {
-  const [events, setEvents] = useState<EventApi[]>([]);
+  // Use 'any[]' para evitar conflitos de tipagem entre a entrada do FullCalendar e a API
+  const [events, setEvents] = useState<any[]>([]);
   const [modalState, setModalState] = useState<{
     isOpen: boolean;
     isNew: boolean;
@@ -365,7 +350,6 @@ const CalendarioLicitacoes: React.FC = () => {
     event?: EventApi;
   }>({ isOpen: false, isNew: false });
 
-  // Load events from API on mount
   React.useEffect(() => {
     fetchEvents();
   }, []);
@@ -373,11 +357,10 @@ const CalendarioLicitacoes: React.FC = () => {
   const fetchEvents = async () => {
     try {
       const data = await api.get('/api/events');
-      // Mapeia os dados do banco para o formato do FullCalendar
       const formattedEvents = data.map((evt: any) => ({
         id: evt.id,
-        title: `${evt.time || ''} - ${evt.city}`, // Título no calendário
-        start: evt.date, // Data (YYYY-MM-DD)
+        title: `${evt.time || ''} - ${evt.city}`, 
+        start: evt.date || evt.start, // Fallback caso venha como 'start' ou 'date'
         allDay: true,
         backgroundColor: evt.documentationStatus === 'OK' ? '#C8E6C9' : '#FFF9C4',
         borderColor: evt.documentationStatus === 'OK' ? '#2E7D32' : '#FBC02D',
@@ -389,7 +372,6 @@ const CalendarioLicitacoes: React.FC = () => {
           location: evt.location,
           description: evt.description,
           documentationStatus: evt.documentationStatus,
-          // Novos campos mapeados do banco
           estimatedValue: evt.estimatedValue,
           distance: evt.distance,
           avgEmployees: evt.avgEmployees,
@@ -433,16 +415,15 @@ const CalendarioLicitacoes: React.FC = () => {
         location: details.location,
         description: details.description,
         documentationStatus: details.documentationStatus,
-        // Novos campos
         estimatedValue: details.estimatedValue,
         distance: details.distance,
         avgEmployees: details.avgEmployees,
         warranty: details.warranty,
         editalFile: details.editalFile,
         editalFileName: details.editalFileName,
-        // Campos obrigatórios do banco
         date: modalState.isNew ? modalState.dateStr : modalState.event?.startStr,
-        title: `${details.time} - ${details.city}`, // Campo redundante usado em visualizações simples
+        start: modalState.isNew ? modalState.dateStr : modalState.event?.startStr, // Duplicar para garantir compatibilidade
+        title: `${details.time} - ${details.city}`,
       };
 
       if (modalState.isNew) {
@@ -452,7 +433,7 @@ const CalendarioLicitacoes: React.FC = () => {
       }
       
       closeModal();
-      fetchEvents(); // Recarrega calendário
+      fetchEvents();
     } catch (error) {
       alert('Erro ao salvar o evento.');
       console.error(error);
@@ -473,15 +454,15 @@ const CalendarioLicitacoes: React.FC = () => {
 
   const handleEventDrop = async (arg: EventDropArg) => {
      try {
-        const updatedDate = arg.event.startStr; // YYYY-MM-DD
-        // Mantém os dados antigos, só muda a data
+        const updatedDate = arg.event.startStr;
         const payload = {
             ...arg.event.extendedProps,
-            date: updatedDate
+            date: updatedDate,
+            start: updatedDate
         };
         await api.put(`/api/events/${arg.event.id}`, payload);
      } catch (error) {
-         arg.revert(); // Volta se der erro
+         arg.revert();
          alert("Erro ao mover evento.");
      }
   };
@@ -499,14 +480,13 @@ const CalendarioLicitacoes: React.FC = () => {
             right: 'dayGridMonth',
           }}
           hiddenDays={[0, 6]}
-          events={events} // Usa o state local formatado
+          events={events}
           selectable={true}
           editable={true}
           dateClick={openModalForNew}
           eventClick={openModalForEdit}
           eventDrop={handleEventDrop}
           eventContent={(arg) => {
-              // Customização visual do evento no calendário
               const props = arg.event.extendedProps;
               return (
                   <div className="p-1 overflow-hidden">
@@ -520,12 +500,19 @@ const CalendarioLicitacoes: React.FC = () => {
               )
           }}
           dayCellDidMount={(arg) => {
-            // Pinta o fundo do dia se tiver evento
             const dateStr = arg.date.toISOString().split('T')[0];
-            const hasEvent = events.some((e) => e.start === dateStr);
+            // CORREÇÃO AQUI: Comparando string com string
+            const hasEvent = events.some((e) => {
+                // Se 'e.start' for string, usamos direto. Se for objeto Date, converte.
+                const eDate = typeof e.start === 'string' ? e.start : (e.start instanceof Date ? e.start.toISOString().split('T')[0] : '');
+                return eDate === dateStr;
+            });
+
             if (hasEvent) {
-                // Se o evento tem doc pendente, pinta o dia de amarelo claro, senão verde claro
-                const evt = events.find(e => e.start === dateStr);
+                const evt = events.find(e => {
+                    const eDate = typeof e.start === 'string' ? e.start : (e.start instanceof Date ? e.start.toISOString().split('T')[0] : '');
+                    return eDate === dateStr;
+                });
                 const isPending = evt?.extendedProps.documentationStatus === 'PENDENTE';
                 arg.el.style.backgroundColor = isPending ? '#FFFDE7' : '#E8F5E9';
             }
@@ -534,7 +521,6 @@ const CalendarioLicitacoes: React.FC = () => {
         />
       </div>
       
-      {/* O Modal agora é renderizado dentro do componente principal */}
       <EventoModal
         isOpen={modalState.isOpen}
         onClose={closeModal}
