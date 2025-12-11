@@ -1,3 +1,5 @@
+// types.ts
+
 // ==========================================
 // TIPOS LEGADOS E GERAIS
 // ==========================================
@@ -38,7 +40,6 @@ export interface EstoqueItem {
   quantidade: number;
   valorUnitario: number;
   valorTotal: number;
-  // Campos opcionais para compatibilidade com edições manuais
   manualOut?: boolean;
   outQty?: number;
   remaining?: number; 
@@ -53,7 +54,7 @@ export interface SaidaItem {
   quantidade: number;
   valorUnitario: number;
   valorTotal: number;
-  data: string; // "DD/MM/YYYY" format
+  data: string;
   notaFiscal: string;
   editalId?: string;
 }
@@ -62,21 +63,20 @@ export interface SaidaItem {
 export interface ArquivoAnexado {
   nome: string;
   tipo: string;
-  dados: string; // base64 encoded string data part
+  dados: string; // base64
 }
 
 export interface Empenho {
   id: string;
-  dataPedido: string; // YYYY-MM-DD
+  dataPedido: string;
   numeroPedido: string;
   numeroProcesso: string;
   empenhoPDF?: ArquivoAnexado;
   notaFiscalPDF?: ArquivoAnexado;
-  dataNotaFiscal?: string; // YYYY-MM-DD
+  dataNotaFiscal?: string;
   valorNotaFiscal?: number;
-  // Novos campos para controle de pagamento
   statusPagamento?: 'PAGO' | 'PENDENTE';
-  dataPagamento?: string; // YYYY-MM-DD
+  dataPagamento?: string;
   editalId?: string;
 }
 
@@ -108,7 +108,7 @@ export interface SimulacaoItem {
 
 export interface SimulacaoSalva {
   id: string;
-  data: string; // ISO string
+  data: string;
   municipio: string;
   edital: string;
   itens: SimulacaoItem[];
@@ -118,13 +118,12 @@ export interface User {
   id: string;
   name: string;
   username: string;
-  password?: string; // Opcional no front
-  createdAt: string; // ISO string
+  password?: string;
+  createdAt: string;
   role: 'ADMIN' | 'OPERACIONAL';
-  token?: string; // Usado no AuthContext
+  token?: string;
 }
 
-// FIX: Add missing types for legacy ControleEstoque component.
 export interface InventoryItem {
   id: string;
   name: string;
@@ -144,7 +143,6 @@ export interface OutputItem {
   responsible: string;
 }
 
-// FIX: Add missing EPIEntrega interface. This is used by the ControleEPI component.
 export interface EPIEntrega {
   id: string;
   funcionario: string;
@@ -176,16 +174,15 @@ export interface LicitacaoDetalhada {
   id: string;
   city: string;
   bidNumber: string;
-  realizationDate: string; // YYYY-MM-DD
+  realizationDate: string;
   placement: string;
   status: StatusLicitacaoDetalhada | string;
   companyName: string;
   platformLink: string;
-  lastUpdated: string; // ISO String
+  lastUpdated: string;
   progressForecast: string;
 }
 
-// Types for the new detailed Calendar
 export interface DetalhesEvento {
    city: string;
    bid_number: string;
@@ -194,21 +191,19 @@ export interface DetalhesEvento {
    description: string;
 }
 
-// >>> ATUALIZAÇÃO IMPORTANTE AQUI <<<
-// Adicionamos os campos documentationStatus, estimatedValue, etc.
 export interface EventoCalendarioDetalhado extends DetalhesEvento {
   id: string;
-  start: string; // YYYY-MM-DD date string
+  start: string;
   title: string;
 
-  // Novos campos do Calendário (Adicionados hoje)
+  // Novos campos do Calendário
   documentationStatus?: 'OK' | 'PENDENTE';
   estimatedValue?: string;
   distance?: string;
   avgEmployees?: string;
   warranty?: string;
-  editalFile?: string;     // Base64
-  editalFileName?: string; // Nome do arquivo
+  editalFile?: string;
+  editalFileName?: string;
 }
 
 // ==========================================
@@ -228,12 +223,12 @@ export interface CotacaoItem {
 export interface Cotacao {
   id: string;
   local: string;
-  data: string; // YYYY-MM-DD
+  data: string;
   itens: CotacaoItem[];
 }
 
 export interface ValorReferencia {
-  id: string; // Normalized product name
+  id: string;
   produto: string;
   valor: number;
 }
@@ -247,7 +242,7 @@ export interface SimulacaoCotacaoItem {
    valorTotal: number;
    marca: string;
    cotacaoOrigem: {
-       id: string; // Cotacao.id
+       id: string;
        local: string;
        data: string;
    };
@@ -256,7 +251,7 @@ export interface SimulacaoCotacaoItem {
 export interface SimulacaoCotacaoSalva {
    id: string;
    nome: string;
-   data: string; // ISO String
+   data: string;
    itens: SimulacaoCotacaoItem[];
 }
 
@@ -270,18 +265,17 @@ export interface CustoAdicional {
    valor: number;
 }
 
-// Ajuste para compatibilidade com Calculadora.tsx (pode esperar id number ou string)
 export interface FuncionarioCusto {
    id: string | number;
-   nome?: string; // Calculadora usa 'nome' às vezes
+   nome?: string;
    cargo?: string;
    salarioBase: number;
-   custosAdicionais: any[]; // Usando any[] para flexibilidade entre CustoAdicional e ItemCusto
+   custosAdicionais: any[];
 }
 
 export interface ItemCusto {
    id?: string;
-   nome?: string; // Calculadora usa 'nome'
+   nome?: string;
    descricao?: string; 
    valor: number;
 }
@@ -290,14 +284,14 @@ export interface CalculadoraState {
    funcionarios: FuncionarioCusto[];
    operacional: ItemCusto[];
    veiculos: ItemCusto[];
-   impostos: number; // Percentage
+   impostos: number;
    valorLicitacao: number;
 }
 
 export interface CalculadoraSalva {
    id: string;
    nome: string;
-   data: string; // ISO String
+   data: string;
    custos: CalculadoraState;
 }
 
@@ -315,23 +309,23 @@ export interface Address {
   cep: string;
 }
 
-export type CRT = '1' | '2' | '3'; // 1 = Simples Nacional, 2 = Simples (Excesso Sublimite), 3 = Regime Normal
+export type CRT = '1' | '2' | '3';
 
 export interface Entity {
   id?: string;
   cnpj: string;
   razaoSocial: string;
-  inscricaoEstadual?: string; // Pode ser opcional/vazio
+  inscricaoEstadual?: string;
   endereco: Address;
   email?: string;
-  crt?: CRT; // Código de Regime Tributário
+  crt?: CRT;
 }
 
 export interface TaxDetails {
   // ICMS
-  origem: string; // 0, 1, 2...
-  cst?: string; // Para Regime Normal (00, 20, etc)
-  csosn?: string; // Para Simples Nacional (101, 102, etc)
+  origem: string;
+  cst?: string;
+  csosn?: string;
   baseCalculoIcms?: number;
   aliquotaIcms: number;
   valorIcms?: number;
@@ -348,18 +342,18 @@ export interface TaxDetails {
   aliquotaCofins: number;
   valorCofins?: number;
 
-  // IPI
-  cstIpi: string; // Obrigatório ser string
+  // IPI (CORREÇÃO: Tornado opcional para evitar erro de build no xmlImporter)
+  cstIpi?: string; 
   baseCalculoIpi?: number;
   aliquotaIpi?: number;
   valorIpi?: number;
-  codigoEnquadramento?: string; // Default 999
+  codigoEnquadramento?: string;
 }
 
 export interface Product {
   id: string;
   codigo: string;
-  gtin?: string; // Pode ser opcional
+  gtin?: string;
   descricao: string;
   ncm: string;
   cfop: string;
@@ -368,11 +362,11 @@ export interface Product {
   valorUnitario: number;
   valorTotal: number;
   tax: TaxDetails;
-  isExternal?: boolean; // Usado pelo ProductSelector para itens da intranet
+  isExternal?: boolean;
 }
 
 export interface PaymentMethod {
-  tPag: string; // 01=Dinheiro, 03=Cartão Crédito, 17=PIX, etc
+  tPag: string;
   vPag: number;
 }
 
@@ -390,7 +384,7 @@ export interface InvoiceTotals {
   vNF: number;
 }
 
-export type EnvironmentType = '1' | '2'; // 1=Production, 2=Homologation
+export type EnvironmentType = '1' | '2';
 
 export interface ConfigData {
   ambiente: EnvironmentType;
@@ -400,13 +394,12 @@ export interface ConfigData {
   serie: string;
 }
 
-// Global values that affect the invoice but might be input as a total
 export interface GlobalValues {
     frete: number;
     seguro: number;
     desconto: number;
     outrasDespesas: number;
-    modalidadeFrete: '0' | '1' | '9'; // 0=Emitente, 1=Destinatario, 9=Sem Frete
+    modalidadeFrete: '0' | '1' | '9';
 }
 
 export type InvoiceStatus = 'editing' | 'draft' | 'signing' | 'transmitting' | 'authorized' | 'rejected' | 'cancelled' | 'error';
@@ -427,7 +420,6 @@ export interface InvoiceData {
   destinatario: Entity;
   produtos: Product[];
   
-  // Totais e Pagamento
   globalValues: GlobalValues;
   totais: InvoiceTotals;
   pagamento: PaymentMethod[];
@@ -446,7 +438,7 @@ export enum Step {
   EMITENTE = 1,
   DESTINATARIO = 2,
   PRODUTOS = 3,
-  PAGAMENTO = 4, // Mantendo conforme seu arquivo original
+  PAGAMENTO = 4,
   EMISSAO = 5
 }
 
