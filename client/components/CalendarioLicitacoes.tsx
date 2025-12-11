@@ -5,9 +5,9 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin, { DateClickArg } from '@fullcalendar/interaction';
 import { EventClickArg, EventDropArg, EventApi } from '@fullcalendar/core';
 import { api } from '../utils/api';
-import { Download, Eye, Trash2 } from 'lucide-react'; // Ícones
+import { Download, Eye, Trash2 } from 'lucide-react';
 
-// --- Função Auxiliar para Datas (Evita erro de fuso horário) ---
+// --- Função Auxiliar para Datas ---
 const formatDateToYMD = (date: Date) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -79,6 +79,14 @@ const EventoModal: React.FC<EventoModalProps> = ({
         alert('Por favor, selecione apenas arquivos PDF.');
         return;
       }
+      
+      // --- ALTERAÇÃO: LIMITE AGORA É 50MB ---
+      // 50 MB = 50 * 1024 * 1024 bytes
+      if (file.size > 50 * 1024 * 1024) {
+        alert('O arquivo excede o limite máximo de 50MB.');
+        return;
+      }
+
       const reader = new FileReader();
       reader.onloadend = () => {
         setFormData(prev => ({
@@ -107,7 +115,7 @@ const EventoModal: React.FC<EventoModalProps> = ({
     }
   };
 
-  // --- Visualizar PDF (Abre em nova aba) ---
+  // --- Visualizar PDF ---
   const viewFile = () => {
     if (!formData.editalFile) return;
     try {
@@ -200,7 +208,7 @@ const EventoModal: React.FC<EventoModalProps> = ({
               <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
                   <div className="flex flex-col items-center justify-center pt-2 pb-3">
                     <p className="mb-1 text-sm text-gray-500"><span className="font-semibold text-primary">Clique para enviar</span> ou arraste</p>
-                    <p className="text-xs text-gray-400">PDF (MAX. 5MB)</p>
+                    <p className="text-xs text-gray-400">PDF (MAX. 50MB)</p>
                   </div>
                   <input ref={fileInputRef} type="file" accept="application/pdf" className="hidden" onChange={handleFileChange} />
               </label>
@@ -249,7 +257,6 @@ const CalendarioLicitacoes: React.FC = () => {
         title: `${evt.time || ''} - ${evt.city}`, 
         start: evt.date || evt.start, 
         allDay: true,
-        // Usamos transparente para que o dayCellDidMount controle a cor da célula inteira
         backgroundColor: 'transparent', 
         borderColor: 'transparent',
         extendedProps: { ...evt }
@@ -276,7 +283,7 @@ const CalendarioLicitacoes: React.FC = () => {
       else if (modalState.event) await api.put(`/api/events/${modalState.event.id}`, payload);
       closeModal();
       await fetchEvents();
-    } catch (error) { alert('Erro ao salvar.'); }
+    } catch (error) { alert('Erro ao salvar. Verifique se o arquivo não é muito grande para o servidor.'); }
   };
 
   const handleDeleteEvent = async () => {
@@ -295,11 +302,7 @@ const CalendarioLicitacoes: React.FC = () => {
 
   return (
     <div className="h-full flex flex-col p-4 bg-gray-50">
-      {/* INJEÇÃO DE CSS PERSONALIZADO 
-         Isso garante o visual Azul/Clean e os botões bonitos
-      */}
       <style>{`
-        /* Cabeçalho Azul e Botões */
         .fc-toolbar-chunk button {
             background-color: #1E40AF !important;
             border-color: #1E40AF !important;
@@ -320,8 +323,6 @@ const CalendarioLicitacoes: React.FC = () => {
             font-weight: 700 !important;
             font-size: 1.5rem !important;
         }
-        
-        /* Células e Dias */
         .fc-col-header-cell {
             background-color: #F3F4F6;
             color: #4B5563;
@@ -335,15 +336,11 @@ const CalendarioLicitacoes: React.FC = () => {
             text-decoration: none !important;
             margin: 4px;
         }
-        
-        /* Eventos Invisíveis (Customizamos o conteúdo) */
         .fc-event {
             border: none !important;
             background: transparent !important;
             box-shadow: none !important;
         }
-
-        /* Animação para o dia de HOJE se tiver evento */
         @keyframes subtle-pulse {
             0% { box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.4); }
             50% { box-shadow: inset 0 0 0 4px rgba(37, 99, 235, 0.1); }
@@ -360,12 +357,10 @@ const CalendarioLicitacoes: React.FC = () => {
           plugins={[dayGridPlugin, interactionPlugin]}
           initialView="dayGridMonth"
           locale="pt-br"
-          // --- TRADUÇÃO DOS BOTÕES ---
           buttonText={{
             today: 'Hoje',
             month: 'Mês',
           }}
-          // --- CABEÇALHO COMPLETO (PREV/NEXT + TITULO + HOJE) ---
           headerToolbar={{
             left: 'prev,next today', 
             center: 'title',
@@ -378,7 +373,6 @@ const CalendarioLicitacoes: React.FC = () => {
           dateClick={openModalForNew}
           eventClick={openModalForEdit}
           eventDrop={handleEventDrop}
-          // --- CONTEÚDO DO EVENTO (CARD NO DIA) ---
           eventContent={(arg) => {
               const props = arg.event.extendedProps;
               const isPending = props.documentationStatus === 'PENDENTE';
@@ -395,7 +389,6 @@ const CalendarioLicitacoes: React.FC = () => {
                   </div>
               )
           }}
-          // --- PINTURA DOS DIAS (VERDE/AMARELO/AZUL) ---
           dayCellDidMount={(arg) => {
             const cellDate = formatDateToYMD(arg.date);
             const todayStr = formatDateToYMD(new Date());
@@ -406,20 +399,15 @@ const CalendarioLicitacoes: React.FC = () => {
                 return eDate === cellDate;
             });
 
-            // Se tem evento: Pinta de Amarelo (Pendente) ou Verde (OK)
             if (eventOnThisDay) {
                 const isPending = eventOnThisDay.extendedProps.documentationStatus === 'PENDENTE';
                 arg.el.style.backgroundColor = isPending ? '#FFFBEB' : '#F0FDF4'; 
                 arg.el.style.border = isPending ? '1px solid #FCD34D' : '1px solid #86EFAC';
-                
-                // Se for HOJE e tiver evento, destaca mais
                 if (isToday) {
                     arg.el.classList.add('evento-hoje-ativo');
                     arg.el.style.backgroundColor = '#DBEAFE'; 
                 }
-            } 
-            // Se for HOJE mas sem evento: Azulzinho claro padrão
-            else if (isToday) {
+            } else if (isToday) {
                 arg.el.style.backgroundColor = '#EFF6FF';
             }
           }}
