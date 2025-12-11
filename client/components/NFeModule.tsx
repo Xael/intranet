@@ -12,7 +12,8 @@ import { Danfe } from './Danfe';
 import { generateNfeXml, generateAccessKey } from '../services/xmlGenerator';
 import { validateCNPJ, validateRequired } from '../utils/validators';
 import { calculateInvoiceTotals } from '../utils/taxCalculations';
-import { db } from '../services/storage';
+// import { db } from '../services/storage'; <--- REMOVIDO O DB LOCAL
+import { api } from '../utils/api'; // <--- ADICIONADO A API
 import { FileText, Users, ShoppingCart, Send, ArrowRight, ArrowLeft, Download, CheckCircle, Shield, Settings, Loader2, AlertCircle, LayoutDashboard, Box, Search, History, Printer, Building2, LogOut, CreditCard, Save } from 'lucide-react';
 import { Municipio } from '../types';
 
@@ -35,7 +36,7 @@ interface NFeModuleProps {
 const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
   const [currentStep, setCurrentStep] = useState<Step>(Step.CONFIG);
-  
+   
   const [activeProfile, setActiveProfile] = useState<Entity | null>(null);
   const [showProfileSelector, setShowProfileSelector] = useState(false);
   const [profilesList, setProfilesList] = useState<Entity[]>([]);
@@ -44,37 +45,57 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
   // Flatten external data into Products
   const [externalProducts, setExternalProducts] = useState<Product[]>([]);
 
+  // 1. CARREGAR PERFIS (EMISSORES) VIA API
   useEffect(() => {
       const loadProfiles = async () => {
-          const profiles = await db.get<Entity>('issuers');
-          setProfilesList(profiles);
-          
-          const savedProfileId = localStorage.getItem('nfe_active_profile_id');
-          if (savedProfileId) {
-              const found = profiles.find(p => p.id === savedProfileId);
-              if (found) {
-                  setActiveProfile(found);
+          try {
+              // TROCAMOS db.get('issuers') POR api.get('/api/issuers')
+              const profiles = await api.get('/api/issuers'); 
+              // Garante que é array
+              const safeProfiles = Array.isArray(profiles) ? profiles : [];
+              setProfilesList(safeProfiles);
+              
+              const savedProfileId = localStorage.getItem('nfe_active_profile_id');
+              if (savedProfileId) {
+                  const found = safeProfiles.find((p: Entity) => p.id === savedProfileId);
+                  if (found) {
+                      setActiveProfile(found);
+                  } else {
+                      setShowProfileSelector(true);
+                  }
               } else {
                   setShowProfileSelector(true);
               }
-          } else {
+          } catch (error) {
+              console.error("Erro ao carregar perfis", error);
               setShowProfileSelector(true);
           }
       };
       loadProfiles();
   }, []);
 
+  // 2. CARREGAR ESTATÍSTICAS (CONTAGEM DE NOTAS) VIA API
   useEffect(() => {
       const loadStats = async () => {
           if (activeProfile) {
-              const allInvoices = await db.get<InvoiceData>('invoices');
-              const count = allInvoices.filter(i => i.emitente.cnpj.replace(/\D/g,'') === activeProfile.cnpj.replace(/\D/g,'')).length;
-              setInvoiceCount(count);
+              try {
+                  // TROCAMOS db.get('invoices') POR api.get('/api/nfe/notas')
+                  const allInvoices = await api.get('/api/nfe/notas');
+                  if (Array.isArray(allInvoices)) {
+                    const count = allInvoices.filter((i: InvoiceData) => 
+                        i.emitente?.cnpj?.replace(/\D/g,'') === activeProfile.cnpj.replace(/\D/g,'')
+                    ).length;
+                    setInvoiceCount(count);
+                  }
+              } catch (error) {
+                  console.error("Erro ao carregar notas", error);
+              }
           }
       };
       loadStats();
-  }, [activeProfile]);
+  }, [activeProfile, viewMode]); // Adicionei viewMode para atualizar quando voltar pro dashboard
 
+  // (MANTIDO IGUAL) Processamento de dados externos da Intranet
   useEffect(() => {
       if (externalData) {
           const flatProducts: Product[] = [];
@@ -83,16 +104,16 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
                   ed.itens.forEach(item => {
                       flatProducts.push({
                           id: item.id,
-                          codigo: item.id.substring(0, 8), // Gera código simples
+                          codigo: item.id.substring(0, 8),
                           descricao: `${item.descricao} (${item.marca || 'GEN'})`,
                           gtin: 'SEM GTIN',
-                          ncm: '', // Dados da Intranet não tem NCM
-                          cfop: '', // Dados da Intranet não tem CFOP
+                          ncm: '', 
+                          cfop: '', 
                           unidade: item.unidade,
                           quantidade: 1,
                           valorUnitario: item.valorUnitario,
                           valorTotal: item.valorUnitario,
-                          tax: { // Default tax
+                          tax: { 
                               origem: '0', 
                               baseCalculoIcms: 0, aliquotaIcms: 0, valorIcms: 0,
                               cstPis: '07', baseCalculoPis: 0, aliquotaPis: 0, valorPis: 0,
@@ -123,7 +144,6 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     emitente: { ...initialEntity },
     destinatario: { ...initialEntity },
     produtos: [],
-    // New Totals Object
     totais: { vBC:0, vICMS:0, vProd:0, vFrete:0, vSeg:0, vDesc:0, vIPI:0, vPIS:0, vCOFINS:0, vOutro:0, vNF:0 },
     globalValues: { frete: 0, seguro: 0, desconto: 0, outrasDespesas: 0, modalidadeFrete: '9' },
     pagamento: [],
@@ -140,12 +160,17 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
   const [printInvoice, setPrintInvoice] = useState<InvoiceData | null>(null);
   const [savedRecipients, setSavedRecipients] = useState<Entity[]>([]);
 
-  // Load recipients when entering recipient step
+  // 3. CARREGAR DESTINATÁRIOS VIA API
   useEffect(() => {
       if (currentStep === Step.DESTINATARIO) {
           const fetchRecipients = async () => {
-              const res = await db.get<Entity>('recipients');
-              setSavedRecipients(res);
+              try {
+                  // TROCAMOS db.get('recipients') POR api.get(...)
+                  const res = await api.get('/api/recipients');
+                  setSavedRecipients(Array.isArray(res) ? res : []);
+              } catch (err) {
+                  console.error(err);
+              }
           };
           fetchRecipients();
       }
@@ -172,9 +197,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
   }, [config.proximoNumeroNota, config.serie, status]);
 
   useEffect(() => {
-    // Recalculate totals whenever products or global values change
     const newTotals = calculateInvoiceTotals(invoice.produtos, invoice.globalValues);
-    
     setInvoice(prev => ({
       ...prev,
       totais: newTotals,
@@ -289,15 +312,24 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     if(selected) setInvoice(prev => ({ ...prev, destinatario: selected }));
   };
 
+  // 4. SALVAR RASCUNHO (POST/PUT API)
   const saveDraft = async () => {
       const draftInvoice: InvoiceData = {
           ...invoice,
           status: 'draft',
-          id: invoice.id || crypto.randomUUID()
+          // Se não tiver ID, gera um temporário, mas o backend vai criar um oficial
+          id: invoice.id || crypto.randomUUID() 
       };
-      await db.save('invoices', draftInvoice);
-      setInvoice(draftInvoice); // Update local state with ID
-      alert('Rascunho salvo com sucesso! Você pode continuar editando mais tarde no Histórico.');
+      
+      try {
+        // TROCAMOS db.save POR api.post
+        const saved = await api.post('/api/nfe/notas', draftInvoice);
+        setInvoice(saved); // Atualiza com o ID real do banco
+        alert('Rascunho salvo no banco de dados com sucesso!');
+      } catch (e) {
+        alert('Erro ao salvar rascunho.');
+        console.error(e);
+      }
   };
 
   const handleEditDraft = (draft: InvoiceData) => {
@@ -308,6 +340,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
       setStatus('editing');
   };
 
+  // 5. TRANSMISSÃO (SALVAR FINALIZADA NA API)
   const transmitNfe = async () => {
     if (!config.certificado) {
         alert("ERRO: Certificado Digital não encontrado. A assinatura é obrigatória.");
@@ -325,7 +358,14 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
         id: invoice.id || crypto.randomUUID(), 
         xmlAssinado: xmlPreview 
     };
-    await db.save('invoices', finalizedInvoice);
+
+    try {
+        // Salva nota autorizada na API
+        await api.post('/api/nfe/notas', finalizedInvoice);
+    } catch (e) {
+        console.error("Erro ao salvar nota autorizada", e);
+        // Mesmo com erro de save, o status visual muda para autorizado
+    }
     
     setConfig(prev => ({
         ...prev,
@@ -333,10 +373,13 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     }));
   };
 
+  // 6. PROCESSAR EVENTO (CANCELAMENTO/CCE) NA API
   const processEvent = async (invoice: InvoiceData, type: 'cancelamento' | 'cce', payload: string) => {
       if (invoice.status === 'draft' && type === 'cancelamento') {
           if(confirm("Deseja realmente excluir este rascunho permanentemente?")) {
-              if (invoice.id) await db.delete('invoices', invoice.id);
+              if (invoice.id) {
+                  await api.delete(`/api/nfe/notas/${invoice.id}`);
+              }
               setViewMode('history'); // Refresh
           }
           return;
@@ -350,25 +393,29 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
       try {
           await new Promise(resolve => setTimeout(resolve, 1500)); 
           await new Promise(resolve => setTimeout(resolve, 2000));
-          const currentInvoices = await db.get<InvoiceData>('invoices');
-          const idx = currentInvoices.findIndex(i => i.id === invoice.id);
           
-          if (idx >= 0) {
-              const updatedInvoice = { ...currentInvoices[idx] };
-              if (type === 'cancelamento') updatedInvoice.status = 'cancelled';
-              updatedInvoice.historicoEventos = [
-                  ...(updatedInvoice.historicoEventos || []),
+          // Busca a nota atual para atualizar
+          // Aqui usamos a lógica de fazer um update via POST/PUT
+          // Simulando a atualização do histórico
+          const updatedInvoice = { 
+              ...invoice,
+              status: type === 'cancelamento' ? 'cancelled' : invoice.status,
+              historicoEventos: [
+                  ...(invoice.historicoEventos || []),
                   {
                       tipo: type,
                       data: new Date().toISOString(),
                       detalhe: payload,
                       protocolo: `135${Math.floor(Math.random() * 9999999999)}`
                   }
-              ];
-              await db.save('invoices', updatedInvoice);
-              setViewMode('history');
-              alert(type === 'cancelamento' ? "Nota Fiscal Cancelada!" : "Carta de Correção Vinculada!");
-          }
+              ]
+           } as InvoiceData;
+
+           await api.post('/api/nfe/notas', updatedInvoice);
+           
+           setViewMode('history');
+           alert(type === 'cancelamento' ? "Nota Fiscal Cancelada!" : "Carta de Correção Vinculada!");
+
       } catch (error) {
           alert("Erro na transmissão do evento.");
       } finally {
@@ -444,8 +491,9 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
   };
 
   const renderRegistry = () => {
+    // Wrapper para EntityForm para lidar com chamadas async no onSave
     const EntityWrapper = ({ initial, onSave, onCancel }: { initial: Entity | null, onSave: (i: Entity) => Promise<void> | void, onCancel: () => void }) => {
-        const [data, setData] = useState<Entity>(initial || { ...initialEntity, id: new Date().getTime().toString() });
+        const [data, setData] = useState<Entity>(initial || { ...initialEntity, id: '' });
         return (
             <div>
                 <EntityForm title="Dados do Cadastro" data={data} onChange={setData} />
@@ -478,6 +526,8 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
         )
     };
 
+    // Aqui usamos o RegistryManager que já está atualizado para usar a API
+    // Não precisamos mexer aqui, pois o RegistryManager.tsx já faz api.get/api.post
     if (viewMode === 'issuers') {
         return <RegistryManager 
             collection="issuers" 
@@ -576,9 +626,8 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
             {showProductSelector && (
                 <ProductSelector 
                     onClose={() => setShowProductSelector(false)}
-                    externalProducts={externalProducts} // Passed from Intranet
+                    externalProducts={externalProducts} 
                     onSelect={(prod) => {
-                        // Recalculate tax with current profile CRT rules
                         addProduct({ ...prod, id: crypto.randomUUID(), valorTotal: prod.quantidade * prod.valorUnitario });
                         setShowProductSelector(false);
                     }}
