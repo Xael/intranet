@@ -5,9 +5,9 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin, { DateClickArg } from '@fullcalendar/interaction';
 import { EventClickArg, EventDropArg, EventApi } from '@fullcalendar/core';
 import { api } from '../utils/api';
+import { Download, Eye, Trash2 } from 'lucide-react'; // Ícones para os botões
 
 // --- Função Auxiliar para Datas ---
-// Garante que a comparação seja feita apenas por ANO-MES-DIA, ignorando fuso horário
 const formatDateToYMD = (date: Date) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -126,6 +126,36 @@ const EventoModal: React.FC<EventoModalProps> = ({
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+    }
+  };
+
+  // --- NOVA FUNÇÃO: VISUALIZAR PDF ---
+  const viewFile = () => {
+    if (!formData.editalFile) return;
+
+    try {
+        // O base64 geralmente vem como "data:application/pdf;base64,JVBER..."
+        // Precisamos pegar só a parte depois da vírgula
+        let base64Content = formData.editalFile;
+        if (base64Content.includes(',')) {
+            base64Content = base64Content.split(',')[1];
+        }
+
+        // Converte Base64 para Blob
+        const byteCharacters = atob(base64Content);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: 'application/pdf' });
+        
+        // Cria URL temporária e abre
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+    } catch (error) {
+        console.error("Erro ao visualizar PDF", error);
+        alert("Não foi possível visualizar o PDF. O arquivo pode estar corrompido.");
     }
   };
 
@@ -298,17 +328,24 @@ const EventoModal: React.FC<EventoModalProps> = ({
                 </label>
               </div>
             ) : (
-              <div className="flex items-center justify-between p-4 bg-green-50 border border-green-200 rounded-lg">
+              <div className="flex flex-col sm:flex-row items-center justify-between p-4 bg-green-50 border border-green-200 rounded-lg gap-3">
                 <div className="flex items-center">
-                  <svg className="w-6 h-6 text-green-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                  <span className="text-sm text-gray-700 font-medium truncate max-w-[200px]">{formData.editalFileName}</span>
+                  <svg className="w-6 h-6 text-green-600 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                  <span className="text-sm text-gray-700 font-medium truncate max-w-[150px] sm:max-w-[200px]">{formData.editalFileName}</span>
                 </div>
-                <div className="flex space-x-2">
-                  <button type="button" onClick={downloadFile} className="text-sm text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded hover:bg-blue-100">
-                    Baixar
+                
+                {/* Botões de Ação do Arquivo */}
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={viewFile} className="flex items-center text-sm text-indigo-600 hover:text-indigo-800 font-medium px-2 py-1 rounded hover:bg-indigo-50 border border-indigo-200">
+                    <Eye className="w-4 h-4 mr-1" /> Visualizar
                   </button>
-                  <button type="button" onClick={removeFile} className="text-sm text-red-600 hover:text-red-800 font-medium px-2 py-1 rounded hover:bg-red-100">
-                    Remover
+                  
+                  <button type="button" onClick={downloadFile} className="flex items-center text-sm text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded hover:bg-blue-100 border border-blue-200">
+                    <Download className="w-4 h-4 mr-1" /> Baixar
+                  </button>
+                  
+                  <button type="button" onClick={removeFile} className="flex items-center text-sm text-red-600 hover:text-red-800 font-medium px-2 py-1 rounded hover:bg-red-100 border border-red-200">
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -353,6 +390,7 @@ const EventoModal: React.FC<EventoModalProps> = ({
 // --- Main Calendar Component ---
 const CalendarioLicitacoes: React.FC = () => {
   const [events, setEvents] = useState<any[]>([]);
+  const [lastUpdated, setLastUpdated] = useState(Date.now()); // Estado auxiliar para forçar refresh
   const [modalState, setModalState] = useState<{
     isOpen: boolean;
     isNew: boolean;
@@ -372,7 +410,7 @@ const CalendarioLicitacoes: React.FC = () => {
         title: `${evt.time || ''} - ${evt.city}`, 
         start: evt.date || evt.start, 
         allDay: true,
-        // Mantém cores como fallback, mas o dayCellDidMount terá prioridade
+        // Cores padrão (fallback)
         backgroundColor: evt.documentationStatus === 'OK' ? '#C8E6C9' : '#FFF9C4',
         borderColor: evt.documentationStatus === 'OK' ? '#2E7D32' : '#FBC02D',
         textColor: '#000',
@@ -392,6 +430,7 @@ const CalendarioLicitacoes: React.FC = () => {
         }
       }));
       setEvents(formattedEvents);
+      setLastUpdated(Date.now()); // Atualiza o timestamp para forçar repintura
     } catch (error) {
       console.error("Erro ao buscar eventos", error);
     }
@@ -444,7 +483,7 @@ const CalendarioLicitacoes: React.FC = () => {
       }
       
       closeModal();
-      fetchEvents();
+      await fetchEvents();
     } catch (error) {
       alert('Erro ao salvar o evento.');
       console.error(error);
@@ -456,7 +495,7 @@ const CalendarioLicitacoes: React.FC = () => {
       try {
         await api.delete(`/api/events/${modalState.event.id}`);
         closeModal();
-        fetchEvents();
+        await fetchEvents();
       } catch (error) {
         alert('Erro ao excluir evento.');
       }
@@ -472,6 +511,8 @@ const CalendarioLicitacoes: React.FC = () => {
             start: updatedDate
         };
         await api.put(`/api/events/${arg.event.id}`, payload);
+        // Atualiza visualmente para garantir que a cor vá junto
+        await fetchEvents();
      } catch (error) {
          arg.revert();
          alert("Erro ao mover evento.");
@@ -482,9 +523,9 @@ const CalendarioLicitacoes: React.FC = () => {
     <div className="h-full flex flex-col p-4 bg-gray-100">
       <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md">
         <FullCalendar
-          // --- CORREÇÃO DE CORES ---
-          // A chave faz o React recriar o componente quando os eventos chegam, forçando a pintura das cores
-          key={events.length} 
+          // A chave muda sempre que o número de eventos muda OU quando atualizamos os dados
+          // Isso garante que as cores sejam reaplicadas corretamente após o modal fechar
+          key={`${events.length}-${lastUpdated}`} 
           plugins={[dayGridPlugin, interactionPlugin]}
           initialView="dayGridMonth"
           locale="pt-br"
@@ -514,9 +555,7 @@ const CalendarioLicitacoes: React.FC = () => {
               )
           }}
           dayCellDidMount={(arg) => {
-            // Função para garantir que a comparação de data funcione independente do fuso horário
             const cellDate = formatDateToYMD(arg.date);
-            
             const eventOnThisDay = events.find((e) => {
                 const eDate = typeof e.start === 'string' 
                     ? e.start 
@@ -526,7 +565,6 @@ const CalendarioLicitacoes: React.FC = () => {
 
             if (eventOnThisDay) {
                 const isPending = eventOnThisDay.extendedProps.documentationStatus === 'PENDENTE';
-                // Aplica as cores diretamente na célula do dia
                 arg.el.style.backgroundColor = isPending ? '#FFF9C4' : '#C8E6C9';
                 arg.el.style.border = isPending ? '1px solid #FBC02D' : '1px solid #2E7D32';
             }
