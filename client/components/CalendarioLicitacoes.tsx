@@ -1,5 +1,5 @@
-import React, { useState, useRef, FormEvent } from 'react';
-import { EventoCalendarioDetalhado, DetalhesEvento } from '../types';
+import React, { useState, useRef, FormEvent, ChangeEvent } from 'react';
+import { DetalhesEvento } from '../types';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin, { DateClickArg } from '@fullcalendar/interaction';
@@ -10,7 +10,7 @@ import { api } from '../utils/api';
 interface EventoModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (details: DetalhesEvento) => void;
+  onSave: (details: DetalhesEventoComDoc) => void;
   onDelete?: () => void;
   isNew: boolean;
   eventData?: EventApi;
@@ -18,12 +18,16 @@ interface EventoModalProps {
 }
 
 /**
- * Vamos estender aqui o tipo vindo do types.ts para garantir
- * que mesmo se o arquivo types.ts ainda não tiver sido atualizado,
- * este componente não vai quebrar.
+ * Estendemos o tipo para incluir os novos campos solicitados
  */
-type DetalhesEventoComDoc = DetalhesEvento & {
+export type DetalhesEventoComDoc = DetalhesEvento & {
   documentationStatus?: 'OK' | 'PENDENTE';
+  estimatedValue?: string;
+  distance?: string;
+  avgEmployees?: string;
+  warranty?: string;
+  editalFile?: string; // Armazenará o Base64 do PDF
+  editalFileName?: string; // Nome do arquivo para exibição
 };
 
 const EventoModal: React.FC<EventoModalProps> = ({
@@ -37,180 +41,309 @@ const EventoModal: React.FC<EventoModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  const initialDetails: DetalhesEventoComDoc = isNew
-    ? {
+  // Helper para inicializar os estados
+  const getInitialState = (): DetalhesEventoComDoc => {
+    if (isNew) {
+      return {
         city: '',
         bid_number: '',
         time: '',
         location: '',
         description: '',
         documentationStatus: 'PENDENTE',
-      }
-    : {
-        city: (eventData?.extendedProps as any)?.city || '',
-        bid_number:
-          (eventData?.extendedProps as any)?.bid_number ||
-          (eventData as any)?.bid_number ||
-          eventData?.title ||
-          '',
-        time: (eventData?.extendedProps as any)?.time || (eventData as any)?.time || '',
-        location: (eventData?.extendedProps as any)?.location || (eventData as any)?.location || '',
-        description:
-          (eventData?.extendedProps as any)?.description ||
-          (eventData as any)?.description ||
-          '',
-        documentationStatus:
-          (eventData?.extendedProps as any)?.documentationStatus || 'PENDENTE',
+        estimatedValue: '',
+        distance: '',
+        avgEmployees: '',
+        warranty: '',
+        editalFile: '',
+        editalFileName: ''
       };
+    } else if (eventData) {
+      // Busca dados estendidos (extendedProps) do evento existente
+      const props = eventData.extendedProps;
+      return {
+        city: props.city || '',
+        bid_number: props.bid_number || '',
+        time: props.time || '',
+        location: props.location || '',
+        description: props.description || '',
+        documentationStatus: props.documentationStatus || 'PENDENTE',
+        estimatedValue: props.estimatedValue || '',
+        distance: props.distance || '',
+        avgEmployees: props.avgEmployees || '',
+        warranty: props.warranty || '',
+        editalFile: props.editalFile || '',
+        editalFileName: props.editalFileName || ''
+      };
+    }
+    return {} as DetalhesEventoComDoc;
+  };
 
-  const [details, setDetails] = useState<DetalhesEventoComDoc>(initialDetails);
+  const [formData, setFormData] = useState<DetalhesEventoComDoc>(getInitialState());
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const modalTitle = isNew ? 'Nova Licitação' : 'Editar Licitação';
-  const displayDate = new Date((dateStr || eventData?.startStr) + 'T00:00:00').toLocaleDateString(
-    'pt-BR'
-  );
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const handleChange = (
+    e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+  ) => {
     const { name, value } = e.target;
-    setDetails((prev) => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  // Lógica para converter PDF em Base64
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.type !== 'application/pdf') {
+        alert('Por favor, selecione apenas arquivos PDF.');
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData(prev => ({
+          ...prev,
+          editalFile: reader.result as string, // Base64 completo
+          editalFileName: file.name
+        }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const removeFile = () => {
+    setFormData(prev => ({ ...prev, editalFile: '', editalFileName: '' }));
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const downloadFile = () => {
+    if (formData.editalFile) {
+      const link = document.createElement('a');
+      link.href = formData.editalFile;
+      link.download = formData.editalFileName || 'edital.pdf';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
   };
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!details.bid_number.trim()) {
-      alert('O campo "Identificação da Licitação" é obrigatório.');
-      return;
-    }
-    onSave(details);
+    onSave(formData);
   };
 
   return (
-    <div
-      className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <form onSubmit={handleSubmit}>
-          <div className="p-6 border-b">
-            <h3 className="text-xl font-bold text-gray-800">{modalTitle}</h3>
-            <p className="text-sm text-gray-600">Data: {displayDate}</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4 overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center p-4 border-b">
+          <h3 className="text-xl font-semibold text-gray-800">
+            {isNew ? 'Nova Licitação' : 'Editar Licitação'}
+          </h3>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+            ✕
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          
+          {/* Data (Exibição apenas, pois vem do calendário) */}
+          <div className="bg-blue-50 p-2 rounded text-blue-800 font-medium text-center">
+             Data: {isNew ? dateStr?.split('-').reverse().join('/') : eventData?.startStr.split('-').reverse().join('/')}
           </div>
-          <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+
+          {/* Identificação e Horário */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="md:col-span-2">
-              <label htmlFor="bid_number" className="block text-sm font-medium text-gray-700">
-                Identificação da Licitação (Entidade + nº):
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Identificação (Entidade + nº)</label>
               <input
                 type="text"
                 name="bid_number"
-                id="bid_number"
-                value={details.bid_number}
+                value={formData.bid_number}
                 onChange={handleChange}
+                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-primary focus:border-primary"
+                placeholder="Ex: Pref. Jandira - 001/2025"
                 required
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
               />
             </div>
             <div>
-              <label htmlFor="city" className="block text-sm font-medium text-gray-700">
-                Cidade:
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Horário</label>
+              <input
+                type="time"
+                name="time"
+                value={formData.time}
+                onChange={handleChange}
+                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                required
+              />
+            </div>
+          </div>
+
+          {/* Cidade e Status */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Cidade</label>
               <input
                 type="text"
                 name="city"
-                id="city"
-                value={details.city}
+                value={formData.city}
                 onChange={handleChange}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
+                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                placeholder="Nome da Cidade"
+                required
               />
             </div>
             <div>
-              <label htmlFor="time" className="block text-sm font-medium text-gray-700">
-                Horário:
-              </label>
-              <input
-                type="text"
-                name="time"
-                id="time"
-                value={details.time}
-                onChange={handleChange}
-                placeholder="Ex: 10:00"
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
-              />
-            </div>
-
-            {/* NOVO CAMPO: DOCUMENTAÇÃO */}
-            <div>
-              <label
-                htmlFor="documentationStatus"
-                className="block text-sm font-medium text-gray-700"
-              >
-                Documentação:
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Documentação</label>
               <select
                 name="documentationStatus"
-                id="documentationStatus"
-                value={details.documentationStatus || 'PENDENTE'}
+                value={formData.documentationStatus}
                 onChange={handleChange}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
+                className={`mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 font-medium ${
+                  formData.documentationStatus === 'OK' ? 'text-green-600 bg-green-50' : 'text-yellow-600 bg-yellow-50'
+                }`}
               >
-                <option value="OK">✅ Documentação OK</option>
                 <option value="PENDENTE">⚠️ Documentação Pendente</option>
+                <option value="OK">✅ Documentação OK</option>
               </select>
             </div>
+          </div>
 
-            <div className="md:col-span-2">
-              <label htmlFor="location" className="block text-sm font-medium text-gray-700">
-                Local:
-              </label>
+          {/* NOVOS CAMPOS - Linha 1 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Valor Estimado</label>
               <input
                 type="text"
-                name="location"
-                id="location"
-                value={details.location}
+                name="estimatedValue"
+                value={formData.estimatedValue}
                 onChange={handleChange}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
+                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                placeholder="R$ 0,00"
               />
             </div>
-            <div className="md:col-span-2">
-              <label htmlFor="description" className="block text-sm font-medium text-gray-700">
-                Descrição:
-              </label>
-              <textarea
-                name="description"
-                id="description"
-                value={details.description}
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Distância Jandira/Itapuí</label>
+              <input
+                type="text"
+                name="distance"
+                value={formData.distance}
                 onChange={handleChange}
-                rows={3}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
-              ></textarea>
+                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                placeholder="Ex: 50 km"
+              />
             </div>
           </div>
-          <div className="p-6 bg-gray-50 rounded-b-lg flex justify-between items-center gap-3">
+
+          {/* NOVOS CAMPOS - Linha 2 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              {!isNew && onDelete && (
-                <button
-                  type="button"
-                  onClick={onDelete}
-                  className="px-4 py-2 bg-red-600 border border-transparent rounded-md shadow-sm text-sm font-medium text-white hover:bg-red-700"
-                >
-                  Excluir
-                </button>
-              )}
+              <label className="block text-sm font-medium text-gray-700">Média de Funcionários</label>
+              <input
+                type="number"
+                name="avgEmployees"
+                value={formData.avgEmployees}
+                onChange={handleChange}
+                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                placeholder="Ex: 5"
+              />
             </div>
-            <div className="flex gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Garantia</label>
+              <input
+                type="text"
+                name="warranty"
+                value={formData.warranty}
+                onChange={handleChange}
+                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                placeholder="Valor ou 'Sem Garantia'"
+              />
+            </div>
+          </div>
+
+          {/* Local (Site) */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Local (Site / Portal)</label>
+            <input
+              type="text"
+              name="location"
+              value={formData.location}
+              onChange={handleChange}
+              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+              placeholder="Ex: www.bll.org.br"
+            />
+          </div>
+
+          {/* Descrição */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Descrição / Objeto</label>
+            <textarea
+              name="description"
+              value={formData.description}
+              onChange={handleChange}
+              rows={3}
+              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+              placeholder="Detalhes do objeto da licitação..."
+            />
+          </div>
+
+          {/* Campo de Anexo (Edital) */}
+          <div className="border-t pt-4 mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Edital (PDF)</label>
+            
+            {!formData.editalFile ? (
+              <div className="flex items-center justify-center w-full">
+                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
+                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                    <svg className="w-8 h-8 mb-4 text-gray-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
+                      <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"/>
+                    </svg>
+                    <p className="mb-2 text-sm text-gray-500"><span className="font-semibold">Clique para enviar</span> ou arraste</p>
+                    <p className="text-xs text-gray-500">PDF (MAX. 5MB)</p>
+                  </div>
+                  <input ref={fileInputRef} type="file" accept="application/pdf" className="hidden" onChange={handleFileChange} />
+                </label>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between p-4 bg-green-50 border border-green-200 rounded-lg">
+                <div className="flex items-center">
+                  <svg className="w-6 h-6 text-green-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                  <span className="text-sm text-gray-700 font-medium truncate max-w-[200px]">{formData.editalFileName}</span>
+                </div>
+                <div className="flex space-x-2">
+                  <button type="button" onClick={downloadFile} className="text-sm text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded hover:bg-blue-100">
+                    Baixar
+                  </button>
+                  <button type="button" onClick={removeFile} className="text-sm text-red-600 hover:text-red-800 font-medium px-2 py-1 rounded hover:bg-red-100">
+                    Remover
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-between pt-4 mt-6 border-t border-gray-100">
+            {!isNew && onDelete ? (
+               <button
+                type="button"
+                onClick={() => {
+                   if(confirm("Tem certeza que deseja excluir esta licitação?")) onDelete();
+                }}
+                className="px-4 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
+              >
+                Excluir
+              </button>
+            ) : <div></div>}
+            
+            <div className="flex space-x-3">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 bg-primary border border-transparent rounded-md shadow-sm text-sm font-medium text-white hover:bg-secondary"
+                className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 shadow-md"
               >
                 Salvar
               </button>
@@ -223,231 +356,138 @@ const EventoModal: React.FC<EventoModalProps> = ({
 };
 
 // --- Main Calendar Component ---
-interface CalendarioLicitacoesProps {
-  events: EventoCalendarioDetalhado[];
-  setEvents: React.Dispatch<React.SetStateAction<EventoCalendarioDetalhado[]>>;
-}
-
-const CalendarioLicitacoes: React.FC<CalendarioLicitacoesProps> = ({ events, setEvents }) => {
+const CalendarioLicitacoes: React.FC = () => {
+  const [events, setEvents] = useState<EventApi[]>([]);
   const [modalState, setModalState] = useState<{
     isOpen: boolean;
     isNew: boolean;
     dateStr?: string;
     event?: EventApi;
-  }>({
-    isOpen: false,
-    isNew: true,
-  });
-  const restoreInputRef = useRef<HTMLInputElement>(null);
+  }>({ isOpen: false, isNew: false });
 
-  const openModalForNew = (arg: DateClickArg) => {
-    setModalState({ isOpen: true, isNew: true, dateStr: arg.dateStr });
-  };
+  // Load events from API on mount
+  React.useEffect(() => {
+    fetchEvents();
+  }, []);
 
-  const openModalForEdit = (arg: EventClickArg) => {
-    const eventData = events.find((e) => e.id === arg.event.id);
-    if (eventData) {
-      setModalState({ isOpen: true, isNew: false, event: arg.event });
+  const fetchEvents = async () => {
+    try {
+      const data = await api.get('/api/events');
+      // Mapeia os dados do banco para o formato do FullCalendar
+      const formattedEvents = data.map((evt: any) => ({
+        id: evt.id,
+        title: `${evt.time || ''} - ${evt.city}`, // Título no calendário
+        start: evt.date, // Data (YYYY-MM-DD)
+        allDay: true,
+        backgroundColor: evt.documentationStatus === 'OK' ? '#C8E6C9' : '#FFF9C4',
+        borderColor: evt.documentationStatus === 'OK' ? '#2E7D32' : '#FBC02D',
+        textColor: '#000',
+        extendedProps: {
+          city: evt.city,
+          bid_number: evt.bid_number,
+          time: evt.time,
+          location: evt.location,
+          description: evt.description,
+          documentationStatus: evt.documentationStatus,
+          // Novos campos mapeados do banco
+          estimatedValue: evt.estimatedValue,
+          distance: evt.distance,
+          avgEmployees: evt.avgEmployees,
+          warranty: evt.warranty,
+          editalFile: evt.editalFile,
+          editalFileName: evt.editalFileName
+        }
+      }));
+      setEvents(formattedEvents);
+    } catch (error) {
+      console.error("Erro ao buscar eventos", error);
     }
   };
 
-  const closeModal = () => {
-    setModalState({ isOpen: false, isNew: true });
+  const openModalForNew = (arg: DateClickArg) => {
+    setModalState({
+      isOpen: true,
+      isNew: true,
+      dateStr: arg.dateStr,
+    });
   };
 
-  // monta o título com o ícone da documentação
-  const buildEventTitle = (det: DetalhesEventoComDoc) => {
-    const base = det.bid_number || 'Licitação';
-    const icon = det.documentationStatus === 'OK' ? '✅' : '⚠️';
-    return `${base} ${icon}`;
+  const openModalForEdit = (arg: EventClickArg) => {
+    setModalState({
+      isOpen: true,
+      isNew: false,
+      event: arg.event,
+    });
+  };
+
+  const closeModal = () => {
+    setModalState({ isOpen: false, isNew: false });
   };
 
   const handleSaveEvent = async (details: DetalhesEventoComDoc) => {
     try {
-      if (modalState.isNew && modalState.dateStr) {
-        const newEventPayload = {
-          start: modalState.dateStr,
-          title: buildEventTitle(details),
-          city: details.city,
-          bid_number: details.bid_number,
-          time: details.time,
-          location: details.location,
-          description: details.description,
-          documentationStatus: details.documentationStatus || 'PENDENTE',
-        };
-        const savedEvent = await api.post('/api/events', newEventPayload);
-        setEvents((currentEvents) => [...currentEvents, savedEvent]);
-      } else if (!modalState.isNew && modalState.event) {
-        const eventId = modalState.event.id;
-        const originalEvent = events.find((e) => e.id === eventId);
-        if (!originalEvent) throw new Error('Evento original não encontrado');
+      const payload = {
+        city: details.city,
+        bid_number: details.bid_number,
+        time: details.time,
+        location: details.location,
+        description: details.description,
+        documentationStatus: details.documentationStatus,
+        // Novos campos
+        estimatedValue: details.estimatedValue,
+        distance: details.distance,
+        avgEmployees: details.avgEmployees,
+        warranty: details.warranty,
+        editalFile: details.editalFile,
+        editalFileName: details.editalFileName,
+        // Campos obrigatórios do banco
+        date: modalState.isNew ? modalState.dateStr : modalState.event?.startStr,
+        title: `${details.time} - ${details.city}`, // Campo redundante usado em visualizações simples
+      };
 
-        const updatedEventPayload = {
-          ...originalEvent,
-          title: buildEventTitle(details),
-          city: details.city,
-          bid_number: details.bid_number,
-          time: details.time,
-          location: details.location,
-          description: details.description,
-          documentationStatus: details.documentationStatus || 'PENDENTE',
-        };
-        const savedEvent = await api.put(`/api/events/${eventId}`, updatedEventPayload);
-        setEvents((currentEvents) => currentEvents.map((e) => (e.id === eventId ? savedEvent : e)));
+      if (modalState.isNew) {
+        await api.post('/api/events', payload);
+      } else if (modalState.event) {
+        await api.put(`/api/events/${modalState.event.id}`, payload);
       }
+      
       closeModal();
+      fetchEvents(); // Recarrega calendário
     } catch (error) {
-      alert(`Falha ao salvar evento: ${(error as Error).message}`);
+      alert('Erro ao salvar o evento.');
+      console.error(error);
     }
   };
 
   const handleDeleteEvent = async () => {
-    if (!modalState.isNew && modalState.event && window.confirm('Tem certeza que deseja excluir este evento?')) {
-      const eventId = modalState.event.id;
+    if (modalState.event) {
       try {
-        await api.delete(`/api/events/${eventId}`);
-        setEvents((currentEvents) => currentEvents.filter((e) => e.id !== eventId));
+        await api.delete(`/api/events/${modalState.event.id}`);
         closeModal();
+        fetchEvents();
       } catch (error) {
-        alert(`Falha ao excluir evento: ${(error as Error).message}`);
+        alert('Erro ao excluir evento.');
       }
     }
   };
 
   const handleEventDrop = async (arg: EventDropArg) => {
-    const { event } = arg;
-    if (!event.startStr) return;
-
-    const originalEvent = events.find((e) => e.id === event.id);
-    if (!originalEvent) return;
-
-    const updatedEventPayload = { ...originalEvent, start: event.startStr };
-
-    try {
-      const savedEvent = await api.put(`/api/events/${event.id}`, updatedEventPayload);
-      setEvents((currentEvents) => currentEvents.map((e) => (e.id === event.id ? savedEvent : e)));
-    } catch (error) {
-      alert(`Falha ao mover evento: ${(error as Error).message}`);
-      arg.revert();
-    }
-  };
-
-  const handleBackup = () => {
-    if (events.length === 0) {
-      alert('Não há dados no calendário para fazer backup.');
-      return;
-    }
-    const dataStr = JSON.stringify({ events }, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(dataBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    const date = new Date().toISOString().slice(0, 10);
-    a.download = `backup_calendario_${date}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const handleRestoreClick = () => {
-    restoreInputRef.current?.click();
-  };
-
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (file.type !== 'application/json') {
-      alert('Por favor, selecione um arquivo de backup .json válido.');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const text = e.target?.result as string;
-        if (!text) throw new Error('Arquivo vazio.');
-
-        const data = JSON.parse(text);
-        const eventsToRestore = data.events && Array.isArray(data.events) ? data.events : null;
-
-        if (!eventsToRestore) {
-          throw new Error('Formato do arquivo de backup inválido. Chave "events" não encontrada.');
-        }
-        // normalizar para garantir o novo campo
-        const normalized = eventsToRestore.map((ev: any) => ({
-          ...ev,
-          documentationStatus: ev.documentationStatus || 'PENDENTE',
-          title: ev.title || `${ev.bid_number || 'Licitação'} ${ev.documentationStatus === 'OK' ? '✅' : '⚠️'}`,
-        }));
-
-        if (
-          window.confirm(
-            'Restaurar este backup irá substituir TODOS os dados atuais do calendário. Deseja continuar?'
-          )
-        ) {
-          await api.post('/api/events/restore', { events: normalized });
-          setEvents(normalized);
-          alert('Backup do calendário restaurado com sucesso!');
-        }
-      } catch (error) {
-        console.error('Erro ao restaurar backup:', error);
-        alert(`Ocorreu um erro ao ler o arquivo de backup do calendário: ${(error as Error).message}`);
-      } finally {
-        if (restoreInputRef.current) restoreInputRef.current.value = '';
-      }
-    };
-    reader.readAsText(file);
+     try {
+        const updatedDate = arg.event.startStr; // YYYY-MM-DD
+        // Mantém os dados antigos, só muda a data
+        const payload = {
+            ...arg.event.extendedProps,
+            date: updatedDate
+        };
+        await api.put(`/api/events/${arg.event.id}`, payload);
+     } catch (error) {
+         arg.revert(); // Volta se der erro
+         alert("Erro ao mover evento.");
+     }
   };
 
   return (
-    <div className="space-y-6">
-      <style>{`
-        .fc .fc-scrollgrid, .fc table {
-            border-collapse: collapse;
-        }
-        .fc th, .fc td {
-            border: 1px solid #ddd !important;
-        }
-        .fc .fc-col-header-cell {
-            background-color: #f7f7f7;
-        }
-        .fc-day-today {
-            background-color: #dbeafe !important;
-        }
-      `}</style>
-      <div className="flex flex-wrap justify-between items-center gap-4">
-        <h2 className="text-3xl font-bold text-gray-800">Calendário de Licitações</h2>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleBackup}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700 transition-colors"
-          >
-            Fazer Backup
-          </button>
-          <button
-            onClick={handleRestoreClick}
-            className="px-4 py-2 bg-gray-600 text-white rounded-lg shadow hover:bg-gray-700 transition-colors"
-          >
-            Restaurar Backup
-          </button>
-          <input
-            type="file"
-            ref={restoreInputRef}
-            onChange={handleFileSelect}
-            accept=".json"
-            className="hidden"
-          />
-          <button
-            onClick={() =>
-              openModalForNew({ dateStr: new Date().toISOString().split('T')[0] } as any)
-            }
-            className="px-4 py-2 bg-primary text-white rounded-lg shadow hover:bg-secondary transition-colors"
-          >
-            Novo Evento
-          </button>
-        </div>
-      </div>
+    <div className="h-full flex flex-col p-4 bg-gray-100">
       <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md">
         <FullCalendar
           plugins={[dayGridPlugin, interactionPlugin]}
@@ -459,29 +499,42 @@ const CalendarioLicitacoes: React.FC<CalendarioLicitacoesProps> = ({ events, set
             right: 'dayGridMonth',
           }}
           hiddenDays={[0, 6]}
-          events={events}
+          events={events} // Usa o state local formatado
           selectable={true}
           editable={true}
           dateClick={openModalForNew}
           eventClick={openModalForEdit}
           eventDrop={handleEventDrop}
-          eventDataTransform={(eventInfo) => {
-            return {
-              ...eventInfo,
-              extendedProps: {
-                ...eventInfo,
-                documentationStatus: (eventInfo as any).documentationStatus || 'PENDENTE',
-              },
-            };
+          eventContent={(arg) => {
+              // Customização visual do evento no calendário
+              const props = arg.event.extendedProps;
+              return (
+                  <div className="p-1 overflow-hidden">
+                      <div className="font-bold text-xs">{arg.timeText}</div>
+                      <div className="font-bold text-xs truncate">{props.bid_number}</div>
+                      <div className="text-xs truncate">{props.city}</div>
+                      {props.documentationStatus === 'PENDENTE' && (
+                          <div className="text-[10px] text-red-600 font-bold">⚠️ DOC PENDENTE</div>
+                      )}
+                  </div>
+              )
           }}
           dayCellDidMount={(arg) => {
+            // Pinta o fundo do dia se tiver evento
             const dateStr = arg.date.toISOString().split('T')[0];
             const hasEvent = events.some((e) => e.start === dateStr);
-            arg.el.style.backgroundColor = hasEvent ? '#FFF9C4' : '#C8E6C9';
+            if (hasEvent) {
+                // Se o evento tem doc pendente, pinta o dia de amarelo claro, senão verde claro
+                const evt = events.find(e => e.start === dateStr);
+                const isPending = evt?.extendedProps.documentationStatus === 'PENDENTE';
+                arg.el.style.backgroundColor = isPending ? '#FFFDE7' : '#E8F5E9';
+            }
           }}
           height="auto"
         />
       </div>
+      
+      {/* O Modal agora é renderizado dentro do componente principal */}
       <EventoModal
         isOpen={modalState.isOpen}
         onClose={closeModal}
