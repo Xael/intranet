@@ -14,7 +14,6 @@ import NFeModule from './NFeModule';
 import { LicitacaoDetalhada, EventoCalendarioDetalhado, Municipio, EPIEntrega, SimulacaoSalva, Cotacao, SimulacaoCotacaoSalva, CalculadoraSalva, EPIEstoqueItem } from '../types';
 import { api } from '../utils/api';
 
-
 export type ViewType = 'dashboard' | 'calendario' | 'status' | 'materiais' | 'empenhos' | 'epi' | 'cotacoes' | 'configuracoes' | 'calculadora' | 'nfe';
 
 const MainPlatform: React.FC = () => {
@@ -29,79 +28,81 @@ const MainPlatform: React.FC = () => {
   const [cotacoesData, setCotacoesData] = useState<Cotacao[]>([]);
   const [simulacoesCotacoesSalvas, setSimulacoesCotacoesSalvas] = useState<SimulacaoCotacaoSalva[]>([]);
   const [calculosSalvos, setCalculosSalvos] = useState<CalculadoraSalva[]>([]);
-  // Novo estado para controlar se NFe está habilitado globalmente
+  
+  // Configuração Global (NFe habilitado?)
   const [nfeEnabled, setNfeEnabled] = useState(true);
 
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setIsLoading(true);
+  const fetchData = async () => {
+    setIsLoading(true);
+    try {
         const [
-          licitacoesRes,
-          eventosRes,
-          materiaisRes,
-          epiRes,
-          epiEstoqueRes,
-          simulacoesRes,
-          cotacoesRes,
-          simulacoesCotacoesRes,
-          calculosRes,
-          settingsRes, // Nova requisição
+            bids, 
+            events, 
+            mats, 
+            epi, 
+            epiEstoque, 
+            sims, 
+            cots, 
+            simCots,
+            calcs,
+            settings
         ] = await Promise.all([
-          api.get('/api/licitacoes'),
-          api.get('/api/events'),
-          api.get('/api/materiais'),
-          api.get('/api/epi'),
-          api.get('/api/epi-estoque'),
-          api.get('/api/simulacoes'),
-          api.get('/api/cotacoes'),
-          api.get('/api/simulacoes-cotacoes'),
-          api.get('/api/calculadora'),
-          api.get('/api/settings'),
+            api.get('/api/licitacoes'),
+            api.get('/api/events'),
+            api.get('/api/materiais'),
+            api.get('/api/epi'),
+            api.get('/api/epi-estoque'),
+            api.get('/api/simulacoes'),
+            api.get('/api/cotacoes'),
+            api.get('/api/simulacoes-cotacoes'),
+            api.get('/api/calculadora'),
+            api.get('/api/settings').catch(() => ({ nfeEnabled: true })) 
         ]);
 
-        if (licitacoesRes) setLicitacoes(licitacoesRes);
-        if (eventosRes) setEventos(eventosRes);
-        if (materiaisRes) setMateriaisData(materiaisRes);
-        if (epiRes) setEpiData(epiRes);
-        if (epiEstoqueRes) setEpiEstoqueData(epiEstoqueRes);
-        if (simulacoesRes) setSimulacoesSalvas(simulacoesRes);
-        if (cotacoesRes) setCotacoesData(cotacoesRes);
-        if (simulacoesCotacoesRes) setSimulacoesCotacoesSalvas(simulacoesCotacoesRes);
-        if (calculosRes) setCalculosSalvos(calculosRes);
-        if (settingsRes) setNfeEnabled(settingsRes.nfeEnabled);
+        setLicitacoes(bids);
+        setEventos(events);
+        setMateriaisData(mats);
+        setEpiData(epi);
+        setEpiEstoqueData(epiEstoque);
+        setSimulacoesSalvas(sims);
+        setCotacoesData(cots);
+        setSimulacoesCotacoesSalvas(simCots);
+        setCalculosSalvos(calcs);
+        if (settings) setNfeEnabled(settings.nfeEnabled);
 
-      } catch (error) {
-        console.error("Falha ao carregar dados da plataforma:", error);
-        // Aqui você pode adicionar um estado de erro para exibir na UI
-      } finally {
+    } catch (error) {
+        console.error("Erro ao carregar dados iniciais:", error);
+    } finally {
         setIsLoading(false);
-      }
-    };
+    }
+  };
 
+  useEffect(() => {
     fetchData();
   }, []);
 
-
-  const renderView = () => {
+  const renderContent = () => {
     if (isLoading) {
-       return (
-        <div className="flex items-center justify-center h-full">
-            <div className="w-16 h-16 border-4 border-dashed rounded-full animate-spin border-primary"></div>
-        </div>
-      );
+        return (
+            <div className="flex h-full items-center justify-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            </div>
+        );
     }
 
     switch (currentView) {
-      case 'dashboard':
-        return <Dashboard bids={licitacoes} events={eventos} materiaisData={materiaisData} epiData={epiData} />;
       case 'calendario':
-        return <CalendarioLicitacoes events={eventos} setEvents={setEventos} />;
+        // CORREÇÃO: Removemos props 'events' e 'setEvents' pois o componente agora é independente
+        return <CalendarioLicitacoes />;
       case 'status':
         return <StatusLicitacoes bids={licitacoes} setBids={setLicitacoes} />;
       case 'materiais':
-        return <ControleMateriais data={materiaisData} setData={setMateriaisData} simulacoesSalvas={simulacoesSalvas} setSimulacoesSalvas={setSimulacoesSalvas} />;
+        return <ControleMateriais 
+            data={materiaisData} 
+            setData={setMateriaisData} 
+            simulacoesSalvas={simulacoesSalvas}
+            setSimulacoesSalvas={setSimulacoesSalvas}
+        />;
       case 'empenhos':
         return <ControleEmpenhos data={materiaisData} setData={setMateriaisData} />;
       case 'epi':
@@ -118,7 +119,6 @@ const MainPlatform: React.FC = () => {
       case 'configuracoes':
         return <Configuracoes nfeEnabled={nfeEnabled} setNfeEnabled={setNfeEnabled} />;
       case 'nfe':
-        // Proteção extra de rota
         if (!nfeEnabled) return <div>Módulo desativado pelo administrador.</div>;
         return <NFeModule externalData={materiaisData} />;
       default:
@@ -131,8 +131,8 @@ const MainPlatform: React.FC = () => {
       <Sidebar currentView={currentView} setCurrentView={setCurrentView} nfeEnabled={nfeEnabled} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
-        <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-4 md:p-8">
-          {renderView()}
+        <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-4">
+          {renderContent()}
         </main>
       </div>
     </div>
