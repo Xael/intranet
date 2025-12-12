@@ -129,32 +129,29 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
     }
   };
 
-  // 3. Alterar Status Manualmente (Para o botão 'Editar Status')
-  const handleForceStatusUpdate = async (invoice: InvoiceData, newStatus: InvoiceStatus) => {
-    const statusMap = ['authorized', 'cancelled', 'rejected', 'error', 'draft'];
+// 3. Alterar Status Manualmente (Para o botão 'Editar Status')
+  const handleForceStatusUpdate = async (invoice: InvoiceData) => {
     const currentStatus = invoice.status || 'authorized';
-    const currentStatusIndex = statusMap.indexOf(currentStatus);
 
     // Prompt simples para escolha de status
     const statusPrompt = prompt(
-        `Selecione o novo status para a nota ${invoice.numero} (${currentStatus.toUpperCase()}):\n\n1: AUTORIZADA\n2: CANCELADA\n3: DENEGADA/REJEITADA\n4: RASCUNHO\n\nDigite o número da opção (1-4):`
+        `Selecione o NOVO status para a nota ${invoice.numero} (${currentStatus.toUpperCase()}).\n\nPossíveis valores:\n- authorized\n- cancelled\n- rejected\n- draft\n\n(Atenção: Apenas alteração local):`
     );
 
-    let finalStatus: InvoiceStatus = currentStatus;
-    switch (statusPrompt) {
-        case '1': finalStatus = 'authorized'; break;
-        case '2': finalStatus = 'cancelled'; break;
-        case '3': finalStatus = 'rejected'; break;
-        case '4': finalStatus = 'draft'; break;
-        default: 
-            if (statusPrompt) alert("Opção inválida. Status não alterado.");
-            return;
+    if (!statusPrompt) return;
+
+    const finalStatus = statusPrompt.toLowerCase() as InvoiceStatus;
+    
+    if (!['authorized', 'cancelled', 'rejected', 'draft'].includes(finalStatus)) {
+        alert("Status inválido. Use: authorized, cancelled, rejected ou draft.");
+        return;
     }
 
     if (finalStatus === currentStatus) return;
 
     setLoading(true);
     try {
+        // Envia o objeto completo da nota com o novo status (o backend faz o UPSERT)
         await api.post('/api/nfe/notas', { ...invoice, status: finalStatus });
         alert(`Status da nota ${invoice.numero} alterado para ${finalStatus.toUpperCase()} com sucesso.`);
         loadData();
@@ -407,60 +404,60 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
                                 {inv.totais ? inv.totais.vNF.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'R$ 0,00'}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
-                                <div className="flex justify-center items-center space-x-1">
+                                <div className="flex justify-center space-x-1">
                                     
                                     {/* 1. EXCLUIR PERMANENTE */}
                                     <button onClick={() => handleDeleteInvoice(inv.id)} className="p-1.5 text-red-700 hover:bg-red-100 rounded" title="EXCLUIR Nota do Sistema (Permanente)">
                                         <Trash2 className="w-4 h-4" />
                                     </button>
                                     
-                                    {/* 2. DUPLICAR */}
+                                    {/* SEPARADOR */}
+                                    <div className="w-px h-6 bg-gray-200 mx-1 self-center"></div>
+
+                                    {/* 2. VISUALIZAR / IMPRIMIR (Chamando onPrint para prévia DANFE) */}
+                                    <button onClick={() => onPrint(inv)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Visualizar / Imprimir DANFE">
+                                        <Printer className="w-4 h-4" />
+                                    </button>
+                                    
+                                    {/* 3. DOWNLOAD XML */}
+                                    <button onClick={() => downloadXml(inv)} className="p-1.5 text-green-600 hover:bg-green-50 rounded" title="Download XML">
+                                        <Download className="w-4 h-4" />
+                                    </button>
+                                    
+                                    {/* 4. EDITAR STATUS (Local - Renomeado para 'Editar' status) */}
+                                    <button onClick={() => handleForceStatusUpdate(inv)} className="p-1.5 text-gray-700 hover:bg-gray-100 rounded" title="Editar Status (Localmente)">
+                                        <Edit3 className="w-4 h-4" />
+                                    </button>
+                                    
+                                    {/* SEPARADOR */}
+                                    <div className="w-px h-6 bg-gray-200 mx-1 self-center"></div>
+
+                                    {/* 5. DUPLICAR */}
                                     <button onClick={() => onDuplicate(inv)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded" title="Duplicar para Nova Edição">
                                         <Copy className="w-4 h-4" />
                                     </button>
 
-                                    {/* 3. VISUALIZAR XML */}
-                                    <button onClick={() => handleViewXml(inv)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Visualizar XML em Janela">
-                                        <FileCode className="w-4 h-4" />
-                                    </button>
-                                    
-                                    {/* 4. DOWNLOAD XML */}
-                                    <button onClick={() => downloadXml(inv)} className="p-1.5 text-green-600 hover:bg-green-50 rounded" title="Download XML">
-                                        <Download className="w-4 h-4" />
-                                    </button>
-
-                                    {/* 5. EDITAR STATUS (Força status localmente) */}
-                                    <button onClick={() => handleForceStatusUpdate(inv, inv.status || 'authorized')} className="p-1.5 text-gray-700 hover:bg-gray-100 rounded" title="Editar Status (Local)">
-                                        <Edit3 className="w-4 h-4" />
-                                    </button>
-                                    
                                     {/* --- AÇÕES FISCAIS (SÓ SE AUTORIZADA) --- */}
-
-                                    {inv.status === 'authorized' && (
+                                    {(inv.status === 'authorized' || inv.status === 'editing' || inv.status === 'draft') && (
                                         <>
-                                            {/* 6. IMPRIMIR */}
-                                            <button onClick={() => onPrint(inv)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Imprimir PDF/DANFE">
-                                                <Printer className="w-4 h-4" />
-                                            </button>
-                                            
-                                            {/* 7. NOTA COMPLEMENTAR */}
+                                            {/* 6. NOTA COMPLEMENTAR */}
                                             <button onClick={() => onComplementary(inv)} className="p-1.5 text-purple-600 hover:bg-purple-50 rounded" title="Nota Complementar">
                                                 <ArrowRightCircle className="w-4 h-4" />
                                             </button>
 
-                                            {/* 8. CORRIGIR (Carta de Correção) */}
+                                            {/* 7. CORRIGIR (Carta de Correção) */}
                                             <button onClick={() => onRequestCorrection(inv)} className="p-1.5 text-yellow-600 hover:bg-yellow-50 rounded" title="Corrigir (CC-e)">
                                                 <FileText className="w-4 h-4" />
                                             </button>
                                             
-                                            {/* 9. CANCELAMENTO SEFAZ */}
+                                            {/* 8. CANCELAMENTO SEFAZ */}
                                             <button onClick={() => onRequestCancel(inv)} className="p-1.5 text-red-600 hover:bg-red-50 rounded" title="Cancelamento (SEFAZ)">
                                                 <XCircle className="w-4 h-4" />
                                             </button>
                                         </>
                                     )}
 
-                                    {/* 10. EDITAR RASCUNHO (Abre para edição completa) */}
+                                    {/* 9. EDITAR RASCUNHO (Permitido só em 'draft' e abre o formulário completo) */}
                                     {inv.status === 'draft' && (
                                         <button onClick={() => onEditDraft(inv)} className="p-1.5 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded" title="Abrir para Edição Completa">
                                             <Edit3 className="w-4 h-4" />
