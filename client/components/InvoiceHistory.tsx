@@ -62,7 +62,7 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
     loadData();
   }, [activeProfile]);
 
-  // IMPORTAÇÃO XML (COM AUTO-CADASTRO)
+// IMPORTAÇÃO XML (COM DETECÇÃO DE STATUS E AUTO-CADASTRO)
   const handleImportXml = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
         const files = Array.from(e.target.files);
@@ -71,16 +71,29 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
 
         const processFile = async (file: File) => {
             try {
+                // 1. Faz o Parse dos dados da nota
                 const invoice = await parseNfeXml(file);
                 
-                // Validação de Segurança: CNPJ bate com o perfil?
+                // 2. Validação de Segurança: CNPJ bate com o perfil?
                 const cleanCnpj = (s: string) => s.replace(/\D/g, '');
                 if (cleanCnpj(invoice.emitente.cnpj) !== cleanCnpj(activeProfile!.cnpj)) {
                     throw new Error(`CNPJ do XML (${invoice.emitente.cnpj}) não pertence ao perfil ativo.`);
                 }
 
-                // POST na API -> Isso aciona o Auto-Cadastro de Destinatário/Produto no server.js
-                await api.post('/api/nfe/notas', { ...invoice, status: 'authorized' });
+                // 3. DETECÇÃO DE STATUS (NOVA LÓGICA)
+                // Lemos o arquivo como texto para procurar as tags de status (cStat)
+                // 100 = Autorizada | 101 = Cancelada | 302 = Denegada
+                const textContent = await file.text();
+                let statusToSave = 'authorized'; // Padrão
+                
+                if (textContent.includes('<cStat>101</cStat>')) {
+                    statusToSave = 'cancelled';
+                } else if (textContent.includes('<cStat>302</cStat>')) {
+                    statusToSave = 'rejected'; // ou 'error'
+                }
+
+                // 4. Envia para API com o status correto
+                await api.post('/api/nfe/notas', { ...invoice, status: statusToSave });
                 importedCount++;
             } catch (err) {
                 console.error(err);
