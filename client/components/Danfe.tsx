@@ -1,5 +1,6 @@
 import React from 'react';
-import { InvoiceData, InvoiceTotals } from '../types'; // Importando InvoiceTotals
+// Garantimos que InvoiceTotals esteja importado
+import { InvoiceData, InvoiceTotals } from '../types'; 
 
 interface DanfeProps {
   invoice: InvoiceData;
@@ -24,15 +25,19 @@ export const Danfe: React.FC<DanfeProps> = ({ invoice }) => {
       try { return new Date(dateStr).toLocaleDateString('pt-BR'); } catch { return dateStr; }
   };
     
-  // Garante que o objeto totais seja tipado como InvoiceTotals (ou um default seguro)
+  // CORREÇÃO: Inicializamos 'totais' com todas as propriedades de InvoiceTotals
+  // As propriedades vBCST e vST foram removidas do objeto de fallback para alinhar com o seu types.ts.
   const totais: InvoiceTotals = invoice.totais || {
-      vBC: 0, vICMS: 0, vBCST: 0, vST: 0, vProd: 0, vFrete: 0, vSeg: 0, vDesc: 0, vIPI: 0, vPIS: 0, vCOFINS: 0, vOutro: 0, vNF: 0
-  };
+    vBC: 0, vICMS: 0, vProd: 0, vIPI: 0, vPIS: 0, vCOFINS: 0, vNF: 0, 
+    vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0
+  } as InvoiceTotals; 
+
   
-  // Desestruturando de forma segura
+  // Desestruturando para uso simplificado no JSX
   const { 
     vBC, vICMS, vPIS, vCOFINS, vProd, vNF, vFrete, vSeg, vDesc, vOutro, vIPI
   } = totais;
+
   
   return (
     <div className="bg-white text-black p-8 max-w-[210mm] mx-auto text-[10px] leading-tight font-sans border border-gray-300 print:border-0 print:p-0" id="danfe-area">
@@ -51,9 +56,6 @@ export const Danfe: React.FC<DanfeProps> = ({ invoice }) => {
             <div className="text-sm">Nº {invoice.numero}</div>
             <div className="text-sm">SÉRIE {invoice.serie}</div>
         </div>
-        
-        {/* ... restante do código de cabeçalho ... */}
-        
       </div>
 
       <div className="border-b-2 border-dashed border-black my-2"></div>
@@ -100,6 +102,7 @@ export const Danfe: React.FC<DanfeProps> = ({ invoice }) => {
             <div className="text-[8px]">PROTOCOLO DE AUTORIZAÇÃO DE USO</div>
             <div className="font-bold">135230000123456 - {formatDate(invoice.dataEmissao)}</div>
         </div>
+        
       </div>
 
       <div className="border border-black flex mb-2">
