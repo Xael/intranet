@@ -789,7 +789,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
                 <>
                     {viewMode === 'dashboard' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            <div onClick={() => setViewMode('invoice')} className="bg-gradient-to-br from-primary-600 to-primary-700 rounded-xl p-6 text-white shadow-lg cursor-pointer transform hover:scale-105 transition-transform">
+                            <div onClick={() => setViewMode('invoice')} className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl p-6 text-white shadow-lg cursor-pointer transform hover:scale-105 transition-transform">
                                 <Send className="w-8 h-8 mb-4 opacity-80" />
                                 <h3 className="text-xl font-bold mb-2">Emitir Nova Nota</h3>
                             </div>
