@@ -27,7 +27,7 @@ const initialEntity: Entity = {
   crt: '1' // Default Simples Nacional
 };
 
-// TIPAGEM TRADUZIDA:
+// TIPAGEM CORRIGIDA PARA PORTUGUÊS:
 type ViewMode = 'painel' | 'emissores' | 'destinatarios' | 'produtos' | 'nota' | 'historico';
 
 interface NFeModuleProps {
@@ -35,6 +35,7 @@ interface NFeModuleProps {
 }
 
 const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
+  // Inicialização Corrigida
   const [viewMode, setViewMode] = useState<ViewMode>('painel');
   const [currentStep, setCurrentStep] = useState<Step>(Step.CONFIG);
    
@@ -94,7 +95,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
           }
       };
       loadStats();
-  }, [activeProfile, viewMode]); // Adicionei viewMode para atualizar quando voltar pro dashboard
+  }, [activeProfile, viewMode]); 
 
   // (MANTIDO IGUAL) Processamento de dados externos da Intranet
   useEffect(() => {
@@ -206,6 +207,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
   }, [invoice.produtos, invoice.globalValues]);
 
   useEffect(() => {
+    // viewMode corrigido de 'invoice' para 'nota'
     if (currentStep === Step.EMISSAO && viewMode === 'nota' && status === 'editing') {
       const accessKey = generateAccessKey(invoice, config.ambiente);
       const xml = generateNfeXml({ ...invoice, chaveAcesso: accessKey }, config.ambiente);
@@ -216,11 +218,11 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
 
   const handleProfileSelect = (profile: Entity) => {
       setActiveProfile(profile);
-      setViewMode('painel');
+      setViewMode('painel'); // Corrigido de 'dashboard' para 'painel'
   };
 
   const handleCreateProfile = () => {
-      setViewMode('emissores');
+      setViewMode('emissores'); // Corrigido de 'issuers' para 'emissores'
       setShowProfileSelector(false);
   };
 
@@ -336,7 +338,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
   const handleEditDraft = (draft: InvoiceData) => {
       setInvoice({ ...draft, status: 'editing' });
       setConfig(prev => ({ ...prev, proximoNumeroNota: draft.numero, serie: draft.serie }));
-      setViewMode('nota');
+      setViewMode('nota'); // Corrigido de 'invoice' para 'nota'
       setCurrentStep(Step.CONFIG);
       setStatus('editing');
   };
@@ -381,7 +383,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
               if (invoice.id) {
                   await api.delete(`/api/nfe/notas/${invoice.id}`);
               }
-              setViewMode('historico'); // Refresh
+              setViewMode('historico'); // Corrigido de 'history' para 'historico'
           }
           return;
       }
@@ -414,7 +416,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
 
            await api.post('/api/nfe/notas', updatedInvoice);
            
-           setViewMode('historico');
+           setViewMode('historico'); // Corrigido de 'history' para 'historico'
            alert(type === 'cancelamento' ? "Nota Fiscal Cancelada!" : "Carta de Correção Vinculada!");
 
       } catch (error) {
@@ -438,7 +440,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
           refNFe: undefined,
           dataEmissao: new Date().toISOString().split('T')[0]
       });
-      setViewMode('nota');
+      setViewMode('nota'); // Corrigido de 'invoice' para 'nota'
       setCurrentStep(Step.CONFIG);
       setStatus('editing');
   };
@@ -458,7 +460,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
           dataEmissao: new Date().toISOString().split('T')[0],
           produtos: [] 
       });
-      setViewMode('nota');
+      setViewMode('nota'); // Corrigido de 'invoice' para 'nota'
       setCurrentStep(Step.CONFIG);
       setStatus('editing');
       alert(`Iniciando nota complementar referente à chave: ${source.chaveAcesso}.`);
@@ -500,7 +502,8 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
                 <EntityForm title="Dados do Cadastro" data={data} onChange={setData} />
                 <div className="flex justify-end gap-2 mt-4 px-6">
                     <button onClick={onCancel} className="px-4 py-2 border rounded">Cancelar</button>
-                    <button onClick={() => onSave(data)} className="px-4 py-2 bg-primary-600 text-white rounded">Salvar</button>
+                    {/* CORRIGIDO: Usando bg-blue-600 */}
+                    <button onClick={() => onSave(data)} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Salvar</button>
                 </div>
             </div>
         )
@@ -527,7 +530,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
         )
     };
 
-    // Aqui usamos o RegistryManager que já está atualizado para usar a API
+    // Corrigido de 'issuers' para 'emissores'
     if (viewMode === 'emissores') {
         return <RegistryManager 
             collection="issuers" 
@@ -544,6 +547,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
             renderForm={(item, onSave, onCancel) => <EntityWrapper initial={item} onSave={async (e) => { await onSave(e); setShowProfileSelector(true); }} onCancel={onCancel} />}
         />
     }
+    // Corrigido de 'recipients' para 'destinatarios'
     if (viewMode === 'destinatarios') {
         return <RegistryManager 
             collection="recipients" 
@@ -557,6 +561,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
             renderForm={(item, onSave, onCancel) => <EntityWrapper initial={item} onSave={onSave} onCancel={onCancel} />}
         />
     }
+    // Corrigido de 'products' para 'produtos'
     if (viewMode === 'produtos') {
         return <RegistryManager 
             collection="products" 
@@ -649,7 +654,8 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
         return (
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
             <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center justify-between">
-                <span className="flex items-center"><Send className="w-5 h-5 mr-2 text-primary-600" /> Transmissão</span>
+                {/* CORRIGIDO: Usando text-blue-600 */}
+                <span className="flex items-center"><Send className="w-5 h-5 mr-2 text-blue-600" /> Transmissão</span>
                 {status === 'authorized' && <span className="text-green-600 flex items-center text-sm"><CheckCircle className="w-4 h-4 mr-1"/> Autorizada</span>}
             </h2>
             
@@ -661,7 +667,8 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
 
             {status === 'signing' && (
                 <div className="h-[350px] flex flex-col items-center justify-center bg-gray-50 rounded-md border border-gray-100">
-                    <Loader2 className="w-10 h-10 text-primary-600 animate-spin mb-4" />
+                    {/* CORRIGIDO: Usando text-blue-600 */}
+                    <Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-4" />
                     <p className="text-gray-700 font-medium">Assinando XML...</p>
                 </div>
             )}
@@ -692,7 +699,8 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
 
             {status === 'editing' && (
                 <div className="mt-6 flex justify-end">
-                <button onClick={transmitNfe} className="flex items-center px-6 py-3 bg-primary-600 text-white rounded-md hover:bg-primary-700 shadow-md">
+                {/* CORRIGIDO: Usando bg-blue-600 */}
+                <button onClick={transmitNfe} className="flex items-center px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 shadow-md">
                     <Shield className="w-4 h-4 mr-2" /> Assinar e Transmitir
                 </button>
                 </div>
@@ -712,7 +720,8 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
             // viewMode 'nota' é o que inicia o processo de NFe
             if(mode === 'nota') { setStatus('editing'); setCurrentStep(Step.CONFIG); } 
         }}
-        className={`flex items-center w-full px-4 py-3 rounded-lg mb-2 transition-colors ${viewMode === mode ? 'bg-primary-50 text-primary-700 font-semibold' : 'text-gray-600 hover:bg-gray-100'}`}
+        // Ajustei a classe para usar 'blue' que garante visibilidade
+        className={`flex items-center w-full px-4 py-3 rounded-lg mb-2 transition-colors ${viewMode === mode ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-600 hover:bg-gray-100'}`}
     >
         <Icon className="w-5 h-5 mr-3" /> {label}
     </button>
@@ -729,6 +738,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
             profiles={profilesList}
             activeProfileId={activeProfile?.id || null}
             onSelect={handleProfileSelect}
+            onLogout={handleLogoutProfile} // Adicionei Logout no seletor, caso deseje (opcional)
             onCreateNew={handleCreateProfile}
           />
       )}
@@ -768,14 +778,14 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
         <aside className="w-64 px-4 hidden md:block">
             <div className="mb-6">
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 px-4">Menu NFe</p>
-                {/* TRADUÇÃO DOS BOTÕES */}
+                {/* Rótulos corrigidos em Português */}
                 <NavButton mode="painel" icon={LayoutDashboard} label="Painel" />
                 <NavButton mode="nota" icon={Send} label="Emitir Nota" />
                 <NavButton mode="historico" icon={History} label="Histórico" />
             </div>
             <div>
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 px-4">Cadastros</p>
-                 {/* TRADUÇÃO DOS BOTÕES */}
+                 {/* Rótulos corrigidos em Português */}
                 <NavButton mode="emissores" icon={Shield} label="Emissores" />
                 <NavButton mode="destinatarios" icon={Users} label="Destinatários" />
                 <NavButton mode="produtos" icon={Box} label="Produtos" />
@@ -783,7 +793,8 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
         </aside>
 
         <main className="flex-1 px-4 sm:px-6 lg:px-8 pb-8 overflow-x-hidden">
-            {!activeProfile && viewMode !== 'emissores' ? (
+            {/* Corrigido para viewMode 'emissores' */}
+            {!activeProfile && viewMode !== 'emissores' && viewMode !== 'painel' ? ( 
                 <div className="h-full flex flex-col items-center justify-center text-center mt-20">
                     <Building2 className="w-16 h-16 text-gray-300 mb-4" />
                     <h2 className="text-2xl font-bold text-gray-700 mb-2">Selecione uma Empresa</h2>
@@ -793,11 +804,12 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
                 <>
                     {viewMode === 'painel' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            <div onClick={() => setViewMode('nota')} className="bg-gradient-to-br from-primary-600 to-primary-700 rounded-xl p-6 text-white shadow-lg cursor-pointer transform hover:scale-105 transition-transform">
+                            {/* CORRIGIDO: Usando bg-blue-600 */}
+                            <div onClick={() => setViewMode('nota')} className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl p-6 text-white shadow-lg cursor-pointer transform hover:scale-105 transition-transform">
                                 <Send className="w-8 h-8 mb-4 opacity-80" />
                                 <h3 className="text-xl font-bold mb-2">Emitir Nova Nota</h3>
                             </div>
-                            <div onClick={() => setViewMode('historico')} className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm cursor-pointer hover:border-primary-300 transition-colors">
+                            <div onClick={() => setViewMode('historico')} className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm cursor-pointer hover:border-blue-300 transition-colors">
                                 <h3 className="text-lg font-bold text-gray-800">Histórico</h3>
                                 <div className="mt-4 text-2xl font-bold text-gray-900">
                                     {invoiceCount} Notas
@@ -805,7 +817,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
                             </div>
                         </div>
                     )}
-
+                    {/* Corrigido viewMode de 'issuers' para 'emissores' e assim por diante */}
                     {viewMode === 'emissores' && renderRegistry()}
                     {viewMode === 'destinatarios' && renderRegistry()}
                     {viewMode === 'produtos' && renderRegistry()}
@@ -815,9 +827,9 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
                             onDuplicate={handleDuplicate} 
                             onComplementary={handleComplementary} 
                             onPrint={handlePrint}
-                            onRequestCancel={handleRequestCancel}
-                            onRequestCorrection={handleRequestCorrection}
-                            onEditDraft={handleEditDraft}
+                            onRequestCancel={onRequestCancel}
+                            onRequestCorrection={onRequestCorrection}
+                            onEditDraft={onEditDraft}
                         />
                     )}
 
@@ -834,8 +846,9 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
                                         { s: Step.PAGAMENTO, label: 'Pagamento', icon: CreditCard },
                                         { s: Step.EMISSAO, label: 'Emissão', icon: Send },
                                     ].map((step) => (
-                                        <div key={step.s} className={`flex flex-col items-center bg-gray-50 px-2 ${currentStep >= step.s ? 'text-primary-600' : 'text-gray-400'}`}>
-                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 border-2 transition-colors ${currentStep >= step.s ? 'bg-primary-600 border-primary-600 text-white' : 'bg-white border-gray-300'}`}>
+                                        <div key={step.s} className={`flex flex-col items-center bg-gray-50 px-2 ${currentStep >= step.s ? 'text-blue-600' : 'text-gray-400'}`}>
+                                            {/* CORRIGIDO: Usando bg-blue-600 */}
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 border-2 transition-colors ${currentStep >= step.s ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-300'}`}>
                                                 <step.icon className="w-5 h-5" />
                                             </div>
                                             <span className="text-sm font-medium">{step.label}</span>
@@ -870,7 +883,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
                                             <ArrowLeft className="w-4 h-4 mr-2" /> Voltar
                                         </button>
                                         {currentStep < Step.EMISSAO ? (
-                                            <button onClick={handleNext} className="flex items-center px-6 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700">
+                                            <button onClick={handleNext} className="flex items-center px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
                                                 Próximo <ArrowRight className="w-4 h-4 ml-2" />
                                             </button>
                                         ) : (
