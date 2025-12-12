@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../utils/api'; 
 import { InvoiceData, Entity, InvoiceStatus } from '../types';
 import { parseNfeXml } from '../services/xmlImporter';
-// --- LINHA DE IMPORT CORRIGIDA: Adicionado Loader2 e renomeado History para HistoryIcon ---
+// IMPORT CORRIGIDO: Incluindo Loader2 e renomeando History para HistoryIcon
 import { Search, Copy, Printer, FileCode, XCircle, FileText, ArrowRightCircle, Download, CheckSquare, Square, UploadCloud, AlertTriangle, Edit3, Trash2, Loader2, History as HistoryIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface InvoiceHistoryProps {
@@ -119,7 +119,7 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
 
     setLoading(true);
     try {
-        // Envia o objeto completo da nota com o novo status
+        // Envia o objeto completo da nota com o novo status (o backend faz o UPSERT)
         await api.post('/api/nfe/notas', { ...invoice, status: newStatus });
         alert(`Status da nota ${invoice.numero} alterado para ${newStatus.toUpperCase()} com sucesso.`);
         loadData();
@@ -144,6 +144,26 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+  };
+
+  // 4. Exportação em Lote (FUNÇÃO FALTANTE CORRIGIDA)
+  const handleBulkExport = () => {
+      if (selectedIds.length === 0) {
+          alert("Selecione pelo menos uma nota para exportar.");
+          return;
+      }
+      const selectedInvoices = invoices.filter(inv => selectedIds.includes(inv.id!));
+      if (window.confirm(`Deseja baixar os XMLs de ${selectedInvoices.length} notas selecionadas?`)) {
+          setLoading(true);
+          // Usa um pequeno delay para que o navegador não bloqueie todos os downloads
+          selectedInvoices.forEach((inv, index) => {
+              setTimeout(() => downloadXml(inv), index * 500); 
+          });
+          setTimeout(() => {
+              setLoading(false);
+              alert("Exportação concluída!");
+          }, selectedInvoices.length * 500 + 1000);
+      }
   };
 
 
@@ -225,7 +245,7 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
   return (
     <div className="p-6 bg-white rounded-xl shadow-lg border border-gray-100">
         <h2 className="text-2xl font-semibold text-gray-800 mb-6 flex items-center">
-            <HistoryIcon className="w-6 h-6 mr-3 text-primary-600" /> {/* HistoryIcon CORRIGIDO */}
+            <HistoryIcon className="w-6 h-6 mr-3 text-primary-600" /> 
             Histórico de Notas Fiscais
         </h2>
 
