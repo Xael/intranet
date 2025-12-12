@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect, useRef } from 'react';
-import { db } from '../services/storage';
+import { api } from '../utils/api'; // <--- Mudança: Usando API em vez de db
 import { InvoiceData, Entity } from '../types';
 import { parseNfeXml } from '../services/xmlImporter';
-import { Search, Copy, Printer, FileCode, XCircle, FileText, ArrowRightCircle, Download, CheckSquare, Square, UploadCloud, AlertTriangle, Edit3 } from 'lucide-react';
+import { Search, Copy, Printer, FileCode, XCircle, FileText, ArrowRightCircle, Download, CheckSquare, Square, UploadCloud, AlertTriangle, Edit3, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface InvoiceHistoryProps {
   activeProfile: Entity | null;
@@ -25,35 +24,45 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
     onEditDraft
 }) => {
   const [invoices, setInvoices] = useState<InvoiceData[]>([]);
+  const [loading, setLoading] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [filters, setFilters] = useState({
-    term: '',
-    dateStart: '',
-    dateEnd: ''
-  });
+  
+  // PAGINAÇÃO E FILTROS
+  const [filters, setFilters] = useState({ term: '', dateStart: '', dateEnd: '' });
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 30; // <--- Pedido: 30 itens por página
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const loadData = () => {
+  // CARREGAR DADOS DA API
+  const loadData = async () => {
     if (!activeProfile) return;
-    
-    // Clean CNPJ for comparison
-    const cleanCnpj = (s: string) => s.replace(/\D/g, '');
-    const activeCnpj = cleanCnpj(activeProfile.cnpj);
+    setLoading(true);
+    try {
+        // A API agora já retorna ordenado por dataEmissao DESC (graças à alteração no server.js)
+        const data = await api.get('/api/nfe/notas');
+        
+        // Filtra para garantir que só mostra notas da empresa ativa
+        const cleanCnpj = (s: string) => s?.replace(/\D/g, '') || '';
+        const activeCnpj = cleanCnpj(activeProfile.cnpj);
+        
+        const profileInvoices = Array.isArray(data) 
+            ? data.filter((inv: InvoiceData) => cleanCnpj(inv.emitente.cnpj) === activeCnpj)
+            : [];
 
-    const allInvoices = db.get<InvoiceData>('invoices');
-    
-    // Filter invoices where the Issuer CNPJ matches the Active Profile CNPJ
-    const profileInvoices = allInvoices.filter(inv => 
-        cleanCnpj(inv.emitente.cnpj) === activeCnpj
-    );
-
-    setInvoices(profileInvoices.reverse());
+        setInvoices(profileInvoices);
+    } catch (error) {
+        console.error("Erro ao carregar notas:", error);
+    } finally {
+        setLoading(false);
+    }
   };
 
   useEffect(() => {
     loadData();
   }, [activeProfile]);
 
+  // IMPORTAÇÃO XML (COM AUTO-CADASTRO)
   const handleImportXml = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
         const files = Array.from(e.target.files);
@@ -64,29 +73,27 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
             try {
                 const invoice = await parseNfeXml(file);
                 
-                // Security Check: Does the XML Issuer match the Active Profile?
+                // Validação de Segurança: CNPJ bate com o perfil?
                 const cleanCnpj = (s: string) => s.replace(/\D/g, '');
                 if (cleanCnpj(invoice.emitente.cnpj) !== cleanCnpj(activeProfile!.cnpj)) {
                     throw new Error(`CNPJ do XML (${invoice.emitente.cnpj}) não pertence ao perfil ativo.`);
                 }
 
-                // Check for duplicates
-                const exists = db.get<InvoiceData>('invoices').some(i => i.chaveAcesso === invoice.chaveAcesso);
-                if (!exists) {
-                    db.save('invoices', invoice);
-                    importedCount++;
-                }
+                // POST na API -> Isso aciona o Auto-Cadastro de Destinatário/Produto no server.js
+                await api.post('/api/nfe/notas', { ...invoice, status: 'authorized' });
+                importedCount++;
             } catch (err) {
                 console.error(err);
                 errors++;
             }
         };
 
-        // Process all files
+        setLoading(true);
         Promise.all(files.map(processFile)).then(() => {
             alert(`Importação concluída!\nSucesso: ${importedCount}\nErros/Ignorados: ${errors}`);
-            loadData();
+            loadData(); // Atualiza a lista
             if (fileInputRef.current) fileInputRef.current.value = '';
+            setLoading(false);
         });
     }
   };
@@ -113,7 +120,6 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
           return;
       }
       const selectedInvoices = invoices.filter(inv => selectedIds.includes(inv.id!));
-      
       if (confirm(`Deseja baixar os XMLs de ${selectedInvoices.length} notas selecionadas?`)) {
           selectedInvoices.forEach((inv, index) => {
               setTimeout(() => downloadXml(inv), index * 500); 
@@ -121,18 +127,35 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
       }
   };
 
+  // LÓGICA DE FILTRAGEM
+  const filteredInvoices = invoices.filter(inv => {
+    const term = filters.term.toLowerCase();
+    const matchTerm = 
+        inv.numero.includes(term) || 
+        inv.destinatario.razaoSocial.toLowerCase().includes(term) ||
+        (inv.chaveAcesso && inv.chaveAcesso.includes(term));
+    
+    let matchDate = true;
+    if (filters.dateStart) matchDate = matchDate && new Date(inv.dataEmissao) >= new Date(filters.dateStart);
+    if (filters.dateEnd) matchDate = matchDate && new Date(inv.dataEmissao) <= new Date(filters.dateEnd);
+    
+    return matchTerm && matchDate;
+  });
+
+  // LÓGICA DE PAGINAÇÃO
+  const totalPages = Math.ceil(filteredInvoices.length / ITEMS_PER_PAGE);
+  const paginatedInvoices = filteredInvoices.slice(
+      (currentPage - 1) * ITEMS_PER_PAGE, 
+      currentPage * ITEMS_PER_PAGE
+  );
+
   const toggleSelectAll = () => {
-      if (selectedIds.length === filteredInvoices.length) {
-          setSelectedIds([]);
-      } else {
-          setSelectedIds(filteredInvoices.map(inv => inv.id!));
-      }
+      if (selectedIds.length === paginatedInvoices.length) setSelectedIds([]);
+      else setSelectedIds(paginatedInvoices.map(inv => inv.id!));
   };
 
   const toggleSelect = (id: string) => {
-      setSelectedIds(prev => 
-          prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-      );
+      setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
   const getStatusColor = (status: string) => {
@@ -153,30 +176,13 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
       }
   };
 
-  const filteredInvoices = invoices.filter(inv => {
-    const matchTerm = 
-        inv.numero.includes(filters.term) || 
-        inv.destinatario.razaoSocial.toLowerCase().includes(filters.term.toLowerCase()) ||
-        inv.chaveAcesso?.includes(filters.term);
-    
-    let matchDate = true;
-    if (filters.dateStart) {
-        matchDate = matchDate && new Date(inv.dataEmissao) >= new Date(filters.dateStart);
-    }
-    if (filters.dateEnd) {
-        matchDate = matchDate && new Date(inv.dataEmissao) <= new Date(filters.dateEnd);
-    }
-    
-    return matchTerm && matchDate;
-  });
-
   return (
     <div className="space-y-6">
-        {/* Header with Import Action */}
+        {/* Header */}
         <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 flex justify-between items-center">
             <div className="flex items-center text-blue-800">
                 <AlertTriangle className="w-5 h-5 mr-2" />
-                <span className="text-sm font-medium">Você está visualizando as notas da empresa: <strong>{activeProfile?.razaoSocial}</strong></span>
+                <span className="text-sm font-medium">Empresa Ativa: <strong>{activeProfile?.razaoSocial}</strong></span>
             </div>
             <div>
                 <button 
@@ -186,18 +192,11 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
                     <UploadCloud className="w-4 h-4 mr-2" />
                     Importar XML Externo
                 </button>
-                <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    className="hidden" 
-                    accept=".xml" 
-                    multiple
-                    onChange={handleImportXml} 
-                />
+                <input type="file" ref={fileInputRef} className="hidden" accept=".xml" multiple onChange={handleImportXml} />
             </div>
         </div>
 
-        {/* Filters and Actions */}
+        {/* Filters */}
         <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex flex-col md:flex-row gap-4 items-end">
             <div className="flex-1 w-full">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Pesquisar</label>
@@ -205,148 +204,129 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
                     <input 
                         type="text"
                         placeholder="Número, Destinatário ou Chave..."
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-500 outline-none"
+                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md outline-none focus:ring-2 focus:ring-blue-500"
                         value={filters.term}
-                        onChange={e => setFilters({...filters, term: e.target.value})}
+                        onChange={e => { setFilters({...filters, term: e.target.value}); setCurrentPage(1); }}
                     />
                     <Search className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 </div>
             </div>
-            
             <div className="w-full md:w-auto">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Data Inicial</label>
-                <input 
-                    type="date"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-500 outline-none"
-                    value={filters.dateStart}
-                    onChange={e => setFilters({...filters, dateStart: e.target.value})}
-                />
+                <input type="date" className="w-full px-3 py-2 border border-gray-300 rounded-md" value={filters.dateStart} onChange={e => setFilters({...filters, dateStart: e.target.value})} />
             </div>
-
             <div className="w-full md:w-auto">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Data Final</label>
-                <input 
-                    type="date"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-500 outline-none"
-                    value={filters.dateEnd}
-                    onChange={e => setFilters({...filters, dateEnd: e.target.value})}
-                />
+                <input type="date" className="w-full px-3 py-2 border border-gray-300 rounded-md" value={filters.dateEnd} onChange={e => setFilters({...filters, dateEnd: e.target.value})} />
             </div>
-
-            <div className="w-full md:w-auto flex gap-2">
-                <button 
-                    onClick={handleBulkExport}
-                    disabled={selectedIds.length === 0}
-                    className="flex items-center px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed w-full md:w-auto justify-center"
-                >
-                    <Download className="w-4 h-4 mr-2" />
-                    Exportar XMLs ({selectedIds.length})
+            <div className="w-full md:w-auto">
+                <button onClick={handleBulkExport} disabled={selectedIds.length === 0} className="flex items-center px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 w-full justify-center">
+                    <Download className="w-4 h-4 mr-2" /> Exportar ({selectedIds.length})
                 </button>
             </div>
         </div>
 
-        {/* List */}
+        {/* Table */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-            <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left">
-                    <thead className="bg-gray-50 text-gray-700 uppercase font-semibold">
-                        <tr>
-                            <th className="px-6 py-3 w-10">
-                                <button onClick={toggleSelectAll} className="text-gray-500 hover:text-primary-600">
-                                    {selectedIds.length > 0 && selectedIds.length === filteredInvoices.length ? <CheckSquare className="w-5 h-5" /> : <Square className="w-5 h-5" />}
-                                </button>
-                            </th>
-                            <th className="px-6 py-3">Status</th>
-                            <th className="px-6 py-3">Número / Série</th>
-                            <th className="px-6 py-3">Emissão</th>
-                            <th className="px-6 py-3">Destinatário</th>
-                            <th className="px-6 py-3">Valor</th>
-                            <th className="px-6 py-3 text-center">Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                        {filteredInvoices.map(inv => (
-                            <tr key={inv.id} className={`hover:bg-gray-50 transition-colors ${selectedIds.includes(inv.id!) ? 'bg-blue-50' : ''}`}>
-                                <td className="px-6 py-4">
-                                    <button onClick={() => toggleSelect(inv.id!)} className="text-gray-400 hover:text-primary-600">
-                                        {selectedIds.includes(inv.id!) ? <CheckSquare className="w-5 h-5 text-primary-600" /> : <Square className="w-5 h-5" />}
-                                    </button>
-                                </td>
-                                <td className="px-6 py-4">
-                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(inv.status || 'authorized')}`}>
-                                        {getStatusLabel(inv.status || 'authorized')}
-                                    </span>
-                                    {inv.historicoEventos?.some(e => e.tipo === 'cce') && (
-                                        <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                            CC-e
-                                        </span>
-                                    )}
-                                </td>
-                                <td className="px-6 py-4 font-mono">
-                                    {inv.numero} <span className="text-gray-400">/</span> {inv.serie}
-                                </td>
-                                <td className="px-6 py-4">
-                                    {new Date(inv.dataEmissao).toLocaleDateString('pt-BR')}
-                                </td>
-                                <td className="px-6 py-4 max-w-xs truncate" title={inv.destinatario.razaoSocial}>
-                                    {inv.destinatario.razaoSocial}
-                                </td>
-                                <td className="px-6 py-4 font-medium">
-                                    R$ {inv.totais.vNF.toFixed(2)}
-                                </td>
-                                <td className="px-6 py-4">
-                                    <div className="flex justify-center space-x-2">
-                                        {inv.status === 'draft' ? (
-                                            <>
-                                                <button onClick={() => onEditDraft(inv)} className="p-1.5 text-blue-600 hover:bg-blue-100 rounded" title="Editar Rascunho">
-                                                    <Edit3 className="w-4 h-4" />
-                                                </button>
-                                                <div className="w-px h-4 bg-gray-300 mx-1 self-center"></div>
-                                                <button onClick={() => onRequestCancel(inv)} className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded" title="Excluir Rascunho">
-                                                    <XCircle className="w-4 h-4" />
-                                                </button>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <button onClick={() => onPrint(inv)} className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded" title="Imprimir PDF/DANFE">
-                                                    <Printer className="w-4 h-4" />
-                                                </button>
-                                                <button onClick={() => downloadXml(inv)} className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded" title="Baixar XML">
-                                                    <FileCode className="w-4 h-4" />
-                                                </button>
-                                                <div className="w-px h-4 bg-gray-300 mx-1 self-center"></div>
-                                                <button onClick={() => onDuplicate(inv)} className="p-1.5 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded" title="Duplicar Nota">
-                                                    <Copy className="w-4 h-4" />
-                                                </button>
-                                                <button onClick={() => onComplementary(inv)} className="p-1.5 text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded" title="Nota Complementar">
-                                                    <ArrowRightCircle className="w-4 h-4" />
-                                                </button>
-                                                {inv.status !== 'cancelled' && (
-                                                    <>
-                                                        <button onClick={() => onRequestCorrection(inv)} className="p-1.5 text-gray-600 hover:text-yellow-600 hover:bg-yellow-50 rounded" title="Carta de Correção">
-                                                            <FileText className="w-4 h-4" />
-                                                        </button>
-                                                        <button onClick={() => onRequestCancel(inv)} className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded" title="Cancelar Nota">
-                                                            <XCircle className="w-4 h-4" />
-                                                        </button>
-                                                    </>
-                                                )}
-                                            </>
-                                        )}
-                                    </div>
-                                </td>
-                            </tr>
-                        ))}
-                        {filteredInvoices.length === 0 && (
+            {loading ? (
+                <div className="p-10 text-center text-gray-500">Carregando notas...</div>
+            ) : (
+                <>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-gray-50 text-gray-700 uppercase font-semibold">
                             <tr>
-                                <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
-                                    Nenhuma nota fiscal encontrada para este perfil.
-                                </td>
+                                <th className="px-6 py-3 w-10">
+                                    <button onClick={toggleSelectAll} className="text-gray-500 hover:text-blue-600">
+                                        {selectedIds.length > 0 && selectedIds.length === paginatedInvoices.length ? <CheckSquare className="w-5 h-5" /> : <Square className="w-5 h-5" />}
+                                    </button>
+                                </th>
+                                <th className="px-6 py-3">Status</th>
+                                <th className="px-6 py-3">Número / Série</th>
+                                <th className="px-6 py-3">Emissão</th>
+                                <th className="px-6 py-3">Destinatário</th>
+                                <th className="px-6 py-3">Valor</th>
+                                <th className="px-6 py-3 text-center">Ações</th>
                             </tr>
-                        )}
-                    </tbody>
-                </table>
-            </div>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {paginatedInvoices.map(inv => (
+                                <tr key={inv.id} className={`hover:bg-gray-50 transition-colors ${selectedIds.includes(inv.id!) ? 'bg-blue-50' : ''}`}>
+                                    <td className="px-6 py-4">
+                                        <button onClick={() => toggleSelect(inv.id!)} className="text-gray-400 hover:text-blue-600">
+                                            {selectedIds.includes(inv.id!) ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5" />}
+                                        </button>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(inv.status || 'authorized')}`}>
+                                            {getStatusLabel(inv.status || 'authorized')}
+                                        </span>
+                                        {inv.historicoEventos?.some(e => e.tipo === 'cce') && (
+                                            <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">CC-e</span>
+                                        )}
+                                    </td>
+                                    <td className="px-6 py-4 font-mono">{inv.numero} <span className="text-gray-400">/</span> {inv.serie}</td>
+                                    <td className="px-6 py-4">{new Date(inv.dataEmissao).toLocaleDateString('pt-BR')}</td>
+                                    <td className="px-6 py-4 max-w-xs truncate" title={inv.destinatario.razaoSocial}>{inv.destinatario.razaoSocial}</td>
+                                    <td className="px-6 py-4 font-medium">R$ {inv.totais.vNF.toFixed(2)}</td>
+                                    <td className="px-6 py-4">
+                                        <div className="flex justify-center space-x-2">
+                                            {inv.status === 'draft' ? (
+                                                <>
+                                                    <button onClick={() => onEditDraft(inv)} className="p-1.5 text-blue-600 hover:bg-blue-100 rounded" title="Editar"><Edit3 className="w-4 h-4" /></button>
+                                                    <button onClick={() => onRequestCancel(inv)} className="p-1.5 text-red-600 hover:bg-red-50 rounded" title="Excluir"><XCircle className="w-4 h-4" /></button>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <button onClick={() => onPrint(inv)} className="p-1.5 text-gray-600 hover:bg-gray-100 rounded" title="Imprimir"><Printer className="w-4 h-4" /></button>
+                                                    <button onClick={() => downloadXml(inv)} className="p-1.5 text-gray-600 hover:bg-gray-100 rounded" title="XML"><FileCode className="w-4 h-4" /></button>
+                                                    <button onClick={() => onDuplicate(inv)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded" title="Duplicar"><Copy className="w-4 h-4" /></button>
+                                                    <button onClick={() => onComplementary(inv)} className="p-1.5 text-purple-600 hover:bg-purple-50 rounded" title="Comp."><ArrowRightCircle className="w-4 h-4" /></button>
+                                                    {inv.status !== 'cancelled' && (
+                                                        <>
+                                                            <button onClick={() => onRequestCorrection(inv)} className="p-1.5 text-yellow-600 hover:bg-yellow-50 rounded" title="CC-e"><FileText className="w-4 h-4" /></button>
+                                                            <button onClick={() => onRequestCancel(inv)} className="p-1.5 text-red-600 hover:bg-red-50 rounded" title="Cancelar"><XCircle className="w-4 h-4" /></button>
+                                                        </>
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                            {paginatedInvoices.length === 0 && (
+                                <tr><td colSpan={7} className="px-6 py-8 text-center text-gray-500">Nenhuma nota encontrada.</td></tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+                
+                {/* CONTROLES DE PAGINAÇÃO */}
+                {totalPages > 1 && (
+                    <div className="flex justify-between items-center p-4 border-t border-gray-100 bg-gray-50">
+                        <span className="text-sm text-gray-600">
+                            Página <strong>{currentPage}</strong> de <strong>{totalPages}</strong>
+                        </span>
+                        <div className="flex gap-2">
+                            <button 
+                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                disabled={currentPage === 1}
+                                className="flex items-center px-3 py-1 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 text-sm"
+                            >
+                                <ChevronLeft className="w-4 h-4 mr-1" /> Anterior
+                            </button>
+                            <button 
+                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                disabled={currentPage === totalPages}
+                                className="flex items-center px-3 py-1 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 text-sm"
+                            >
+                                Próximo <ChevronRight className="w-4 h-4 ml-1" />
+                            </button>
+                        </div>
+                    </div>
+                )}
+                </>
+            )}
         </div>
     </div>
   );
