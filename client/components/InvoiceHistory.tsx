@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../utils/api'; 
 import { InvoiceData, Entity, InvoiceStatus } from '../types';
 import { parseNfeXml } from '../services/xmlImporter';
+// IMPORT ATUALIZADO: Inclui todos os ícones necessários
 import { Search, Copy, Printer, FileCode, XCircle, FileText, ArrowRightCircle, Download, CheckSquare, Square, UploadCloud, AlertTriangle, Edit3, Trash2, Loader2, History as HistoryIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface InvoiceHistoryProps {
@@ -56,18 +57,16 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   
-  // PAGINAÇÃO E FILTROS
   const [filters, setFilters] = useState({
     term: '',
     dateStart: '',
     dateEnd: ''
   });
   const [currentPage, setCurrentPage] = useState(1);
-  const ITEMS_PER_PAGE = 30; // 30 itens por página
+  const ITEMS_PER_PAGE = 30;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // CARREGAR DADOS DA API
   const loadData = async () => {
     if (!activeProfile) return;
     setLoading(true);
@@ -82,7 +81,7 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
             : [];
 
         setInvoices(profileInvoices);
-        setCurrentPage(1); // Volta para a primeira página ao carregar novos dados
+        setCurrentPage(1); 
     } catch (error) {
         console.error("Erro ao carregar notas fiscais:", error);
         setInvoices([]);
@@ -95,7 +94,7 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
     loadData();
   }, [activeProfile]);
 
-  // --- NOVAS FUNÇÕES DE AÇÃO ---
+  // --- FUNÇÕES DE AÇÃO ---
 
   // 1. Excluir Nota Fiscal (Permanente)
   const handleDeleteInvoice = async (id?: string) => {
@@ -112,7 +111,7 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
     }
   };
 
-  // 2. Excluir Múltiplas Notas Selecionadas (NOVO)
+  // 2. Excluir Múltiplas Notas Selecionadas (Lote)
   const handleBulkDelete = async () => {
     if (selectedIds.length === 0 || !window.confirm(`Tem certeza que deseja EXCLUIR permanentemente as ${selectedIds.length} notas fiscais selecionadas?`)) return;
 
@@ -130,15 +129,34 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
     }
   };
 
-  // 3. Alterar Status Manualmente
+  // 3. Alterar Status Manualmente (Para o botão 'Editar Status')
   const handleForceStatusUpdate = async (invoice: InvoiceData, newStatus: InvoiceStatus) => {
-    if (!invoice.id || !window.confirm(`Tem certeza que deseja alterar o status da nota ${invoice.numero} para ${newStatus.toUpperCase()}?`)) return;
+    const statusMap = ['authorized', 'cancelled', 'rejected', 'error', 'draft'];
+    const currentStatus = invoice.status || 'authorized';
+    const currentStatusIndex = statusMap.indexOf(currentStatus);
+
+    // Prompt simples para escolha de status
+    const statusPrompt = prompt(
+        `Selecione o novo status para a nota ${invoice.numero} (${currentStatus.toUpperCase()}):\n\n1: AUTORIZADA\n2: CANCELADA\n3: DENEGADA/REJEITADA\n4: RASCUNHO\n\nDigite o número da opção (1-4):`
+    );
+
+    let finalStatus: InvoiceStatus = currentStatus;
+    switch (statusPrompt) {
+        case '1': finalStatus = 'authorized'; break;
+        case '2': finalStatus = 'cancelled'; break;
+        case '3': finalStatus = 'rejected'; break;
+        case '4': finalStatus = 'draft'; break;
+        default: 
+            if (statusPrompt) alert("Opção inválida. Status não alterado.");
+            return;
+    }
+
+    if (finalStatus === currentStatus) return;
 
     setLoading(true);
     try {
-        // Envia o objeto completo da nota com o novo status (o backend faz o UPSERT)
-        await api.post('/api/nfe/notas', { ...invoice, status: newStatus });
-        alert(`Status da nota ${invoice.numero} alterado para ${newStatus.toUpperCase()} com sucesso.`);
+        await api.post('/api/nfe/notas', { ...invoice, status: finalStatus });
+        alert(`Status da nota ${invoice.numero} alterado para ${finalStatus.toUpperCase()} com sucesso.`);
         loadData();
     } catch (error) {
         console.error("Erro ao atualizar status:", error);
@@ -162,8 +180,20 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
   };
+  
+  // 5. Visualizar XML (Abre o XML em texto numa nova aba)
+  const handleViewXml = (invoice: InvoiceData) => {
+      if(!invoice.xmlAssinado) {
+          alert(`XML não encontrado para nota ${invoice.numero}.`);
+          return;
+      }
+      const blob = new Blob([invoice.xmlAssinado], { type: 'application/xml' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      URL.revokeObjectURL(url);
+  };
 
-  // 5. Exportação em Lote
+  // 6. Exportação em Lote
   const handleBulkExport = () => {
       if (selectedIds.length === 0) {
           alert("Selecione pelo menos uma nota para exportar.");
@@ -290,8 +320,19 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
 
             <div className="self-end pt-5 flex gap-3">
                 
-                {/* BOTÃO EXCLUIR EM LOTE (SÓ APARECE QUANDO ITENS SÃO SELECIONADOS) */}
-                {selectedIds.length > 0 && (
+                {/* BOTÃO IMPORTAR (RESTAURADO) */}
+                <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                    disabled={!activeProfile || loading}
+                >
+                    <UploadCloud className="w-4 h-4 mr-2" />
+                    Importar XML
+                </button>
+                <input type="file" ref={fileInputRef} className="hidden" accept=".xml" multiple onChange={handleImportXml} />
+
+                {/* BOTÃO EXCLUIR EM LOTE (VISÍVEL APENAS SE MAIS DE 2 SELECIONADAS) */}
+                {selectedIds.length > 2 && (
                     <button 
                         onClick={handleBulkDelete}
                         className="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-opacity"
@@ -368,28 +409,62 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
                             <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
                                 <div className="flex justify-center items-center space-x-1">
                                     
-                                    {/* Botão de Excluir (Permanente) */}
+                                    {/* 1. EXCLUIR PERMANENTE */}
                                     <button onClick={() => handleDeleteInvoice(inv.id)} className="p-1.5 text-red-700 hover:bg-red-100 rounded" title="EXCLUIR Nota do Sistema (Permanente)">
                                         <Trash2 className="w-4 h-4" />
                                     </button>
+                                    
+                                    {/* 2. DUPLICAR */}
+                                    <button onClick={() => onDuplicate(inv)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded" title="Duplicar para Nova Edição">
+                                        <Copy className="w-4 h-4" />
+                                    </button>
 
-                                    {/* Botão de Forçar Cancelamento (NOVO) */}
-                                    {inv.status !== 'cancelled' && (
-                                        <button onClick={() => handleForceStatusUpdate(inv, 'cancelled')} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="Forçar status para Cancelada (Apenas no Sistema)">
-                                            <XCircle className="w-4 h-4" />
-                                        </button>
-                                    )}
+                                    {/* 3. VISUALIZAR XML */}
+                                    <button onClick={() => handleViewXml(inv)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Visualizar XML em Janela">
+                                        <FileCode className="w-4 h-4" />
+                                    </button>
+                                    
+                                    {/* 4. DOWNLOAD XML */}
+                                    <button onClick={() => downloadXml(inv)} className="p-1.5 text-green-600 hover:bg-green-50 rounded" title="Download XML">
+                                        <Download className="w-4 h-4" />
+                                    </button>
 
-                                    {/* Botões de Ações Comuns */}
-                                    {inv.status !== 'draft' && (
+                                    {/* 5. EDITAR STATUS (Força status localmente) */}
+                                    <button onClick={() => handleForceStatusUpdate(inv, inv.status || 'authorized')} className="p-1.5 text-gray-700 hover:bg-gray-100 rounded" title="Editar Status (Local)">
+                                        <Edit3 className="w-4 h-4" />
+                                    </button>
+                                    
+                                    {/* --- AÇÕES FISCAIS (SÓ SE AUTORIZADA) --- */}
+
+                                    {inv.status === 'authorized' && (
                                         <>
-                                            <button onClick={() => onPrint(inv)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Imprimir DANFE">
+                                            {/* 6. IMPRIMIR */}
+                                            <button onClick={() => onPrint(inv)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Imprimir PDF/DANFE">
                                                 <Printer className="w-4 h-4" />
                                             </button>
-                                            <button onClick={() => downloadXml(inv)} className="p-1.5 text-gray-600 hover:bg-gray-100 rounded" title="Baixar XML">
-                                                <FileCode className="w-4 h-4" />
+                                            
+                                            {/* 7. NOTA COMPLEMENTAR */}
+                                            <button onClick={() => onComplementary(inv)} className="p-1.5 text-purple-600 hover:bg-purple-50 rounded" title="Nota Complementar">
+                                                <ArrowRightCircle className="w-4 h-4" />
+                                            </button>
+
+                                            {/* 8. CORRIGIR (Carta de Correção) */}
+                                            <button onClick={() => onRequestCorrection(inv)} className="p-1.5 text-yellow-600 hover:bg-yellow-50 rounded" title="Corrigir (CC-e)">
+                                                <FileText className="w-4 h-4" />
+                                            </button>
+                                            
+                                            {/* 9. CANCELAMENTO SEFAZ */}
+                                            <button onClick={() => onRequestCancel(inv)} className="p-1.5 text-red-600 hover:bg-red-50 rounded" title="Cancelamento (SEFAZ)">
+                                                <XCircle className="w-4 h-4" />
                                             </button>
                                         </>
+                                    )}
+
+                                    {/* 10. EDITAR RASCUNHO (Abre para edição completa) */}
+                                    {inv.status === 'draft' && (
+                                        <button onClick={() => onEditDraft(inv)} className="p-1.5 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded" title="Abrir para Edição Completa">
+                                            <Edit3 className="w-4 h-4" />
+                                        </button>
                                     )}
 
                                 </div>
