@@ -1,5 +1,5 @@
 import React from 'react';
-import { InvoiceData } from '../types';
+import { InvoiceData, InvoiceTotals } from '../types'; // Importando InvoiceTotals
 
 interface DanfeProps {
   invoice: InvoiceData;
@@ -24,19 +24,15 @@ export const Danfe: React.FC<DanfeProps> = ({ invoice }) => {
       try { return new Date(dateStr).toLocaleDateString('pt-BR'); } catch { return dateStr; }
   };
     
-  // Garante que os totais sejam números
-  const totais = invoice.totais || {};
-  const vBC = totais.vBC || 0;
-  const vICMS = totais.vICMS || 0;
-  const vPIS = totais.vPIS || 0;
-  const vCOFINS = totais.vCOFINS || 0;
-  const vProd = totais.vProd || 0;
-  const vNF = totais.vNF || 0;
-  const vFrete = totais.vFrete || 0;
-  const vSeg = totais.vSeg || 0;
-  const vDesc = totais.vDesc || 0;
-  const vOutro = totais.vOutro || 0;
-  const vIPI = totais.vIPI || 0;
+  // Garante que o objeto totais seja tipado como InvoiceTotals (ou um default seguro)
+  const totais: InvoiceTotals = invoice.totais || {
+      vBC: 0, vICMS: 0, vBCST: 0, vST: 0, vProd: 0, vFrete: 0, vSeg: 0, vDesc: 0, vIPI: 0, vPIS: 0, vCOFINS: 0, vOutro: 0, vNF: 0
+  };
+  
+  // Desestruturando de forma segura
+  const { 
+    vBC, vICMS, vPIS, vCOFINS, vProd, vNF, vFrete, vSeg, vDesc, vOutro, vIPI
+  } = totais;
   
   return (
     <div className="bg-white text-black p-8 max-w-[210mm] mx-auto text-[10px] leading-tight font-sans border border-gray-300 print:border-0 print:p-0" id="danfe-area">
@@ -55,6 +51,9 @@ export const Danfe: React.FC<DanfeProps> = ({ invoice }) => {
             <div className="text-sm">Nº {invoice.numero}</div>
             <div className="text-sm">SÉRIE {invoice.serie}</div>
         </div>
+        
+        {/* ... restante do código de cabeçalho ... */}
+        
       </div>
 
       <div className="border-b-2 border-dashed border-black my-2"></div>
@@ -259,7 +258,7 @@ export const Danfe: React.FC<DanfeProps> = ({ invoice }) => {
         <div className="text-[10px] whitespace-pre-wrap">
             {invoice.informacoesComplementares}
             {invoice.finalidade === '2' && ` NOTA FISCAL COMPLEMENTAR REFERENTE À NF ${invoice.refNFe}.`}
-    1435:         {invoice.finalidade === '4' && ` NOTA FISCAL DE DEVOLUÇÃO REFERENTE À NF ${invoice.refNFe}.`}
+            {invoice.finalidade === '4' && ` NOTA FISCAL DE DEVOLUÇÃO REFERENTE À NF ${invoice.refNFe}.`}
         </div>
       </div>
 
