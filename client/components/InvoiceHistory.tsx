@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../utils/api'; 
 import { InvoiceData, Entity, InvoiceStatus } from '../types';
 import { parseNfeXml } from '../services/xmlImporter';
-// IMPORT ATUALIZADO: Inclui todos os ícones necessários
 import { Search, Copy, Printer, FileCode, XCircle, FileText, ArrowRightCircle, Download, CheckSquare, Square, UploadCloud, AlertTriangle, Edit3, Trash2, Loader2, History as HistoryIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface InvoiceHistoryProps {
@@ -43,7 +42,6 @@ const getStatusLabel = (status: string) => {
     }
 };
 
-
 export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({ 
     activeProfile,
     onDuplicate, 
@@ -56,7 +54,7 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
   const [invoices, setInvoices] = useState<InvoiceData[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  
+   
   const [filters, setFilters] = useState({
     term: '',
     dateStart: '',
@@ -80,7 +78,8 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
             ? data.filter((inv: InvoiceData) => cleanCnpj(inv.emitente.cnpj) === activeCnpj)
             : [];
 
-        setInvoices(profileInvoices);
+        // Inverte para mostrar as mais recentes primeiro
+        setInvoices(profileInvoices.reverse());
         setCurrentPage(1); 
     } catch (error) {
         console.error("Erro ao carregar notas fiscais:", error);
@@ -129,35 +128,63 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
     }
   };
 
-// 3. Alterar Status Manualmente (Para o botão 'Editar Status')
+  // 3. Alterar Status Manualmente (CORRIGIDO PARA PORTUGUÊS / NUMÉRICO)
   const handleForceStatusUpdate = async (invoice: InvoiceData) => {
-    const currentStatus = invoice.status || 'authorized';
+    const currentStatusLabel = getStatusLabel(invoice.status || 'authorized');
 
-    // Prompt simples para escolha de status
-    const statusPrompt = prompt(
-        `Selecione o NOVO status para a nota ${invoice.numero} (${currentStatus.toUpperCase()}).\n\nPossíveis valores:\n- authorized\n- cancelled\n- rejected\n- draft\n\n(Atenção: Apenas alteração local):`
-    );
+    const promptMessage = 
+`ALTERAÇÃO MANUAL DE STATUS (Correção Local)
+Nota Nº: ${invoice.numero} | Atual: ${currentStatusLabel}
 
-    if (!statusPrompt) return;
+Digite o número da opção desejada:
+1 - Autorizada
+2 - Cancelada
+3 - Rejeitada
+4 - Rascunho (Voltar para edição)
 
-    const finalStatus = statusPrompt.toLowerCase() as InvoiceStatus;
+(Isso altera o status no banco de dados para fins de correção)`;
+
+    const option = prompt(promptMessage);
     
-    if (!['authorized', 'cancelled', 'rejected', 'draft'].includes(finalStatus)) {
-        alert("Status inválido. Use: authorized, cancelled, rejected ou draft.");
-        return;
+    if (!option) return;
+
+    let newStatus: InvoiceStatus | null = null;
+    let newLabel = "";
+
+    switch(option.trim()) {
+        case '1': 
+            newStatus = 'authorized'; 
+            newLabel = "Autorizada";
+            break;
+        case '2': 
+            newStatus = 'cancelled'; 
+            newLabel = "Cancelada";
+            break;
+        case '3': 
+            newStatus = 'rejected'; 
+            newLabel = "Rejeitada";
+            break;
+        case '4': 
+            newStatus = 'draft'; 
+            newLabel = "Rascunho";
+            break;
+        default:
+            alert("Opção inválida! Digite apenas o número (1, 2, 3 ou 4).");
+            return;
     }
 
-    if (finalStatus === currentStatus) return;
+    if (invoice.status === newStatus) return;
 
     setLoading(true);
     try {
-        // Envia o objeto completo da nota com o novo status (o backend faz o UPSERT)
-        await api.post('/api/nfe/notas', { ...invoice, status: finalStatus });
-        alert(`Status da nota ${invoice.numero} alterado para ${finalStatus.toUpperCase()} com sucesso.`);
+        await api.post('/api/nfe/notas', { ...invoice, status: newStatus });
+        alert(`Sucesso! Status da nota ${invoice.numero} alterado para: ${newLabel}`);
         loadData();
     } catch (error) {
         console.error("Erro ao atualizar status:", error);
-        alert("Erro ao atualizar status da nota fiscal.");
+        alert("Erro ao atualizar status da nota fiscal no servidor.");
+    } finally {
+        setLoading(false);
     }
   };
 
@@ -177,18 +204,10 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
   };
-  
-  // 5. Visualizar XML (Abre o XML em texto numa nova aba)
-  const handleViewXml = (invoice: InvoiceData) => {
-      if(!invoice.xmlAssinado) {
-          alert(`XML não encontrado para nota ${invoice.numero}.`);
-          return;
-      }
-      const blob = new Blob([invoice.xmlAssinado], { type: 'application/xml' });
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
-      URL.revokeObjectURL(url);
-  };
+   
+  // 5. Visualizar XML
+  // Removido para simplificar, já que downloadXml cobre o uso principal
+  // (Pode ser readicionado se necessário)
 
   // 6. Exportação em Lote
   const handleBulkExport = () => {
@@ -198,14 +217,11 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
       }
       const selectedInvoices = invoices.filter(inv => selectedIds.includes(inv.id!));
       if (window.confirm(`Deseja baixar os XMLs de ${selectedInvoices.length} notas selecionadas?`)) {
-          setLoading(true);
+          // setLoading(true); // Opcional: pode bloquear a UI ou não
           selectedInvoices.forEach((inv, index) => {
               setTimeout(() => downloadXml(inv), index * 500); 
           });
-          setTimeout(() => {
-              setLoading(false);
-              alert("Exportação concluída!");
-          }, selectedInvoices.length * 500 + 1000);
+          // Não bloqueamos loading aqui para permitir que o usuário continue navegando enquanto baixa
       }
   };
 
@@ -229,6 +245,7 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
                 const textContent = await file.text();
                 let statusToSave: InvoiceStatus = 'authorized'; 
                 
+                // Tenta detectar status pelo conteúdo do XML (cStat)
                 if (textContent.includes('<cStat>101</cStat>')) {
                     statusToSave = 'cancelled';
                 } else if (textContent.includes('<cStat>302</cStat>')) {
@@ -248,10 +265,11 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
             alert(`Importação concluída!\nSucesso: ${importedCount}\nErros/Ignorados: ${errors}`);
             loadData();
             if (fileInputRef.current) fileInputRef.current.value = '';
+            setLoading(false);
         });
     }
   };
-  
+   
   // --- LÓGICA DE FILTRAGEM E PAGINAÇÃO ---
   const filteredInvoices = invoices.filter(inv => {
     const term = filters.term.toLowerCase();
@@ -284,14 +302,14 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
   };
 
   return (
-    <div className="p-6 bg-white rounded-xl shadow-lg border border-gray-100">
+    <div className="p-6 bg-white rounded-xl shadow-lg border border-gray-100 animate-fade-in">
         <h2 className="text-2xl font-semibold text-gray-800 mb-6 flex items-center">
-            <HistoryIcon className="w-6 h-6 mr-3 text-primary-600" /> 
+            <HistoryIcon className="w-6 h-6 mr-3 text-blue-600" /> 
             Histórico de Notas Fiscais
         </h2>
 
         {/* --- FILTROS, DATAS E BOTÕES DE LOTE --- */}
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-6 p-4 bg-gray-50 rounded-lg border">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
             <div className="flex-1 min-w-[200px]">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Pesquisar</label>
                 <div className="relative">
@@ -317,10 +335,10 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
 
             <div className="self-end pt-5 flex gap-3">
                 
-                {/* BOTÃO IMPORTAR (RESTAURADO) */}
+                {/* BOTÃO IMPORTAR */}
                 <button 
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                    className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors shadow-sm"
                     disabled={!activeProfile || loading}
                 >
                     <UploadCloud className="w-4 h-4 mr-2" />
@@ -328,21 +346,21 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
                 </button>
                 <input type="file" ref={fileInputRef} className="hidden" accept=".xml" multiple onChange={handleImportXml} />
 
-                {/* BOTÃO EXCLUIR EM LOTE (VISÍVEL APENAS SE MAIS DE 2 SELECIONADAS) */}
-                {selectedIds.length > 2 && (
+                {/* BOTÃO EXCLUIR EM LOTE */}
+                {selectedIds.length > 1 && (
                     <button 
                         onClick={handleBulkDelete}
-                        className="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-opacity"
+                        className="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-opacity shadow-sm"
                     >
                         <Trash2 className="w-4 h-4 mr-2" />
-                        Excluir Selecionadas ({selectedIds.length})
+                        Excluir ({selectedIds.length})
                     </button>
                 )}
 
                 <button 
                     onClick={handleBulkExport}
                     disabled={selectedIds.length === 0}
-                    className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                    className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 shadow-sm"
                 >
                     <Download className="w-4 h-4 mr-2" />
                     Exportar XMLs ({selectedIds.length})
@@ -351,14 +369,14 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
         </div>
 
         {/* Tabela de Notas Fiscais */}
-        <div className="bg-white rounded-lg overflow-x-auto shadow-sm border">
+        <div className="bg-white rounded-lg overflow-x-auto shadow-sm border border-gray-200">
             <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                     <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-10">
                             <input 
                                 type="checkbox" 
-                                className="rounded text-primary-600 focus:ring-primary-500"
+                                className="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
                                 checked={selectedIds.length > 0 && selectedIds.length === paginatedInvoices.length}
                                 onChange={toggleSelectAll}
                             />
@@ -374,29 +392,35 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
                 <tbody className="bg-white divide-y divide-gray-200">
                     {loading && (
                         <tr>
-                            <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
-                                <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-blue-500" />
-                                Carregando notas...
+                            <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                                <div className="flex flex-col items-center justify-center">
+                                    <Loader2 className="w-8 h-8 animate-spin mb-2 text-blue-500" />
+                                    <span>Carregando notas fiscais...</span>
+                                </div>
                             </td>
                         </tr>
                     )}
                     {!loading && paginatedInvoices.map(inv => (
-                        <tr key={inv.id} className="hover:bg-gray-50 transition-colors">
+                        <tr key={inv.id} className={`hover:bg-blue-50 transition-colors ${selectedIds.includes(inv.id!) ? 'bg-blue-50' : ''}`}>
                             <td className="px-6 py-4 whitespace-nowrap">
                                 <input 
                                     type="checkbox" 
-                                    className="rounded text-primary-600 focus:ring-primary-500"
+                                    className="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
                                     checked={selectedIds.includes(inv.id!)}
                                     onChange={() => toggleSelect(inv.id!)}
                                 />
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                                <span className={`px-3 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusClasses(inv.status)}`}>
+                                <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusClasses(inv.status)}`}>
                                     {getStatusLabel(inv.status || 'authorized')}
                                 </span>
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{inv.numero} / {inv.serie}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{inv.destinatario.razaoSocial}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 font-mono">
+                                {inv.numero} <span className="text-gray-400">/</span> {inv.serie}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 max-w-[200px] truncate" title={inv.destinatario.razaoSocial}>
+                                {inv.destinatario.razaoSocial}
+                            </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                 {new Date(inv.dataEmissao).toLocaleDateString('pt-BR')}
                             </td>
@@ -406,61 +430,54 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
                             <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
                                 <div className="flex justify-center space-x-1">
                                     
-                                    {/* 1. EXCLUIR PERMANENTE */}
-                                    <button onClick={() => handleDeleteInvoice(inv.id)} className="p-1.5 text-red-700 hover:bg-red-100 rounded" title="EXCLUIR Nota do Sistema (Permanente)">
+                                    {/* 1. EXCLUIR */}
+                                    <button onClick={() => handleDeleteInvoice(inv.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Excluir Permanentemente">
                                         <Trash2 className="w-4 h-4" />
                                     </button>
                                     
-                                    {/* SEPARADOR */}
                                     <div className="w-px h-6 bg-gray-200 mx-1 self-center"></div>
 
-                                    {/* 2. VISUALIZAR / IMPRIMIR (Chamando onPrint para prévia DANFE) */}
-                                    <button onClick={() => onPrint(inv)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Visualizar / Imprimir DANFE">
+                                    {/* 2. IMPRIMIR */}
+                                    <button onClick={() => onPrint(inv)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Imprimir DANFE">
                                         <Printer className="w-4 h-4" />
                                     </button>
                                     
                                     {/* 3. DOWNLOAD XML */}
-                                    <button onClick={() => downloadXml(inv)} className="p-1.5 text-green-600 hover:bg-green-50 rounded" title="Download XML">
+                                    <button onClick={() => downloadXml(inv)} className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors" title="Download XML">
                                         <Download className="w-4 h-4" />
                                     </button>
                                     
-                                    {/* 4. EDITAR STATUS (Local - Renomeado para 'Editar' status) */}
-                                    <button onClick={() => handleForceStatusUpdate(inv)} className="p-1.5 text-gray-700 hover:bg-gray-100 rounded" title="Editar Status (Localmente)">
+                                    {/* 4. EDITAR STATUS (Correção Manual) */}
+                                    <button onClick={() => handleForceStatusUpdate(inv)} className="p-1.5 text-gray-600 hover:text-orange-600 hover:bg-orange-50 rounded transition-colors" title="Corrigir Status Manualmente">
                                         <Edit3 className="w-4 h-4" />
                                     </button>
                                     
-                                    {/* SEPARADOR */}
                                     <div className="w-px h-6 bg-gray-200 mx-1 self-center"></div>
 
                                     {/* 5. DUPLICAR */}
-                                    <button onClick={() => onDuplicate(inv)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded" title="Duplicar para Nova Edição">
+                                    <button onClick={() => onDuplicate(inv)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded transition-colors" title="Duplicar Nota">
                                         <Copy className="w-4 h-4" />
                                     </button>
 
-                                    {/* --- AÇÕES FISCAIS (SÓ SE AUTORIZADA) --- */}
-                                    {(inv.status === 'authorized' || inv.status === 'editing' || inv.status === 'draft') && (
+                                    {/* AÇÕES EXTRAS SE AUTORIZADA */}
+                                    {(inv.status === 'authorized') && (
                                         <>
-                                            {/* 6. NOTA COMPLEMENTAR */}
-                                            <button onClick={() => onComplementary(inv)} className="p-1.5 text-purple-600 hover:bg-purple-50 rounded" title="Nota Complementar">
+                                            <button onClick={() => onComplementary(inv)} className="p-1.5 text-purple-600 hover:bg-purple-50 rounded transition-colors" title="Nota Complementar">
                                                 <ArrowRightCircle className="w-4 h-4" />
                                             </button>
-
-                                            {/* 7. CORRIGIR (Carta de Correção) */}
-                                            <button onClick={() => onRequestCorrection(inv)} className="p-1.5 text-yellow-600 hover:bg-yellow-50 rounded" title="Corrigir (CC-e)">
+                                            <button onClick={() => onRequestCorrection(inv)} className="p-1.5 text-yellow-600 hover:bg-yellow-50 rounded transition-colors" title="Carta de Correção">
                                                 <FileText className="w-4 h-4" />
                                             </button>
-                                            
-                                            {/* 8. CANCELAMENTO SEFAZ */}
-                                            <button onClick={() => onRequestCancel(inv)} className="p-1.5 text-red-600 hover:bg-red-50 rounded" title="Cancelamento (SEFAZ)">
+                                            <button onClick={() => onRequestCancel(inv)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" title="Cancelar na SEFAZ">
                                                 <XCircle className="w-4 h-4" />
                                             </button>
                                         </>
                                     )}
 
-                                    {/* 9. EDITAR RASCUNHO (Permitido só em 'draft' e abre o formulário completo) */}
+                                    {/* AÇÃO SE RASCUNHO */}
                                     {inv.status === 'draft' && (
-                                        <button onClick={() => onEditDraft(inv)} className="p-1.5 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded" title="Abrir para Edição Completa">
-                                            <Edit3 className="w-4 h-4" />
+                                        <button onClick={() => onEditDraft(inv)} className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Continuar Editando">
+                                            <ArrowRightCircle className="w-4 h-4" />
                                         </button>
                                     )}
 
@@ -470,8 +487,11 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
                     ))}
                     {!loading && filteredInvoices.length === 0 && (
                         <tr>
-                            <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
-                                Nenhuma nota fiscal encontrada com os filtros atuais.
+                            <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                                <div className="flex flex-col items-center">
+                                    <AlertTriangle className="w-10 h-10 text-gray-300 mb-2" />
+                                    <p>Nenhuma nota encontrada com os filtros atuais.</p>
+                                </div>
                             </td>
                         </tr>
                     )}
@@ -481,22 +501,22 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
 
         {/* CONTROLES DE PAGINAÇÃO */}
         {totalPages > 1 && (
-            <div className="flex justify-between items-center p-4 border-t border-gray-100 bg-gray-50 rounded-b-lg">
+            <div className="flex justify-between items-center p-4 border-t border-gray-100 bg-gray-50 rounded-b-lg mt-0">
                 <span className="text-sm text-gray-600">
-                    Mostrando notas {((currentPage - 1) * ITEMS_PER_PAGE) + 1} a {Math.min(currentPage * ITEMS_PER_PAGE, filteredInvoices.length)} de {filteredInvoices.length}
+                    Mostrando <strong>{((currentPage - 1) * ITEMS_PER_PAGE) + 1}</strong> a <strong>{Math.min(currentPage * ITEMS_PER_PAGE, filteredInvoices.length)}</strong> de <strong>{filteredInvoices.length}</strong> notas
                 </span>
                 <div className="flex gap-2">
                     <button 
                         onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                         disabled={currentPage === 1}
-                        className="flex items-center px-3 py-1 bg-white border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 text-sm"
+                        className="flex items-center px-3 py-1.5 bg-white border border-gray-300 rounded-md hover:bg-gray-100 disabled:opacity-50 text-sm font-medium transition-colors"
                     >
                         <ChevronLeft className="w-4 h-4 mr-1" /> Anterior
                     </button>
                     <button 
                         onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                         disabled={currentPage === totalPages}
-                        className="flex items-center px-3 py-1 bg-white border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 text-sm"
+                        className="flex items-center px-3 py-1.5 bg-white border border-gray-300 rounded-md hover:bg-gray-100 disabled:opacity-50 text-sm font-medium transition-colors"
                     >
                         Próximo <ChevronRight className="w-4 h-4 ml-1" />
                     </button>
