@@ -96,22 +96,24 @@ export const RegistryManager: React.FC<RegistryManagerProps> = ({ collection, ti
   );
 
   // MODO EDIÇÃO / CRIAÇÃO
-  if (isEditing) {
+if (isEditing) {
       return (
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 animate-fade-in">
+          // Adicionado: max-h-[85vh] e overflow-y-auto
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 animate-fade-in max-h-[85vh] overflow-y-auto flex flex-col">
               <div className="mb-4 pb-2 border-b border-gray-100 flex justify-between items-center">
                   <h3 className="text-lg font-bold text-gray-700">
                       {currentItem ? `Editar ${title}` : `Novo ${title}`}
                   </h3>
               </div>
-              {renderForm(currentItem, handleSave, () => {
-                  setIsEditing(false);
-                  setCurrentItem(null);
-              })}
+              <div className="flex-1"> {/* Wrapper para o conteúdo empurrar o footer */}
+                {renderForm(currentItem, handleSave, () => {
+                    setIsEditing(false);
+                    setCurrentItem(null);
+                })}
+              </div>
           </div>
       );
   }
-
   // MODO LISTAGEM
   return (
     <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 h-full flex flex-col">
