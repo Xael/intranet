@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../utils/api'; 
 import { InvoiceData, Entity, InvoiceStatus } from '../types';
 import { parseNfeXml } from '../services/xmlImporter';
-// IMPORT CORRIGIDO: Incluindo Loader2 e renomeando History para HistoryIcon
 import { Search, Copy, Printer, FileCode, XCircle, FileText, ArrowRightCircle, Download, CheckSquare, Square, UploadCloud, AlertTriangle, Edit3, Trash2, Loader2, History as HistoryIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface InvoiceHistoryProps {
@@ -113,7 +112,25 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
     }
   };
 
-  // 2. Alterar Status Manualmente
+  // 2. Excluir Múltiplas Notas Selecionadas (NOVO)
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0 || !window.confirm(`Tem certeza que deseja EXCLUIR permanentemente as ${selectedIds.length} notas fiscais selecionadas?`)) return;
+
+    setLoading(true);
+    try {
+        const deletePromises = selectedIds.map(id => api.delete(`/api/nfe/notas/${id}`));
+        await Promise.all(deletePromises);
+        
+        alert(`${selectedIds.length} notas fiscais excluídas com sucesso.`);
+        setSelectedIds([]);
+        loadData();
+    } catch (error) {
+        console.error("Erro ao excluir em lote:", error);
+        alert("Erro ao excluir notas fiscais em lote. Tente novamente.");
+    }
+  };
+
+  // 3. Alterar Status Manualmente
   const handleForceStatusUpdate = async (invoice: InvoiceData, newStatus: InvoiceStatus) => {
     if (!invoice.id || !window.confirm(`Tem certeza que deseja alterar o status da nota ${invoice.numero} para ${newStatus.toUpperCase()}?`)) return;
 
@@ -129,7 +146,7 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
     }
   };
 
-  // 3. Download XML
+  // 4. Download XML
   const downloadXml = (invoice: InvoiceData) => {
       if(!invoice.xmlAssinado) {
           alert(`XML não encontrado para nota ${invoice.numero}.`);
@@ -146,7 +163,7 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
       URL.revokeObjectURL(url);
   };
 
-  // 4. Exportação em Lote (FUNÇÃO FALTANTE CORRIGIDA)
+  // 5. Exportação em Lote
   const handleBulkExport = () => {
       if (selectedIds.length === 0) {
           alert("Selecione pelo menos uma nota para exportar.");
@@ -155,7 +172,6 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
       const selectedInvoices = invoices.filter(inv => selectedIds.includes(inv.id!));
       if (window.confirm(`Deseja baixar os XMLs de ${selectedInvoices.length} notas selecionadas?`)) {
           setLoading(true);
-          // Usa um pequeno delay para que o navegador não bloqueie todos os downloads
           selectedInvoices.forEach((inv, index) => {
               setTimeout(() => downloadXml(inv), index * 500); 
           });
@@ -167,7 +183,7 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
   };
 
 
-  // --- FUNÇÃO DE IMPORTAÇÃO XML CORRIGIDA (com detecção de status) ---
+  // --- FUNÇÃO DE IMPORTAÇÃO XML ---
   const handleImportXml = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
         const files = Array.from(e.target.files);
@@ -183,7 +199,6 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
                     throw new Error(`CNPJ do XML (${invoice.emitente.cnpj}) não pertence ao perfil ativo.`);
                 }
 
-                // DETECÇÃO DE STATUS: Verifica se o XML é de Cancelamento ou Denegação
                 const textContent = await file.text();
                 let statusToSave: InvoiceStatus = 'authorized'; 
                 
@@ -193,7 +208,6 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
                     statusToSave = 'rejected';
                 }
 
-                // O servidor faz o UPSERT (cria se novo, atualiza se existente pela Chave de Acesso)
                 await api.post('/api/nfe/notas', { ...invoice, status: statusToSave });
                 importedCount++;
             } catch (err) {
@@ -274,7 +288,19 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
                 <input type="date" className="w-full px-3 py-2 border border-gray-300 rounded-md" value={filters.dateEnd} onChange={e => { setFilters({...filters, dateEnd: e.target.value}); setCurrentPage(1); }} />
             </div>
 
-            <div className="self-end pt-5">
+            <div className="self-end pt-5 flex gap-3">
+                
+                {/* BOTÃO EXCLUIR EM LOTE (SÓ APARECE QUANDO ITENS SÃO SELECIONADOS) */}
+                {selectedIds.length > 0 && (
+                    <button 
+                        onClick={handleBulkDelete}
+                        className="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-opacity"
+                    >
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Excluir Selecionadas ({selectedIds.length})
+                    </button>
+                )}
+
                 <button 
                     onClick={handleBulkExport}
                     disabled={selectedIds.length === 0}
