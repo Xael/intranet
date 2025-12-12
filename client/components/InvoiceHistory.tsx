@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { api } from '../utils/api'; // Usando a API real
+import { api } from '../utils/api'; 
 import { InvoiceData, Entity, InvoiceStatus } from '../types';
 import { parseNfeXml } from '../services/xmlImporter';
-import { Search, Copy, Printer, FileCode, XCircle, FileText, ArrowRightCircle, Download, CheckSquare, Square, UploadCloud, AlertTriangle, Edit3, Trash2 } from 'lucide-react';
+// --- LINHA DE IMPORT CORRIGIDA: Adicionado Loader2 e renomeado History para HistoryIcon ---
+import { Search, Copy, Printer, FileCode, XCircle, FileText, ArrowRightCircle, Download, CheckSquare, Square, UploadCloud, AlertTriangle, Edit3, Trash2, Loader2, History as HistoryIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface InvoiceHistoryProps {
   activeProfile: Entity | null;
@@ -31,6 +32,18 @@ const getStatusClasses = (status?: InvoiceStatus) => {
     }
 };
 
+const getStatusLabel = (status: string) => {
+    switch (status) {
+        case 'draft': return 'Rascunho';
+        case 'cancelled': return 'Cancelada';
+        case 'authorized': return 'Autorizada';
+        case 'rejected': return 'Denegada';
+        case 'error': return 'Erro';
+        default: return status;
+    }
+};
+
+
 export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({ 
     activeProfile,
     onDuplicate, 
@@ -43,19 +56,34 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
   const [invoices, setInvoices] = useState<InvoiceData[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  
+  // PAGINAÇÃO E FILTROS
   const [filters, setFilters] = useState({
     term: '',
     dateStart: '',
     dateEnd: ''
   });
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 30; // 30 itens por página
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // CARREGAR DADOS DA API
   const loadData = async () => {
     if (!activeProfile) return;
     setLoading(true);
     try {
-        const response = await api.get('/api/nfe/notas');
-        setInvoices(response.data);
+        const data = await api.get('/api/nfe/notas');
+        
+        const cleanCnpj = (s: string) => s?.replace(/\D/g, '') || '';
+        const activeCnpj = cleanCnpj(activeProfile.cnpj);
+        
+        const profileInvoices = Array.isArray(data) 
+            ? data.filter((inv: InvoiceData) => cleanCnpj(inv.emitente.cnpj) === activeCnpj)
+            : [];
+
+        setInvoices(profileInvoices);
+        setCurrentPage(1); // Volta para a primeira página ao carregar novos dados
     } catch (error) {
         console.error("Erro ao carregar notas fiscais:", error);
         setInvoices([]);
@@ -68,7 +96,7 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
     loadData();
   }, [activeProfile]);
 
-  // --- NOVAS FUNÇÕES ---
+  // --- NOVAS FUNÇÕES DE AÇÃO ---
 
   // 1. Excluir Nota Fiscal (Permanente)
   const handleDeleteInvoice = async (id?: string) => {
@@ -82,12 +110,10 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
     } catch (error) {
         console.error("Erro ao excluir nota:", error);
         alert("Erro ao excluir nota fiscal.");
-    } finally {
-        setLoading(false);
     }
   };
 
-  // 2. Alterar Status Manualmente (Forçar Cancelada, etc.)
+  // 2. Alterar Status Manualmente
   const handleForceStatusUpdate = async (invoice: InvoiceData, newStatus: InvoiceStatus) => {
     if (!invoice.id || !window.confirm(`Tem certeza que deseja alterar o status da nota ${invoice.numero} para ${newStatus.toUpperCase()}?`)) return;
 
@@ -100,9 +126,24 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
     } catch (error) {
         console.error("Erro ao atualizar status:", error);
         alert("Erro ao atualizar status da nota fiscal.");
-    } finally {
-        setLoading(false);
     }
+  };
+
+  // 3. Download XML
+  const downloadXml = (invoice: InvoiceData) => {
+      if(!invoice.xmlAssinado) {
+          alert(`XML não encontrado para nota ${invoice.numero}.`);
+          return;
+      }
+      const blob = new Blob([invoice.xmlAssinado], { type: 'application/xml' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${invoice.chaveAcesso}-nfe.xml`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
   };
 
 
@@ -115,18 +156,16 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
 
         const processFile = async (file: File) => {
             try {
-                // 1. Faz o Parse dos dados da nota
                 const invoice = await parseNfeXml(file);
                 
-                // 2. Validação de Segurança: CNPJ bate com o perfil?
                 const cleanCnpj = (s: string) => s.replace(/\D/g, '');
                 if (cleanCnpj(invoice.emitente.cnpj) !== cleanCnpj(activeProfile!.cnpj)) {
                     throw new Error(`CNPJ do XML (${invoice.emitente.cnpj}) não pertence ao perfil ativo.`);
                 }
 
-                // 3. DETECÇÃO DE STATUS (Lê o texto do arquivo para procurar as tags de status)
+                // DETECÇÃO DE STATUS: Verifica se o XML é de Cancelamento ou Denegação
                 const textContent = await file.text();
-                let statusToSave: InvoiceStatus = 'authorized'; // Padrão
+                let statusToSave: InvoiceStatus = 'authorized'; 
                 
                 if (textContent.includes('<cStat>101</cStat>')) {
                     statusToSave = 'cancelled';
@@ -134,7 +173,7 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
                     statusToSave = 'rejected';
                 }
 
-                // 4. Envia para API com o status correto (o servidor fará o UPSERT pela Chave de Acesso)
+                // O servidor faz o UPSERT (cria se novo, atualiza se existente pela Chave de Acesso)
                 await api.post('/api/nfe/notas', { ...invoice, status: statusToSave });
                 importedCount++;
             } catch (err) {
@@ -146,86 +185,86 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
         setLoading(true);
         Promise.all(files.map(processFile)).then(() => {
             alert(`Importação concluída!\nSucesso: ${importedCount}\nErros/Ignorados: ${errors}`);
-            loadData(); // Atualiza a lista
+            loadData();
             if (fileInputRef.current) fileInputRef.current.value = '';
-            setLoading(false);
         });
     }
   };
   
-  // ... (Restante das funções de filtro e UI) ...
-  
+  // --- LÓGICA DE FILTRAGEM E PAGINAÇÃO ---
   const filteredInvoices = invoices.filter(inv => {
-    // Implementação simplificada do filtro (você pode customizar mais)
-    const termMatch = filters.term === '' || 
-                      inv.numero.includes(filters.term) || 
-                      (inv.chaveAcesso || '').includes(filters.term) || 
-                      (inv.destinatario.razaoSocial || '').toLowerCase().includes(filters.term.toLowerCase());
+    const term = filters.term.toLowerCase();
+    const matchTerm = 
+        inv.numero.includes(term) || 
+        inv.serie.includes(term) ||
+        (inv.chaveAcesso || '').includes(term) || 
+        (inv.destinatario.razaoSocial || '').toLowerCase().includes(term);
     
-    // Filtros de data (incompleto no exemplo, mas fica aqui para referência)
-
-    return termMatch;
+    let matchDate = true;
+    if (filters.dateStart) matchDate = matchDate && new Date(inv.dataEmissao) >= new Date(filters.dateStart);
+    if (filters.dateEnd) matchDate = matchDate && new Date(inv.dataEmissao) <= new Date(filters.dateEnd);
+    
+    return matchTerm && matchDate;
   });
 
-  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.checked) {
-        setSelectedIds(filteredInvoices.map(inv => inv.id!));
-    } else {
-        setSelectedIds([]);
-    }
+  const totalPages = Math.ceil(filteredInvoices.length / ITEMS_PER_PAGE);
+  const paginatedInvoices = filteredInvoices.slice(
+      (currentPage - 1) * ITEMS_PER_PAGE, 
+      currentPage * ITEMS_PER_PAGE
+  );
+
+  const toggleSelectAll = () => {
+      if (selectedIds.length === paginatedInvoices.length) setSelectedIds([]);
+      else setSelectedIds(paginatedInvoices.map(inv => inv.id!));
   };
 
-  const handleSelectOne = (id: string) => {
-    setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
-  };
-
-  const handleExportSelected = () => {
-    // Implementação de exportação (se necessário)
-    alert(`Exportando ${selectedIds.length} notas... (Função a ser implementada)`);
+  const toggleSelect = (id: string) => {
+      setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
   return (
     <div className="p-6 bg-white rounded-xl shadow-lg border border-gray-100">
         <h2 className="text-2xl font-semibold text-gray-800 mb-6 flex items-center">
-            <History className="w-6 h-6 mr-3 text-primary-600" />
+            <HistoryIcon className="w-6 h-6 mr-3 text-primary-600" /> {/* HistoryIcon CORRIGIDO */}
             Histórico de Notas Fiscais
         </h2>
 
-        {/* ... (Filtros e Ações de Lote) ... */}
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-            <div className="flex items-center space-x-2 w-full sm:w-auto">
-                <div className="relative flex-grow">
+        {/* --- FILTROS, DATAS E BOTÕES DE LOTE --- */}
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-6 p-4 bg-gray-50 rounded-lg border">
+            <div className="flex-1 min-w-[200px]">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Pesquisar</label>
+                <div className="relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <input 
                         type="text"
-                        placeholder="Buscar por número, chave ou destinatário..."
-                        className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-full"
+                        placeholder="Número, chave ou destinatário..."
+                        className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-full outline-none focus:ring-2 focus:ring-blue-500"
                         value={filters.term}
-                        onChange={(e) => setFilters({...filters, term: e.target.value})}
+                        onChange={(e) => { setFilters({...filters, term: e.target.value}); setCurrentPage(1); }}
                     />
                 </div>
             </div>
+            
+            <div className="min-w-[150px]">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Data Inicial</label>
+                <input type="date" className="w-full px-3 py-2 border border-gray-300 rounded-md" value={filters.dateStart} onChange={e => { setFilters({...filters, dateStart: e.target.value}); setCurrentPage(1); }} />
+            </div>
+            <div className="min-w-[150px]">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Data Final</label>
+                <input type="date" className="w-full px-3 py-2 border border-gray-300 rounded-md" value={filters.dateEnd} onChange={e => { setFilters({...filters, dateEnd: e.target.value}); setCurrentPage(1); }} />
+            </div>
 
-            <div className="flex items-center space-x-3">
-                <input 
-                    type="file" 
-                    accept=".xml" 
-                    multiple 
-                    onChange={handleImportXml}
-                    ref={fileInputRef}
-                    className="hidden"
-                />
+            <div className="self-end pt-5">
                 <button 
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-                    disabled={!activeProfile || loading}
+                    onClick={handleBulkExport}
+                    disabled={selectedIds.length === 0}
+                    className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
                 >
-                    <UploadCloud className="w-4 h-4 mr-2" />
-                    Importar XML
+                    <Download className="w-4 h-4 mr-2" />
+                    Exportar XMLs ({selectedIds.length})
                 </button>
             </div>
         </div>
-
 
         {/* Tabela de Notas Fiscais */}
         <div className="bg-white rounded-lg overflow-x-auto shadow-sm border">
@@ -236,8 +275,8 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
                             <input 
                                 type="checkbox" 
                                 className="rounded text-primary-600 focus:ring-primary-500"
-                                checked={selectedIds.length > 0 && selectedIds.length === filteredInvoices.length}
-                                onChange={handleSelectAll}
+                                checked={selectedIds.length > 0 && selectedIds.length === paginatedInvoices.length}
+                                onChange={toggleSelectAll}
                             />
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
@@ -252,27 +291,27 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
                     {loading && (
                         <tr>
                             <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
-                                <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-primary-500" />
+                                <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-blue-500" />
                                 Carregando notas...
                             </td>
                         </tr>
                     )}
-                    {!loading && filteredInvoices.map(inv => (
+                    {!loading && paginatedInvoices.map(inv => (
                         <tr key={inv.id} className="hover:bg-gray-50 transition-colors">
                             <td className="px-6 py-4 whitespace-nowrap">
                                 <input 
                                     type="checkbox" 
                                     className="rounded text-primary-600 focus:ring-primary-500"
                                     checked={selectedIds.includes(inv.id!)}
-                                    onChange={() => handleSelectOne(inv.id!)}
+                                    onChange={() => toggleSelect(inv.id!)}
                                 />
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                                 <span className={`px-3 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusClasses(inv.status)}`}>
-                                    {inv.status ? inv.status.toUpperCase() : 'N/D'}
+                                    {getStatusLabel(inv.status || 'authorized')}
                                 </span>
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{inv.numero}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{inv.numero} / {inv.serie}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{inv.destinatario.razaoSocial}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                 {new Date(inv.dataEmissao).toLocaleDateString('pt-BR')}
@@ -283,38 +322,28 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
                             <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
                                 <div className="flex justify-center items-center space-x-1">
                                     
-                                    {/* Botão de Excluir (NOVO) */}
-                                    <button onClick={() => handleDeleteInvoice(inv.id)} className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded" title="Excluir Nota do Sistema">
+                                    {/* Botão de Excluir (Permanente) */}
+                                    <button onClick={() => handleDeleteInvoice(inv.id)} className="p-1.5 text-red-700 hover:bg-red-100 rounded" title="EXCLUIR Nota do Sistema (Permanente)">
                                         <Trash2 className="w-4 h-4" />
                                     </button>
 
                                     {/* Botão de Forçar Cancelamento (NOVO) */}
                                     {inv.status !== 'cancelled' && (
-                                        <button onClick={() => handleForceStatusUpdate(inv, 'cancelled')} className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded" title="Alterar status para Cancelada (Local)">
+                                        <button onClick={() => handleForceStatusUpdate(inv, 'cancelled')} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="Forçar status para Cancelada (Apenas no Sistema)">
                                             <XCircle className="w-4 h-4" />
                                         </button>
                                     )}
 
-                                    {/* Botões de Ações Legais/Comuns (MANTIDOS) */}
-                                    {inv.status === 'authorized' && (
+                                    {/* Botões de Ações Comuns */}
+                                    {inv.status !== 'draft' && (
                                         <>
-                                            <button onClick={() => onPrint(inv)} className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded" title="Imprimir DANFE">
+                                            <button onClick={() => onPrint(inv)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Imprimir DANFE">
                                                 <Printer className="w-4 h-4" />
                                             </button>
-                                            <button onClick={() => onRequestCorrection(inv)} className="p-1.5 text-gray-600 hover:text-yellow-600 hover:bg-yellow-50 rounded" title="Carta de Correção">
-                                                <FileText className="w-4 h-4" />
-                                            </button>
-                                            {/* O botão abaixo é para solicitação no SEFAZ */}
-                                            <button onClick={() => onRequestCancel(inv)} className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded" title="Solicitar Cancelamento (SEFAZ)">
-                                                <XCircle className="w-4 h-4" />
+                                            <button onClick={() => downloadXml(inv)} className="p-1.5 text-gray-600 hover:bg-gray-100 rounded" title="Baixar XML">
+                                                <FileCode className="w-4 h-4" />
                                             </button>
                                         </>
-                                    )}
-
-                                    {inv.status === 'draft' && (
-                                        <button onClick={() => onEditDraft(inv)} className="p-1.5 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded" title="Editar Rascunho">
-                                            <Edit3 className="w-4 h-4" />
-                                        </button>
                                     )}
 
                                 </div>
@@ -324,13 +353,38 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
                     {!loading && filteredInvoices.length === 0 && (
                         <tr>
                             <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
-                                Nenhuma nota fiscal encontrada para este perfil.
+                                Nenhuma nota fiscal encontrada com os filtros atuais.
                             </td>
                         </tr>
                     )}
                 </tbody>
             </table>
         </div>
+
+        {/* CONTROLES DE PAGINAÇÃO */}
+        {totalPages > 1 && (
+            <div className="flex justify-between items-center p-4 border-t border-gray-100 bg-gray-50 rounded-b-lg">
+                <span className="text-sm text-gray-600">
+                    Mostrando notas {((currentPage - 1) * ITEMS_PER_PAGE) + 1} a {Math.min(currentPage * ITEMS_PER_PAGE, filteredInvoices.length)} de {filteredInvoices.length}
+                </span>
+                <div className="flex gap-2">
+                    <button 
+                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                        className="flex items-center px-3 py-1 bg-white border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 text-sm"
+                    >
+                        <ChevronLeft className="w-4 h-4 mr-1" /> Anterior
+                    </button>
+                    <button 
+                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                        disabled={currentPage === totalPages}
+                        className="flex items-center px-3 py-1 bg-white border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 text-sm"
+                    >
+                        Próximo <ChevronRight className="w-4 h-4 ml-1" />
+                    </button>
+                </div>
+            </div>
+        )}
     </div>
   );
 };
