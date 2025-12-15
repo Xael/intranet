@@ -37,7 +37,7 @@ interface NFeModuleProps {
 const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('painel');
   const [currentStep, setCurrentStep] = useState<Step>(Step.CONFIG);
-   
+    
   const [activeProfile, setActiveProfile] = useState<Entity | null>(null);
   const [showProfileSelector, setShowProfileSelector] = useState(false);
   const [profilesList, setProfilesList] = useState<Entity[]>([]);
@@ -301,6 +301,25 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
       produtos: prev.produtos.filter(p => p.id !== id)
     }));
   };
+  
+  // --- NOVA FUNÇÃO DE ATUALIZAÇÃO ---
+  const handleUpdateProduct = (updatedProduct: Product) => {
+    setInvoice(prev => {
+        const newProducts = prev.produtos.map(p => 
+            p.id === updatedProduct.id ? updatedProduct : p
+        );
+        
+        // Recalcular totais da nota
+        const newTotals = calculateInvoiceTotals(newProducts, prev.globalValues);
+
+        return {
+            ...prev,
+            produtos: newProducts,
+            totais: newTotals
+        };
+    });
+  };
+  // ----------------------------------
 
   const selectRecipientFromDB = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const id = e.target.value;
@@ -553,6 +572,7 @@ const transmitNfe = async () => {
                     issuerUf={activeProfile?.endereco.uf}
                     onAdd={(p) => { onSave({...p, id: initial?.id || p.id}); }} 
                     onRemove={()=>{}} 
+                    onUpdate={()=>{}} // Não precisa atualizar no cadastro base por enquanto
                 />
                <div className="flex justify-end gap-2 mt-4 px-6">
                     <button onClick={onCancel} className="px-4 py-2 border rounded">Cancelar</button>
@@ -673,6 +693,7 @@ const transmitNfe = async () => {
                 recipientUf={invoice.destinatario.endereco.uf}
                 onAdd={addProduct} 
                 onRemove={removeProduct} 
+                onUpdate={handleUpdateProduct} // <--- ADICIONADO AQUI!
             />
           </>
         );
