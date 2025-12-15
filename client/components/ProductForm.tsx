@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect } from 'react';
 import { Product, CRT, TaxDetails } from '../types';
 import { Input } from './Input';
 import { getNcmSuggestion } from '../services/geminiService';
 import { calculateItemTax } from '../utils/taxCalculations';
-import { Loader2, Sparkles, Trash2, Plus, Calculator, Barcode } from 'lucide-react';
+import { Loader2, Sparkles, Trash2, Plus, Calculator, Barcode, Pencil, X, Save } from 'lucide-react';
 
 interface ProductFormProps {
   products: Product[];
@@ -13,9 +12,13 @@ interface ProductFormProps {
   recipientUf?: string;
   onAdd: (product: Product) => void;
   onRemove: (id: string) => void;
+  onUpdate: (product: Product) => void; // <--- NOVA PROP OBRIGATÓRIA
 }
 
-export const ProductForm: React.FC<ProductFormProps> = ({ products, issuerCrt, issuerUf, recipientUf, onAdd, onRemove }) => {
+export const ProductForm: React.FC<ProductFormProps> = ({ products, issuerCrt, issuerUf, recipientUf, onAdd, onRemove, onUpdate }) => {
+  // Estado para controlar se estamos editando algum item
+  const [editingId, setEditingId] = useState<string | null>(null);
+
   const [newProduct, setNewProduct] = useState<Partial<Product> & { tempTax: Partial<TaxDetails> }>({
     descricao: '',
     quantidade: 1,
@@ -34,7 +37,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({ products, issuerCrt, i
         aliquotaPis: 0,
         cstCofins: '07',
         aliquotaCofins: 0,
-        cstIpi: '53', // Default Non-Taxed IPI
+        cstIpi: '53',
         aliquotaIpi: 0,
         codigoEnquadramento: '999'
     }
@@ -43,20 +46,18 @@ export const ProductForm: React.FC<ProductFormProps> = ({ products, issuerCrt, i
   const [loadingAi, setLoadingAi] = useState(false);
   const [errorAi, setErrorAi] = useState<string | null>(null);
 
-  // Smart CFOP Logic
+  // Smart CFOP Logic (Só roda se não estiver editando ou se o CFOP estiver vazio)
   useEffect(() => {
-      // Runs when component mounts or UFs change. 
-      // Only suggests if CFOP is empty to avoid overwriting user manual input or edit mode.
-      if (!newProduct.cfop && issuerUf && recipientUf) {
+      if (!editingId && !newProduct.cfop && issuerUf && recipientUf) {
           let prefix = '5';
           if (recipientUf === 'EX') {
               prefix = '7';
           } else if (issuerUf !== recipientUf) {
               prefix = '6';
           }
-          setNewProduct(prev => ({...prev, cfop: `${prefix}102`})); // Suggesting simple sale
+          setNewProduct(prev => ({...prev, cfop: `${prefix}102`}));
       }
-  }, [issuerUf, recipientUf]);
+  }, [issuerUf, recipientUf, editingId]);
 
   const calculatedValues = calculateItemTax(
       newProduct.quantidade || 0,
@@ -77,7 +78,6 @@ export const ProductForm: React.FC<ProductFormProps> = ({ products, issuerCrt, i
       setNewProduct(prev => ({
         ...prev,
         ncm: suggestion.ncm,
-        // We prefer our Smart CFOP logic over AI for the prefix, but AI can help with suffix
         cfop: prev.cfop || suggestion.cfop, 
       }));
     } catch (e) {
@@ -87,52 +87,91 @@ export const ProductForm: React.FC<ProductFormProps> = ({ products, issuerCrt, i
     }
   };
 
-  const handleAdd = () => {
-    if (newProduct.descricao && newProduct.valorUnitario && newProduct.quantidade) {
-      const taxData: TaxDetails = {
-          origem: newProduct.tempTax.origem || '0',
-          cst: newProduct.tempTax.cst,
-          csosn: newProduct.tempTax.csosn,
-          baseCalculoIcms: calculatedValues.baseCalculoIcms,
-          aliquotaIcms: newProduct.tempTax.aliquotaIcms || 0,
-          valorIcms: calculatedValues.valorIcms,
-          
-          cstPis: newProduct.tempTax.cstPis || '07',
-          baseCalculoPis: calculatedValues.baseCalculoPis,
-          aliquotaPis: newProduct.tempTax.aliquotaPis || 0,
-          valorPis: calculatedValues.valorPis,
+  // Prepara o objeto completo para Salvar ou Atualizar
+  const prepareProductData = (): Product | null => {
+    if (!newProduct.descricao || !newProduct.valorUnitario || !newProduct.quantidade) return null;
 
-          cstCofins: newProduct.tempTax.cstCofins || '07',
-          baseCalculoCofins: calculatedValues.baseCalculoCofins,
-          aliquotaCofins: newProduct.tempTax.aliquotaCofins || 0,
-          valorCofins: calculatedValues.valorCofins,
+    const taxData: TaxDetails = {
+        origem: newProduct.tempTax.origem || '0',
+        cst: newProduct.tempTax.cst,
+        csosn: newProduct.tempTax.csosn,
+        baseCalculoIcms: calculatedValues.baseCalculoIcms,
+        aliquotaIcms: newProduct.tempTax.aliquotaIcms || 0,
+        valorIcms: calculatedValues.valorIcms,
+        
+        cstPis: newProduct.tempTax.cstPis || '07',
+        baseCalculoPis: calculatedValues.baseCalculoPis,
+        aliquotaPis: newProduct.tempTax.aliquotaPis || 0,
+        valorPis: calculatedValues.valorPis,
 
-          cstIpi: newProduct.tempTax.cstIpi || '53',
-          baseCalculoIpi: calculatedValues.baseCalculoIpi,
-          aliquotaIpi: newProduct.tempTax.aliquotaIpi || 0,
-          valorIpi: calculatedValues.valorIpi,
-          codigoEnquadramento: '999'
-      };
+        cstCofins: newProduct.tempTax.cstCofins || '07',
+        baseCalculoCofins: calculatedValues.baseCalculoCofins,
+        aliquotaCofins: newProduct.tempTax.aliquotaCofins || 0,
+        valorCofins: calculatedValues.valorCofins,
 
-      onAdd({
-        ...newProduct as any, 
-        id: crypto.randomUUID(),
+        cstIpi: newProduct.tempTax.cstIpi || '53',
+        baseCalculoIpi: calculatedValues.baseCalculoIpi,
+        aliquotaIpi: newProduct.tempTax.aliquotaIpi || 0,
+        valorIpi: calculatedValues.valorIpi,
+        codigoEnquadramento: '999'
+    };
+
+    return {
+        ...newProduct as any,
+        // Se estiver editando usa o ID existente, se não, cria um novo
+        id: editingId || crypto.randomUUID(),
         valorTotal: calculatedValues.valorTotal,
         codigo: newProduct.codigo || Math.floor(Math.random() * 10000).toString(),
         tax: taxData
-      });
+    };
+  };
 
-      setNewProduct(prev => ({
-        ...prev,
+  const handleSave = () => {
+    const productData = prepareProductData();
+    if (productData) {
+        if (editingId) {
+            onUpdate(productData); // Atualiza
+            setEditingId(null); // Sai do modo de edição
+        } else {
+            onAdd(productData); // Adiciona novo
+        }
+        resetForm();
+    }
+  };
+
+  const startEditing = (prod: Product) => {
+    setEditingId(prod.id);
+    setNewProduct({
+        ...prod,
+        tempTax: { ...prod.tax } // Copia os dados tributários de volta
+    });
+    // Rola a página para o formulário
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    resetForm();
+  };
+
+  const resetForm = () => {
+    setNewProduct(prev => ({
         descricao: '',
         quantidade: 1,
         valorUnitario: 0,
         ncm: '',
-        // Keep CFOP as it usually repeats
+        cfop: prev.cfop, // Mantém o CFOP sugerido para facilitar
+        unidade: 'UN',
         codigo: '',
-        gtin: 'SEM GTIN'
-      }));
-    }
+        gtin: 'SEM GTIN',
+        tempTax: {
+            origem: '0',
+            cst: '00', csosn: '102', aliquotaIcms: 0,
+            cstPis: '07', aliquotaPis: 0,
+            cstCofins: '07', aliquotaCofins: 0,
+            cstIpi: '53', aliquotaIpi: 0, codigoEnquadramento: '999'
+        }
+    }));
   };
 
   const updateTax = (field: keyof TaxDetails, value: any) => {
@@ -144,10 +183,15 @@ export const ProductForm: React.FC<ProductFormProps> = ({ products, issuerCrt, i
 
   return (
     <div className="space-y-6">
-      <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+      <div className={`p-6 rounded-lg shadow-sm border ${editingId ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-200'} transition-colors duration-300`}>
         <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-semibold text-gray-800 flex items-center">
-                Novo Produto 
+                {editingId ? (
+                    <span className="text-blue-700 flex items-center"><Pencil className="w-5 h-5 mr-2"/> Editando Produto</span>
+                ) : (
+                    <span className="flex items-center">Novo Produto</span>
+                )}
+                
                 <span className="ml-3 text-xs font-normal bg-blue-100 text-blue-800 px-2 py-1 rounded">
                     Regime: {issuerCrt === '1' ? 'Simples Nacional' : 'Regime Normal'}
                 </span>
@@ -157,6 +201,11 @@ export const ProductForm: React.FC<ProductFormProps> = ({ products, issuerCrt, i
                     </span>
                 )}
             </h3>
+            {editingId && (
+                <button onClick={cancelEditing} className="text-sm text-gray-500 hover:text-gray-700 flex items-center">
+                    <X className="w-4 h-4 mr-1"/> Cancelar Edição
+                </button>
+            )}
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4 mb-6 pb-6 border-b border-gray-100">
@@ -302,13 +351,25 @@ export const ProductForm: React.FC<ProductFormProps> = ({ products, issuerCrt, i
             </div>
         </div>
 
-        <div className="mt-4 flex justify-end">
+        <div className="mt-4 flex justify-end gap-3">
+             {editingId && (
+                <button
+                    onClick={cancelEditing}
+                    className="flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2 px-6 rounded-md transition-colors"
+                >
+                    Cancelar
+                </button>
+             )}
+             
              <button
-                onClick={handleAdd}
-                className="flex items-center justify-center bg-primary-600 hover:bg-primary-700 text-white font-medium py-2 px-6 rounded-md transition-colors"
+                onClick={handleSave}
+                className={`flex items-center justify-center font-medium py-2 px-6 rounded-md transition-colors text-white ${editingId ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}
              >
-                 <Plus className="w-4 h-4 mr-2" />
-                 Adicionar Item
+                 {editingId ? (
+                     <><Save className="w-4 h-4 mr-2" /> Salvar Alterações</>
+                 ) : (
+                     <><Plus className="w-4 h-4 mr-2" /> Adicionar Item</>
+                 )}
              </button>
         </div>
       </div>
@@ -337,7 +398,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({ products, issuerCrt, i
                 </thead>
                 <tbody>
                 {products.map((prod) => (
-                    <tr key={prod.id} className="bg-white border-b hover:bg-gray-50">
+                    <tr key={prod.id} className={`border-b transition-colors ${editingId === prod.id ? 'bg-blue-50' : 'bg-white hover:bg-gray-50'}`}>
                     <td className="px-6 py-4">
                         <div className="font-medium text-gray-900">{prod.descricao}</div>
                         <div className="text-xs text-gray-500">Cod: {prod.codigo} | GTIN: {prod.gtin}</div>
@@ -356,8 +417,19 @@ export const ProductForm: React.FC<ProductFormProps> = ({ products, issuerCrt, i
                     </td>
                     <td className="px-6 py-4">{prod.quantidade} {prod.unidade} x R$ {prod.valorUnitario.toFixed(2)}</td>
                     <td className="px-6 py-4 font-bold">R$ {prod.valorTotal.toFixed(2)}</td>
-                    <td className="px-6 py-4">
-                        <button onClick={() => onRemove(prod.id)} className="text-red-500 hover:text-red-700 transition-colors">
+                    <td className="px-6 py-4 flex gap-2">
+                        <button 
+                            onClick={() => startEditing(prod)} 
+                            className="text-blue-500 hover:text-blue-700 transition-colors p-1 rounded hover:bg-blue-100"
+                            title="Editar este item"
+                        >
+                            <Pencil className="w-4 h-4" />
+                        </button>
+                        <button 
+                            onClick={() => onRemove(prod.id)} 
+                            className="text-red-500 hover:text-red-700 transition-colors p-1 rounded hover:bg-red-100"
+                            title="Remover este item"
+                        >
                             <Trash2 className="w-4 h-4" />
                         </button>
                     </td>
