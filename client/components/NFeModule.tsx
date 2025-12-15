@@ -335,36 +335,82 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
       setStatus('editing');
   };
 
-  // 5. TRANSMISSÃO
-  const transmitNfe = async () => {
-    if (!config.certificado) {
-        alert("ERRO: Certificado Digital não encontrado. A assinatura é obrigatória.");
+// 5. TRANSMISSÃO
+const transmitNfe = async () => {
+    // 1. Validação de segurança/preenchimento
+    if (!config.certificado || !config.senhaCertificado) {
+        alert("ERRO: Certificado Digital ou senha não fornecidos.");
         return;
     }
-    setStatus('signing');
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    setStatus('transmitting');
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    setStatus('authorized');
     
-    const finalizedInvoice: InvoiceData = {
-        ...invoice,
-        status: 'authorized',
-        id: invoice.id || crypto.randomUUID(), 
-        xmlAssinado: xmlPreview 
-    };
-
-    try {
-        await api.post('/api/nfe/notas', finalizedInvoice);
-    } catch (e) {
-        console.error("Erro ao salvar nota autorizada", e);
+    // O ID da nota deve existir para que o backend possa buscá-la
+    if (!invoice.id) {
+        alert("ERRO: O ID da nota é obrigatório para transmissão. Salve como rascunho antes.");
+        return;
     }
+
+    setStatus('transmitting'); // Indica que está falando com a SEFAZ
     
-    setConfig(prev => ({
-        ...prev,
-        proximoNumeroNota: (parseInt(prev.proximoNumeroNota) + 1).toString()
-    }));
-  };
+    try {
+        // 2. Chamada real à nova API de transmissão
+        // Enviamos o ID da nota (para o backend buscar os dados) e a Senha (para o backend assinar)
+        const response = await api.post('/api/nfe/transmitir', { 
+            id: invoice.id,
+            senhaCertificado: config.senhaCertificado 
+        });
+
+        // O backend retorna HTTP 200 (sucesso) para Autorizado (100) ou Processando (103)
+        // O body da resposta (response) já contém { sucesso: true, status, protocolo, xml }
+
+        const newStatus = response.status as InvoiceStatus;
+
+        // 3. Atualiza o estado da nota com o resultado
+        setInvoice(prev => ({
+            ...prev,
+            status: newStatus,
+            xmlAssinado: response.xml || prev.xmlAssinado,
+            chaveAcesso: prev.chaveAcesso, // Mantém a chave
+            historicoEventos: [
+                ...(prev.historicoEventos || []),
+                {
+                    tipo: 'autorizacao' as any,
+                    data: new Date().toISOString(),
+                    detalhe: newStatus === 'authorized' ? `Autorizada. Protocolo: ${response.protocolo}` : `Em Processamento. Motivo: ${response.erro}`,
+                    protocolo: response.protocolo
+                } as any
+            ]
+        }));
+        
+        // 4. Feedback para o usuário e ajuste no contador
+        if (newStatus === 'authorized') {
+            alert(`✅ Nota Fiscal Autorizada com Sucesso! Protocolo: ${response.protocolo}`);
+            // Apenas incrementa o número da nota se foi autorizada
+            setConfig(prev => ({
+                ...prev,
+                proximoNumeroNota: (parseInt(prev.proximoNumeroNota) + 1).toString()
+            }));
+            
+        } else if (newStatus === 'processing') {
+            alert(`⚠️ Lote da NFe em processamento na SEFAZ. Consulte o status mais tarde.`);
+        }
+        
+        // Garante que o status final é refletido na interface
+        setStatus(newStatus); 
+
+    } catch (error: any) {
+        // 5. Tratamento de Erros (Rejeição SEFAZ ou erro de servidor)
+        // O seu utilitário 'api' joga o erro do JSON de resposta (vinda do backend)
+        
+        // Define o status como rejeitado/erro
+        setStatus('rejected'); 
+        
+        // O backend retorna o erro no formato { erro: "Rejeição [cStat]: xMotivo" }
+        const errorMessage = error?.message || "Erro desconhecido ao tentar transmitir.";
+        alert(`❌ Transmissão Falhou:\n\n${errorMessage}`);
+
+        // O status no banco já foi alterado para 'rejected' pelo backend
+    }
+};
 
   // 6. PROCESSAR EVENTO
   const processEvent = async (invoice: InvoiceData, type: 'cancelamento' | 'cce', payload: string) => {
