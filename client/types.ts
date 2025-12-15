@@ -402,7 +402,7 @@ export interface GlobalValues {
     modalidadeFrete: '0' | '1' | '9';
 }
 
-export type InvoiceStatus = 'editing' | 'draft' | 'signing' | 'transmitting' | 'authorized' | 'rejected' | 'cancelled' | 'error';
+export type InvoiceStatus = 'editing' | 'draft' | 'signing' | 'transmitting' | 'authorized' | 'rejected' | 'cancelled' | 'error' | 'processing';
 
 export interface InvoiceEvent {
   tipo: 'cancelamento' | 'cce';
