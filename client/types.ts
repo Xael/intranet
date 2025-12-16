@@ -319,6 +319,9 @@ export interface Entity {
   endereco: Address;
   email?: string;
   crt?: CRT;
+
+  certificadoArquivo?: string | null; // na lista vem "Presente" ou null
+  certificadoSenha?: string | null;   // na lista vem "***" ou null
 }
 
 export interface TaxDetails {
