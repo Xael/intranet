@@ -357,7 +357,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
 // 5. TRANSMISSÃO
 const transmitNfe = async () => {
     // 1. Validação de segurança/preenchimento
-    if (!config.certificado || !config.senhaCertificado) {
+    if (!activeProfile?.certificadoArquivo) {
         alert("ERRO: Certificado Digital ou senha não fornecidos.");
         return;
     }
@@ -373,10 +373,8 @@ const transmitNfe = async () => {
     try {
         // 2. Chamada real à nova API de transmissão
         // Enviamos o ID da nota (para o backend buscar os dados) e a Senha (para o backend assinar)
-        const response = await api.post('/api/nfe/transmitir', { 
-            id: invoice.id,
-            senhaCertificado: config.senhaCertificado 
-        });
+        const response = await api.post('/api/nfe/transmitir', { id: invoice.id });
+
 
         // O backend retorna HTTP 200 (sucesso) para Autorizado (100) ou Processando (103)
         // O body da resposta (response) já contém { sucesso: true, status, protocolo, xml }
