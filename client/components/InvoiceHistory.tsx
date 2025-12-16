@@ -79,7 +79,7 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
             : [];
 
         // Inverte para mostrar as mais recentes primeiro
-        setInvoices(profileInvoices.reverse());
+        setInvoices(profileInvoices);
         setCurrentPage(1); 
     } catch (error) {
         console.error("Erro ao carregar notas fiscais:", error);
