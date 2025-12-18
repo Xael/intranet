@@ -53,8 +53,12 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
   const [profilesList, setProfilesList] = useState<Entity[]>([]);
   const [invoiceCount, setInvoiceCount] = useState<number>(0);
 
-  // Flatten external data into Products
+  // Flatten external data into Products (Intranet)
   const [externalProducts, setExternalProducts] = useState<Product[]>([]);
+
+  // ✅ Produtos internos (Cadastros > Produtos)
+  const [internalProducts, setInternalProducts] = useState<Product[]>([]);
+  const [internalProductsLoaded, setInternalProductsLoaded] = useState(false);
 
   // ✅ Função central para recarregar emissores e manter activeProfile atualizado
   const reloadProfiles = async (preferId?: string | null) => {
@@ -140,6 +144,27 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     }
   }, [externalData]);
 
+  // ✅ Carregar produtos internos (Cadastros > Produtos) quando o seletor abrir
+  const loadInternalProducts = async () => {
+    try {
+      const res = await api.get('/api/products');
+      const arr = Array.isArray(res) ? res : [];
+      // Garante que valores numéricos não venham quebrados
+      const normalized: Product[] = arr.map((p: any) => ({
+        ...p,
+        valorUnitario: Number(p.valorUnitario || 0),
+        valorTotal: Number(p.valorTotal || (Number(p.quantidade || 1) * Number(p.valorUnitario || 0))),
+        quantidade: Number(p.quantidade || 1),
+        unidade: p.unidade || 'UN',
+        gtin: p.gtin || 'SEM GTIN',
+      }));
+      setInternalProducts(normalized);
+      setInternalProductsLoaded(true);
+    } catch (e) {
+      console.error('Erro ao carregar produtos internos:', e);
+    }
+  };
+
   // ⚠️ Mantido por compatibilidade com ConfigForm existente.
   // ✅ Certificado/senha NÃO devem ser usados aqui. A fonte correta agora é o Emitente (activeProfile).
   // ✅ Padrão: PRODUÇÃO (ambiente = '1')
@@ -148,7 +173,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     const proxLS = safeLocalStorageGet('nfe_proximo_numero');
 
     return {
-      // ✅ padrão sempre em PRODUÇÃO (o usuário ainda pode trocar para homologação se quiser)
+      // ✅ padrão sempre em PRODUÇÃO
       ambiente: '1',
       proximoNumeroNota: proxLS || '1001',
       serie: serieLS || '1',
@@ -307,6 +332,14 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     status
   ]);
 
+  // ✅ quando abrir o seletor, carrega produtos internos também
+  useEffect(() => {
+    if (showProductSelector && !internalProductsLoaded) {
+      loadInternalProducts();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showProductSelector]);
+
   const handleProfileSelect = (profile: Entity) => {
     setActiveProfile(profile);
     setViewMode('painel');
@@ -356,6 +389,18 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
       if (!validateRequired(invoice.destinatario.razaoSocial)) {
         setErrorMsg("Preencha a Razão Social do Destinatário.");
         return false;
+      }
+
+      // ✅ PRODUÇÃO: evitar rejeição 232 (IE não informada)
+      if (config.ambiente === '1') {
+        const ieRaw = (invoice.destinatario.inscricaoEstadual || '').trim().toUpperCase();
+        const ieDigits = ieRaw.replace(/\D/g, '');
+        const ieOk = (ieRaw === 'ISENTO') || (ieDigits.length > 0);
+
+        if (!ieOk) {
+          setErrorMsg("Em PRODUÇÃO, informe a Inscrição Estadual (IE) do destinatário ou 'ISENTO'.");
+          return false;
+        }
       }
     }
 
@@ -467,6 +512,17 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
       return;
     }
 
+    // ✅ PRODUÇÃO: reforço contra rejeição 232
+    if (config.ambiente === '1') {
+      const ieRaw = (invoice.destinatario.inscricaoEstadual || '').trim().toUpperCase();
+      const ieDigits = ieRaw.replace(/\D/g, '');
+      const ieOk = (ieRaw === 'ISENTO') || (ieDigits.length > 0);
+      if (!ieOk) {
+        alert("Em PRODUÇÃO, informe a IE do destinatário ou 'ISENTO' (Cadastros > Destinatários).");
+        return;
+      }
+    }
+
     if (!invoice.id) {
       alert("ERRO: O ID da nota é obrigatório para transmissão. Salve como rascunho antes.");
       return;
@@ -534,8 +590,6 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
       return;
     }
 
-    // Se vocês forem implementar eventos reais (SEFAZ), precisam de cert+senha do emitente.
-    // Aqui pelo menos não travamos por "config.certificado".
     const issuerHasCert = !!activeProfile.certificadoArquivo;
     const issuerHasSenha = !!activeProfile.certificadoSenha;
     if (!issuerHasCert || !issuerHasSenha) {
@@ -712,11 +766,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
               initial={item}
               onSave={async (e) => {
                 await onSave(e);
-
-                // ✅ Após salvar emitente, recarrega lista para refletir certificado/senha
                 await reloadProfiles(e.id || null);
-
-                // ✅ Se o usuário acabou de cadastrar, pode querer selecionar ou trocar
                 setShowProfileSelector(true);
               }}
               onCancel={onCancel}
@@ -760,6 +810,23 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
 
     return null;
   };
+
+  // ✅ mesclar produtos internos + intranet, evitando duplicados óbvios
+  const mergedSelectableProducts = (() => {
+    const map = new Map<string, Product>();
+    const keyOf = (p: Product) => {
+      const cod = (p.codigo || '').trim().toUpperCase();
+      const desc = (p.descricao || '').trim().toUpperCase();
+      return `${cod}::${desc}`;
+    };
+    // prioridade: internos primeiro
+    internalProducts.forEach(p => map.set(keyOf(p), p));
+    externalProducts.forEach(p => {
+      const k = keyOf(p);
+      if (!map.has(k)) map.set(k, p);
+    });
+    return Array.from(map.values());
+  })();
 
   const renderInvoiceStep = () => {
     switch (currentStep) {
@@ -865,6 +932,12 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
               </div>
             )}
             <EntityForm title="Dados do Destinatário" data={invoice.destinatario} onChange={(destinatario) => setInvoice(prev => ({ ...prev, destinatario }))} />
+
+            {config.ambiente === '1' && (
+              <div className="p-3 rounded-md bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm">
+                Em <b>PRODUÇÃO</b>, informe a <b>IE</b> do destinatário (ou <b>ISENTO</b>) para evitar rejeição <b>232</b>.
+              </div>
+            )}
           </div>
         );
 
@@ -872,20 +945,25 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
         return (
           <>
             <div className="mb-4 flex justify-end">
-              <button onClick={() => setShowProductSelector(true)} className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">
-                <Search className="w-4 h-4 mr-2" /> Buscar do Banco / Intranet
+              <button
+                onClick={() => setShowProductSelector(true)}
+                className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+              >
+                <Search className="w-4 h-4 mr-2" /> Buscar (Cadastros / Banco / Intranet)
               </button>
             </div>
+
             {showProductSelector && (
               <ProductSelector
                 onClose={() => setShowProductSelector(false)}
-                externalProducts={externalProducts}
+                externalProducts={mergedSelectableProducts}
                 onSelect={(prod) => {
                   addProduct({ ...prod, id: crypto.randomUUID(), valorTotal: prod.quantidade * prod.valorUnitario });
                   setShowProductSelector(false);
                 }}
               />
             )}
+
             <ProductForm
               products={invoice.produtos}
               issuerCrt={activeProfile?.crt || '1'}
