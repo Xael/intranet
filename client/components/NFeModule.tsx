@@ -40,6 +40,14 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('painel');
   const [currentStep, setCurrentStep] = useState<Step>(Step.CONFIG);
 
+  // --- Helpers de Config ---
+  const safeLocalStorageGet = (key: string) => {
+    try { return localStorage.getItem(key); } catch { return null; }
+  };
+  const safeLocalStorageSet = (key: string, value: string) => {
+    try { localStorage.setItem(key, value); } catch { /* ignore */ }
+  };
+
   const [activeProfile, setActiveProfile] = useState<Entity | null>(null);
   const [showProfileSelector, setShowProfileSelector] = useState(false);
   const [profilesList, setProfilesList] = useState<Entity[]>([]);
@@ -134,13 +142,39 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
 
   // ⚠️ Mantido por compatibilidade com ConfigForm existente.
   // ✅ Certificado/senha NÃO devem ser usados aqui. A fonte correta agora é o Emitente (activeProfile).
-  const [config, setConfig] = useState<ConfigData>({
-    ambiente: '2',
-    proximoNumeroNota: '1001',
-    serie: '1',
-    certificado: null,        // legado (não usado)
-    senhaCertificado: ''      // legado (não usado)
+  // ✅ Padrão: PRODUÇÃO (ambiente = '1')
+  const [config, setConfig] = useState<ConfigData>(() => {
+    const serieLS = safeLocalStorageGet('nfe_serie');
+    const proxLS = safeLocalStorageGet('nfe_proximo_numero');
+
+    return {
+      // ✅ padrão sempre em PRODUÇÃO (o usuário ainda pode trocar para homologação se quiser)
+      ambiente: '1',
+      proximoNumeroNota: proxLS || '1001',
+      serie: serieLS || '1',
+      certificado: null,        // legado (não usado)
+      senhaCertificado: ''      // legado (não usado)
+    };
   });
+
+  // Se o usuário editar manualmente o número, evitamos sobrescrever automaticamente.
+  const [numeroFoiEditadoManual, setNumeroFoiEditadoManual] = useState(false);
+
+  const handleConfigChange = (next: ConfigData) => {
+    // Qualquer alteração vinda do formulário é considerada ação do usuário.
+    if (next.proximoNumeroNota !== config.proximoNumeroNota) {
+      setNumeroFoiEditadoManual(true);
+    }
+    setConfig(next);
+  };
+
+  // Persistir configurações básicas (ambiente/série/próximo número)
+  useEffect(() => {
+    safeLocalStorageSet('nfe_ambiente', config.ambiente);
+    safeLocalStorageSet('nfe_serie', config.serie);
+    safeLocalStorageSet('nfe_proximo_numero', config.proximoNumeroNota);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.ambiente, config.serie, config.proximoNumeroNota]);
 
   const [invoice, setInvoice] = useState<InvoiceData>({
     numero: '1001',
@@ -189,6 +223,51 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
       setShowProfileSelector(false);
     }
   }, [activeProfile, status]);
+
+  // ✅ Auto: calcular próximo número de NF-e com base no histórico do emitente
+  const calcularProximoNumeroPorHistorico = async (opts?: { force?: boolean }) => {
+    const force = !!opts?.force;
+    if (!activeProfile) return;
+
+    // Se estiver editando um rascunho existente, não sobrescrever.
+    if (invoice?.id) return;
+
+    // Se o usuário já editou manualmente, só recalcula quando forçado.
+    if (numeroFoiEditadoManual && !force) return;
+
+    try {
+      const data = await api.get('/api/nfe/notas');
+      const cleanCnpj = (s: string) => (s || '').replace(/\D/g, '');
+      const activeCnpj = cleanCnpj(activeProfile.cnpj);
+      const serieAtual = (config.serie || '1').toString();
+
+      const profileInvoices: InvoiceData[] = Array.isArray(data)
+        ? data.filter((inv: InvoiceData) => cleanCnpj(inv.emitente?.cnpj) === activeCnpj)
+        : [];
+
+      const numeros = profileInvoices
+        .filter(inv => (inv.serie || '').toString() === serieAtual)
+        .map(inv => parseInt(String(inv.numero || '').replace(/\D/g, ''), 10))
+        .filter(n => Number.isFinite(n));
+
+      const maxNumero = numeros.length ? Math.max(...numeros) : NaN;
+      if (Number.isFinite(maxNumero)) {
+        const proximo = String(maxNumero + 1);
+        setConfig(prev => ({ ...prev, proximoNumeroNota: proximo }));
+      }
+    } catch (e) {
+      console.error('Erro ao calcular próximo número pelo histórico:', e);
+    }
+  };
+
+  // Recalcula automaticamente quando troca de emitente ou de série
+  useEffect(() => {
+    if (!activeProfile) return;
+    // Ao trocar de emitente, libera o auto novamente.
+    setNumeroFoiEditadoManual(false);
+    calcularProximoNumeroPorHistorico();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProfile?.id, config.serie]);
 
   useEffect(() => {
     if (status === 'editing') {
@@ -685,7 +764,69 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
   const renderInvoiceStep = () => {
     switch (currentStep) {
       case Step.CONFIG:
-        return <ConfigForm data={config} onChange={setConfig} />;
+        {
+          const certOk = !!activeProfile?.certificadoArquivo && !!activeProfile?.certificadoSenha;
+          const ambienteLabel = config.ambiente === '1'
+            ? 'Produção (com validade jurídica)'
+            : 'Homologação (testes)';
+
+          return (
+            <div className="space-y-4">
+              <div className={`p-4 rounded-lg border ${certOk ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    {certOk ? (
+                      <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
+                    ) : (
+                      <AlertCircle className="w-5 h-5 text-yellow-700 mt-0.5" />
+                    )}
+                    <div>
+                      <p className={`font-bold ${certOk ? 'text-green-800' : 'text-yellow-800'}`}>
+                        {certOk ? 'Certificado já configurado' : 'Certificado não configurado'}
+                      </p>
+                      <p className={`text-sm ${certOk ? 'text-green-700' : 'text-yellow-700'}`}>
+                        {activeProfile
+                          ? `Emitente: ${activeProfile.razaoSocial} (CNPJ: ${activeProfile.cnpj})`
+                          : 'Selecione um emitente para verificar o certificado.'}
+                      </p>
+                      <p className={`text-xs mt-1 ${certOk ? 'text-green-700' : 'text-yellow-700'}`}>
+                        Observação: o A1 utilizado na transmissão é o do cadastro do Emitente.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <p className="text-xs text-gray-600">Ambiente de emissão</p>
+                    <p className="font-bold text-gray-800">{ambienteLabel}</p>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="px-3 py-2 rounded-md bg-white border border-gray-200 hover:bg-gray-50 text-sm"
+                    onClick={() => {
+                      setNumeroFoiEditadoManual(false);
+                      calcularProximoNumeroPorHistorico({ force: true });
+                    }}
+                  >
+                    Recalcular próximo número
+                  </button>
+
+                  <button
+                    type="button"
+                    className="px-3 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 text-sm"
+                    onClick={() => setViewMode('emissores')}
+                  >
+                    Gerenciar Emitente / Certificado
+                  </button>
+                </div>
+              </div>
+
+              <ConfigForm data={config} onChange={handleConfigChange} />
+            </div>
+          );
+        }
 
       case Step.EMITENTE:
         return (
