@@ -536,24 +536,23 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
 
       const newStatus = response.status as InvoiceStatus;
 
-      setInvoice(prev => ({
-        ...prev,
-        status: newStatus,
-        xmlAssinado: response.xml || prev.xmlAssinado,
-        historicoEventos: [
-          ...(prev.historicoEventos || []),
-          {
-            tipo: 'autorizacao' as any,
-            data: new Date().toISOString(),
-            detalhe:
-              newStatus === 'authorized'
-                ? `Autorizada. Protocolo: ${response.protocolo}`
-                : `Em Processamento. Motivo: ${response.erro || 'Processando...'}`
-            ,
-            protocolo: response.protocolo
-          } as any
-        ]
-      }));
+setInvoice(prev => ({
+  ...prev,
+  status: newStatus,
+  xmlAssinado: response.xml || prev.xmlAssinado,
+  // ✅ chave oficial vem do backend
+  chaveAcesso: response.chNFe || prev.chaveAcesso,
+  protocoloAutorizacao: response.protocolo || (prev as any).protocoloAutorizacao,
+  historicoEventos: [
+    ...(prev.historicoEventos || []),
+    {
+      tipo: 'autorizacao' as any,
+      data: new Date().toISOString(),
+      detalhe: `Autorizada. Protocolo: ${response.protocolo}`,
+      protocolo: response.protocolo
+    } as any
+  ]
+}));
 
       if (newStatus === 'authorized') {
         alert(`✅ Nota Fiscal Autorizada com Sucesso! Protocolo: ${response.protocolo}`);
