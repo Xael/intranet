@@ -12,6 +12,8 @@ interface InvoiceHistoryProps {
   onRequestCancel: (invoice: InvoiceData) => void;
   onRequestCorrection: (invoice: InvoiceData) => void;
   onEditDraft: (invoice: InvoiceData) => void;
+  // 👇 ADICIONADO: Prop para receber o clique de importar do pai
+  onImportClick?: () => void; 
 }
 
 // Helper para formatar o status com cores
@@ -49,7 +51,8 @@ export const InvoiceHistory: React.FC<InvoiceHistoryProps> = ({
     onPrint, 
     onRequestCancel, 
     onRequestCorrection,
-    onEditDraft
+    onEditDraft,
+    onImportClick // 👈 Recebendo a função aqui
 }) => {
   const [invoices, setInvoices] = useState<InvoiceData[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -205,9 +208,7 @@ Digite o número da opção desejada:
       URL.revokeObjectURL(url);
   };
    
-  // 5. Visualizar XML
-  // Removido para simplificar, já que downloadXml cobre o uso principal
-  // (Pode ser readicionado se necessário)
+  // 5. Visualizar XML (Removido para simplificar)
 
   // 6. Exportação em Lote
   const handleBulkExport = () => {
@@ -217,16 +218,14 @@ Digite o número da opção desejada:
       }
       const selectedInvoices = invoices.filter(inv => selectedIds.includes(inv.id!));
       if (window.confirm(`Deseja baixar os XMLs de ${selectedInvoices.length} notas selecionadas?`)) {
-          // setLoading(true); // Opcional: pode bloquear a UI ou não
           selectedInvoices.forEach((inv, index) => {
               setTimeout(() => downloadXml(inv), index * 500); 
           });
-          // Não bloqueamos loading aqui para permitir que o usuário continue navegando enquanto baixa
       }
   };
 
 
-  // --- FUNÇÃO DE IMPORTAÇÃO XML ---
+  // --- FUNÇÃO DE IMPORTAÇÃO XML (Mantida como fallback, mas priorizamos a prop) ---
   const handleImportXml = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
         const files = Array.from(e.target.files);
@@ -245,7 +244,6 @@ Digite o número da opção desejada:
                 const textContent = await file.text();
                 let statusToSave: InvoiceStatus = 'authorized'; 
                 
-                // Tenta detectar status pelo conteúdo do XML (cStat)
                 if (textContent.includes('<cStat>101</cStat>')) {
                     statusToSave = 'cancelled';
                 } else if (textContent.includes('<cStat>302</cStat>')) {
@@ -335,9 +333,16 @@ Digite o número da opção desejada:
 
             <div className="self-end pt-5 flex gap-3">
                 
-                {/* BOTÃO IMPORTAR */}
+                {/* BOTÃO IMPORTAR (Atualizado) */}
                 <button 
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() => {
+                        // Se existir função do pai (NFeModule), usa ela. Senão usa a local.
+                        if (onImportClick) {
+                            onImportClick();
+                        } else {
+                            fileInputRef.current?.click();
+                        }
+                    }}
                     className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors shadow-sm"
                     disabled={!activeProfile || loading}
                 >
