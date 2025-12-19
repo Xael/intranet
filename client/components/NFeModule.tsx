@@ -15,7 +15,7 @@ import { calculateInvoiceTotals } from '../utils/taxCalculations';
 import { api } from '../utils/api';
 import {
   FileText, Users, ShoppingCart, Send, ArrowRight, ArrowLeft, Download, CheckCircle, Shield, Settings,
-  Loader2, AlertCircle, LayoutDashboard, Box, Search, History, Printer, Building2, LogOut, CreditCard, Save
+  Loader2, AlertCircle, LayoutDashboard, Box, Search, History, Printer, Building2, LogOut, CreditCard, Save, Calendar
 } from 'lucide-react';
 import { Municipio } from '../types';
 
@@ -46,6 +46,14 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
   };
   const safeLocalStorageSet = (key: string, value: string) => {
     try { localStorage.setItem(key, value); } catch { /* ignore */ }
+  };
+
+  // ✅ Função para pegar a hora local para o input datetime-local
+  const getLocalNowForInput = (isoDate?: string) => {
+    const d = isoDate ? new Date(isoDate) : new Date();
+    // Ajusta o fuso horário manualmente para formato YYYY-MM-DDTHH:mm local
+    const local = new Date(d.getTime() - (d.getTimezoneOffset() * 60000));
+    return local.toISOString().slice(0, 16);
   };
 
   const [activeProfile, setActiveProfile] = useState<Entity | null>(null);
@@ -204,7 +212,8 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
   const [invoice, setInvoice] = useState<InvoiceData>({
     numero: '1001',
     serie: '1',
-    dataEmissao: new Date().toISOString().split('T')[0],
+    // ✅ CORREÇÃO: Usar ISO completo para suportar Hora
+    dataEmissao: new Date().toISOString(),
     emitente: { ...initialEntity },
     destinatario: { ...initialEntity },
     totais: { vBC: 0, vICMS: 0, vProd: 0, vFrete: 0, vSeg: 0, vDesc: 0, vIPI: 0, vPIS: 0, vCOFINS: 0, vOutro: 0, vNF: 0 },
@@ -329,7 +338,8 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     invoice.globalValues,
     config.ambiente,
     viewMode,
-    status
+    status,
+    invoice.dataEmissao // ✅ Agora reage à data também
   ]);
 
   // ✅ quando abrir o seletor, carrega produtos internos também
@@ -401,6 +411,11 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     if (currentStep === Step.CONFIG) {
       if (!config.proximoNumeroNota || !config.serie) {
         setErrorMsg("Defina o número e a série da nota.");
+        return false;
+      }
+      // ✅ Valida se tem data
+      if (!invoice.dataEmissao) {
+        setErrorMsg("Data de emissão é obrigatória.");
         return false;
       }
     }
@@ -670,7 +685,8 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
       status: 'editing',
       finalidade: '1',
       refNFe: undefined,
-      dataEmissao: new Date().toISOString().split('T')[0]
+      // ✅ CORREÇÃO: Data completa
+      dataEmissao: new Date().toISOString()
     });
     setViewMode('nota');
     setCurrentStep(Step.CONFIG);
@@ -689,7 +705,8 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
       status: 'editing',
       finalidade: '2',
       refNFe: source.chaveAcesso,
-      dataEmissao: new Date().toISOString().split('T')[0],
+      // ✅ CORREÇÃO: Data completa
+      dataEmissao: new Date().toISOString(),
       produtos: []
     });
     setViewMode('nota');
@@ -922,6 +939,39 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
               </div>
 
               <ConfigForm data={config} onChange={handleConfigChange} />
+
+              {/* ✅ CAMPO DE DATA E HORA DE EMISSÃO (NOVO) */}
+              <div className="mt-4 bg-white p-4 rounded-lg border border-gray-200">
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <Calendar className="w-4 h-4 mr-2 text-blue-600" />
+                  Data e Hora de Emissão
+                </label>
+                <div className="flex gap-2 items-center">
+                    <input
+                        type="datetime-local"
+                        className="border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 w-full max-w-xs"
+                        value={getLocalNowForInput(invoice.dataEmissao)}
+                        onChange={(e) => {
+                            const val = e.target.value;
+                            if (val) {
+                                // Converte o valor do input (local) de volta para ISO completo (UTC/Offset)
+                                setInvoice(prev => ({ ...prev, dataEmissao: new Date(val).toISOString() }));
+                            }
+                        }}
+                    />
+                    <button
+                        onClick={() => setInvoice(prev => ({ ...prev, dataEmissao: new Date().toISOString() }))}
+                        className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded border border-gray-300 text-sm"
+                        title="Definir para Agora"
+                    >
+                        Agora
+                    </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                    Esta data será enviada no XML. Se estiver no passado, certifique-se de que é permitido pela SEFAZ (limite ~30 dias).
+                </p>
+              </div>
+
             </div>
           );
         }
