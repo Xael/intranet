@@ -356,6 +356,45 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     setShowProfileSelector(true);
   };
 
+  // --- LÓGICA DE IMPORTAÇÃO DE XML ---
+  const triggerImport = () => {
+    document.getElementById('hiddenXmlInput')?.click();
+  };
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const xmlContent = e.target?.result as string;
+      if (!xmlContent) return;
+
+      try {
+        setEventProcessing('Importando XML...');
+        // Chama a rota que criamos no server.js
+        const res = await api.post('/api/nfe/importar', { xmlContent });
+        
+        alert('✅ XML Importado com sucesso!');
+        
+        // Se estivermos no histórico, força recarregar
+        if (viewMode === 'historico') {
+           setViewMode('painel');
+           setTimeout(() => setViewMode('historico'), 50);
+        } else {
+            setViewMode('historico');
+        }
+
+      } catch (error: any) {
+        alert('Erro ao importar: ' + (error.response?.data?.erro || error.message));
+      } finally {
+        setEventProcessing(null);
+        event.target.value = ''; // Limpa para permitir selecionar o mesmo arquivo
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const validateStep = (): boolean => {
     setErrorMsg(null);
 
@@ -536,23 +575,23 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
 
       const newStatus = response.status as InvoiceStatus;
 
-setInvoice(prev => ({
-  ...prev,
-  status: newStatus,
-  xmlAssinado: response.xml || prev.xmlAssinado,
-  // ✅ chave oficial vem do backend
-  chaveAcesso: response.chNFe || prev.chaveAcesso,
-  protocoloAutorizacao: response.protocolo || (prev as any).protocoloAutorizacao,
-  historicoEventos: [
-    ...(prev.historicoEventos || []),
-    {
-      tipo: 'autorizacao' as any,
-      data: new Date().toISOString(),
-      detalhe: `Autorizada. Protocolo: ${response.protocolo}`,
-      protocolo: response.protocolo
-    } as any
-  ]
-}));
+      setInvoice(prev => ({
+        ...prev,
+        status: newStatus,
+        xmlAssinado: response.xml || prev.xmlAssinado,
+        // ✅ chave oficial vem do backend
+        chaveAcesso: response.chNFe || prev.chaveAcesso,
+        protocoloAutorizacao: response.protocolo || (prev as any).protocoloAutorizacao,
+        historicoEventos: [
+          ...(prev.historicoEventos || []),
+          {
+            tipo: 'autorizacao' as any,
+            data: new Date().toISOString(),
+            detalhe: `Autorizada. Protocolo: ${response.protocolo}`,
+            protocolo: response.protocolo
+          } as any
+        ]
+      }));
 
       if (newStatus === 'authorized') {
         alert(`✅ Nota Fiscal Autorizada com Sucesso! Protocolo: ${response.protocolo}`);
@@ -572,8 +611,9 @@ setInvoice(prev => ({
     }
   };
 
-  // ✅ 6. PROCESSAR EVENTO (NÃO DEPENDER DE CONFIG CERT)
+  // ✅ 6. PROCESSAR EVENTO (CANCELAMENTO REAL VIA API)
   const processEvent = async (inv: InvoiceData, type: 'cancelamento' | 'cce', payload: string) => {
+    // Validação de Rascunho
     if (inv.status === 'draft' && type === 'cancelamento') {
       if (confirm("Deseja realmente excluir este rascunho permanentemente?")) {
         if (inv.id) {
@@ -589,38 +629,30 @@ setInvoice(prev => ({
       return;
     }
 
-    const issuerHasCert = !!activeProfile.certificadoArquivo;
-    const issuerHasSenha = !!activeProfile.certificadoSenha;
-    if (!issuerHasCert || !issuerHasSenha) {
-      alert("ERRO: Certificado e/ou senha não cadastrados no Emitente (Cadastros > Emissores).");
-      return;
-    }
-
-    setEventProcessing(type === 'cancelamento' ? 'Cancelando...' : 'Corrigindo...');
+    setEventProcessing(type === 'cancelamento' ? 'Cancelando na SEFAZ...' : 'Corrigindo...');
+    
     try {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      if (type === 'cancelamento') {
+        // Chamada ao Backend Real
+        const response = await api.post('/api/nfe/cancelar', {
+          id: inv.id,
+          justificativa: payload
+        });
 
-      const updatedInvoice = {
-        ...inv,
-        status: type === 'cancelamento' ? 'cancelled' : inv.status,
-        historicoEventos: [
-          ...(inv.historicoEventos || []),
-          {
-            tipo: type,
-            data: new Date().toISOString(),
-            detalhe: payload,
-            protocolo: `135${Math.floor(Math.random() * 9999999999)}`
-          }
-        ]
-      } as InvoiceData;
+        if (response.sucesso || response.data?.sucesso) {
+            alert('✅ Nota Cancelada com Sucesso!');
+             // Força atualização da lista ou recarrega a view
+             setViewMode('painel'); 
+             setTimeout(() => setViewMode('historico'), 100); 
+        }
+      } else {
+        // Implementação futura para Carta de Correção (CCe)
+        alert('Funcionalidade de CCe (Carta de Correção) ainda pendente no Backend.');
+      }
 
-      await api.post('/api/nfe/notas', updatedInvoice);
-
-      setViewMode('historico');
-      alert(type === 'cancelamento' ? "Nota Fiscal Cancelada!" : "Carta de Correção Vinculada!");
-    } catch (error) {
-      alert("Erro na transmissão do evento.");
+    } catch (error: any) {
+      const msg = error.response?.data?.erro || error.message || "Erro desconhecido";
+      alert(`❌ Erro ao processar evento: ${msg}`);
     } finally {
       setEventProcessing(null);
     }
@@ -665,30 +697,6 @@ setInvoice(prev => ({
     setStatus('editing');
     alert(`Iniciando nota complementar referente à chave: ${source.chaveAcesso}.`);
   };
-
-// Dentro de NFeModule.tsx
-
-const confirmCancelamento = async () => {
-  try {
-    // Chama a API real que criamos no Passo 3
-    const response = await api.post('/nfe/cancelar', {
-      id: selectedInvoice.id,
-      justificativa: cancelJustification // Variável do seu input de texto
-    });
-
-    if (response.data.sucesso) {
-      alert('Nota cancelada com sucesso!');
-      // Atualiza a lista local
-      setInvoices(invoices.map(inv => 
-        inv.id === selectedInvoice.id ? { ...inv, status: 'cancelled' } : inv
-      ));
-      setShowCancelModal(false);
-    }
-  } catch (error) {
-    alert('Erro ao cancelar: ' + (error.response?.data?.erro || error.message));
-  }
-};
-
   
   const handlePrint = (inv: InvoiceData) => {
     setPrintInvoice(inv);
@@ -1173,6 +1181,8 @@ const confirmCancelamento = async () => {
                   onRequestCancel={handleRequestCancel}
                   onRequestCorrection={handleRequestCorrection}
                   onEditDraft={handleEditDraft}
+                  // 👇 AQUI ESTÁ A CONEXÃO COM O BOTÃO IMPORTAR
+                  onImportClick={triggerImport} 
                 />
               )}
 
@@ -1242,6 +1252,16 @@ const confirmCancelamento = async () => {
           )}
         </main>
       </div>
+
+      {/* 👇 INPUT INVISÍVEL PARA IMPORTAÇÃO DE XML */}
+      <input 
+        type="file" 
+        id="hiddenXmlInput" 
+        accept=".xml" 
+        className="hidden" 
+        style={{ display: 'none' }} 
+        onChange={handleFileChange} 
+      />
     </div>
   );
 };
