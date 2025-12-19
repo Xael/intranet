@@ -300,9 +300,9 @@ export const Danfe: React.FC<DanfeProps> = ({ invoice }) => {
                 ? prod.valorUnitario
                 : Number(String(prod.valorUnitario ?? '0').replace(',', '.'));
 
-              const vTot = typeof prod.valorTotal === 'number'
-                ? prod.valorTotal
-                : Number(String(prod.valorTotal ?? (qtd * vUnit) ?? '0').replace(',', '.'));
+const vTot = typeof prod.valorTotal === 'number'
+  ? prod.valorTotal
+  : Number(String(prod.valorTotal ?? (qtd * vUnit)).replace(',', '.'));
 
 return (
   <tr key={i} className="border-b border-gray-300">
