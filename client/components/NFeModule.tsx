@@ -666,6 +666,30 @@ setInvoice(prev => ({
     alert(`Iniciando nota complementar referente à chave: ${source.chaveAcesso}.`);
   };
 
+// Dentro de NFeModule.tsx
+
+const confirmCancelamento = async () => {
+  try {
+    // Chama a API real que criamos no Passo 3
+    const response = await api.post('/nfe/cancelar', {
+      id: selectedInvoice.id,
+      justificativa: cancelJustification // Variável do seu input de texto
+    });
+
+    if (response.data.sucesso) {
+      alert('Nota cancelada com sucesso!');
+      // Atualiza a lista local
+      setInvoices(invoices.map(inv => 
+        inv.id === selectedInvoice.id ? { ...inv, status: 'cancelled' } : inv
+      ));
+      setShowCancelModal(false);
+    }
+  } catch (error) {
+    alert('Erro ao cancelar: ' + (error.response?.data?.erro || error.message));
+  }
+};
+
+  
   const handlePrint = (inv: InvoiceData) => {
     setPrintInvoice(inv);
     setTimeout(() => window.print(), 100);
