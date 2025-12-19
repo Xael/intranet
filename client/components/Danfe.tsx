@@ -304,29 +304,33 @@ export const Danfe: React.FC<DanfeProps> = ({ invoice }) => {
                 ? prod.valorTotal
                 : Number(String(prod.valorTotal ?? (qtd * vUnit) ?? '0').replace(',', '.'));
 
-              return (
-                <tr key={i} className="border-b border-gray-300">
-                  <td className="p-1 border-r border-gray-300 w-[10%] whitespace-nowrap overflow-hidden text-ellipsis">
-                    {prod.codigo}
-                  </td>
-                  <td className="p-1 border-r border-gray-300 w-[35%] overflow-hidden whitespace-nowrap text-ellipsis">
-                    {prod.descricao}
-                  </td>
-                  <td className="p-1 border-r border-gray-300 w-[6%]">{prod.ncm}</td>
-                  <td className="p-1 border-r border-gray-300 w-[5%]">{cstOuCsosn}</td>
-                  <td className="p-1 border-r border-gray-300 w-[5%]">{prod.cfop}</td>
-                  <td className="p-1 border-r border-gray-300 w-[5%]">{prod.unidade}</td>
-                  <td className="p-1 border-r border-gray-300 w-[6%] text-right">{Number.isFinite(qtd) ? qtd : 0}</td>
-                  <td className="p-1 border-r border-gray-300 w-[10%] text-right">{Number.isFinite(vUnit) ? vUnit.toFixed(2) : '0.00'}</td>
-                  <td className="p-1 border-r border-gray-300 w-[10%] text-right">{Number.isFinite(vTot) ? vTot.toFixed(2) : '0.00'}</td>
-                  <td className="p-1 border-r border-gray-300 w-[5%] text-right">
-                    (tax.aliquotaIcms ?? 0) > 0 ? `${tax.aliquotaIcms}%` : '-'
-                  </td>
-                  <td className="p-1 w-[3%] text-right">
-                    tax.aliquotaIpi ? `${tax.aliquotaIpi}%` : '-'
-                  </td>
-                </tr>
-              );
+return (
+  <tr key={i} className="border-b border-gray-300">
+    <td className="p-1 border-r border-gray-300 w-[10%] whitespace-nowrap overflow-hidden text-ellipsis">
+      {prod.codigo}
+    </td>
+    <td className="p-1 border-r border-gray-300 w-[35%] overflow-hidden whitespace-nowrap text-ellipsis">
+      {prod.descricao}
+    </td>
+    <td className="p-1 border-r border-gray-300 w-[6%]">{prod.ncm}</td>
+    <td className="p-1 border-r border-gray-300 w-[5%]">{cstOuCsosn}</td>
+    <td className="p-1 border-r border-gray-300 w-[5%]">{prod.cfop}</td>
+    <td className="p-1 border-r border-gray-300 w-[5%]">{prod.unidade}</td>
+    <td className="p-1 border-r border-gray-300 w-[6%] text-right">{Number.isFinite(qtd) ? qtd : 0}</td>
+    <td className="p-1 border-r border-gray-300 w-[10%] text-right">{Number.isFinite(vUnit) ? vUnit.toFixed(2) : '0.00'}</td>
+    <td className="p-1 border-r border-gray-300 w-[10%] text-right">{Number.isFinite(vTot) ? vTot.toFixed(2) : '0.00'}</td>
+    
+    {/* CORREÇÃO AQUI: Adicionado { } em volta da lógica */}
+    <td className="p-1 border-r border-gray-300 w-[5%] text-right">
+      {(tax.aliquotaIcms ?? 0) > 0 ? `${tax.aliquotaIcms}%` : '-'}
+    </td>
+    
+    {/* CORREÇÃO AQUI TAMBÉM: Adicionado { } para não imprimir o código na tela */}
+    <td className="p-1 w-[3%] text-right">
+      {tax.aliquotaIpi ? `${tax.aliquotaIpi}%` : '-'}
+    </td>
+  </tr>
+);
             })}
           </tbody>
         </table>
