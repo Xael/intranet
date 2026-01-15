@@ -183,46 +183,28 @@ export const Danfe: React.FC<DanfeProps> = ({ invoice }) => {
   const t = { ...totaisDefaults, ...(invoice.totais || {}) };
 
   return (
-    <div id="danfe-printable-area" className="w-full bg-gray-500 py-8 print:p-0 print:bg-white flex flex-col items-center gap-8 print:block">
+    <div className="w-full bg-white text-black">
       
-      {/* 🔥🔥🔥 CSS MÁGICO AQUI 🔥🔥🔥 
-         Isso corrige o problema de cortar a página, mesmo sem arquivo global.
+      {/* CSS DE IMPRESSÃO - CORRIGIDO
+         Removemos a linha 'visibility: hidden' que causava a tela branca.
+         Adicionamos 'overflow: visible' para permitir múltiplas páginas.
       */}
       <style>{`
         @media print {
           @page { size: A4; margin: 5mm; }
           
-          /* Reseta o layout do Dashboard que esconde a rolagem */
-          html, body, #root, #app {
+          html, body, #root {
             height: auto !important;
-            min-height: auto !important;
             overflow: visible !important;
-            position: static !important;
-            display: block !important;
+            background: white !important;
           }
 
-          /* Esconde tudo na tela */
-          body * {
-            visibility: hidden;
-            height: 0; 
-            overflow: hidden;
-          }
-
-          /* Mostra e reseta o DANFE */
-          #danfe-printable-area, #danfe-printable-area * {
-            visibility: visible;
-            height: auto;
-            overflow: visible;
-          }
-
-          #danfe-printable-area {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            margin: 0;
-            padding: 0;
-            background: white;
+          /* Garante que o DANFE ocupe largura total */
+          .danfe-page {
+            width: 100% !important;
+            max-width: none !important;
+            box-shadow: none !important;
+            border: none !important;
           }
 
           /* Força quebra de página */
@@ -230,8 +212,7 @@ export const Danfe: React.FC<DanfeProps> = ({ invoice }) => {
             page-break-after: always !important;
             break-after: page !important;
             display: block;
-            height: 1px; /* Hack para forçar renderização do break */
-            margin-bottom: 20px;
+            min-height: 1px;
           }
         }
       `}</style>
@@ -243,12 +224,12 @@ export const Danfe: React.FC<DanfeProps> = ({ invoice }) => {
           <div 
             key={index} 
             className={`
-              bg-white w-[210mm] h-[297mm] p-[8mm] shadow-lg relative flex flex-col
-              print:shadow-none print:w-full print:h-[287mm] print:mb-0
+              danfe-page bg-white w-[210mm] min-h-[297mm] p-[5mm] mx-auto mb-4 border border-gray-300 shadow-lg relative flex flex-col text-black
+              print:mb-0
               ${index < totalPages - 1 ? 'page-break' : ''}
             `}
           >
-            {/* Cabeçalho Fixo */}
+            {/* Cabeçalho Fixo em todas as páginas */}
             <DanfeHeader invoice={invoice} pageIndex={index} totalPages={totalPages} />
 
             {/* Tabela de Produtos */}
@@ -295,7 +276,7 @@ export const Danfe: React.FC<DanfeProps> = ({ invoice }) => {
 
             {/* Rodapé - Apenas na última página */}
             {isLastPage && (
-              <div className="mt-2 no-break">
+              <div className="mt-2 break-inside-avoid">
                  {/* CÁLCULO DO IMPOSTO (COMPLETO) */}
                  <div className="bg-gray-200 border border-black border-b-0 px-2 py-0.5 font-bold text-[10px] print:bg-gray-300">CÁLCULO DO IMPOSTO</div>
                  <div className="border border-black flex flex-wrap text-[9px] mb-2">
