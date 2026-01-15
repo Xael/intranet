@@ -1,4 +1,3 @@
-
 import { InvoiceData, Entity, Product, TaxDetails, PaymentMethod, CRT } from '../types';
 
 export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
@@ -10,36 +9,40 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(xmlText, "text/xml");
 
-        // Helper to safely get element text
+        // Helper seguro para pegar texto de tags (busca em qualquer profundidade)
         const getText = (parent: Element | Document | null, tag: string): string => {
           if (!parent) return '';
-          const el = parent.getElementsByTagName(tag)[0];
-          return el ? el.textContent || '' : '';
+          // Tenta buscar no elemento pai, se falhar, tenta no documento todo
+          const els = parent.getElementsByTagName(tag);
+          if (els.length > 0) return els[0].textContent || '';
+          return '';
         };
 
-        // Check if valid NFe
-        if (!xmlDoc.getElementsByTagName('infNFe').length) {
+        // Verifica se é um XML de NFe válido
+        const infNFeList = xmlDoc.getElementsByTagName('infNFe');
+        if (!infNFeList.length) {
           throw new Error("Arquivo XML inválido ou não é uma NF-e.");
         }
-
-        // 1. Basic Info
+        
+        // Pega o elemento raiz da nota (infNFe)
+        const infNFe = infNFeList[0];
+        
+        // --- 1. Dados Básicos ---
         const ide = xmlDoc.getElementsByTagName('ide')[0];
         const numero = getText(ide, 'nNF');
         const serie = getText(ide, 'serie');
         const dataEmissaoRaw = getText(ide, 'dhEmi');
         const finalidade = getText(ide, 'finNFe') as '1'|'2'|'3'|'4';
         
-        // 2. Issuer (Emitente)
+        // --- 2. Emitente ---
         const emitTag = xmlDoc.getElementsByTagName('emit')[0];
         const emitEndTag = emitTag.getElementsByTagName('enderEmit')[0];
-        const emitCrt = getText(emitTag, 'CRT') as CRT;
         
         const emitente: Entity = {
-          id: crypto.randomUUID(), 
           cnpj: getText(emitTag, 'CNPJ'),
           razaoSocial: getText(emitTag, 'xNome'),
           inscricaoEstadual: getText(emitTag, 'IE'),
-          crt: emitCrt || '1',
+          crt: getText(emitTag, 'CRT') as CRT,
           endereco: {
             logradouro: getText(emitEndTag, 'xLgr'),
             numero: getText(emitEndTag, 'nro'),
@@ -51,128 +54,113 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
           }
         };
 
-        // 3. Recipient (Destinatário)
+        // --- 3. Destinatário ---
         const destTag = xmlDoc.getElementsByTagName('dest')[0];
-        const destEndTag = destTag ? destTag.getElementsByTagName('enderDest')[0] : null;
+        let destinatario: Entity = { ...emitente, cnpj: '', razaoSocial: '', inscricaoEstadual: '' }; // Fallback inicial
         
-        const destinatario: Entity = {
-          id: crypto.randomUUID(),
-          cnpj: destTag ? (getText(destTag, 'CNPJ') || getText(destTag, 'CPF')) : '',
-          razaoSocial: destTag ? getText(destTag, 'xNome') : '',
-          inscricaoEstadual: destTag ? getText(destTag, 'IE') : '',
-          crt: '1', // Default as usually not present in XML for dest
-          endereco: {
-            logradouro: getText(destEndTag, 'xLgr'),
-            numero: getText(destEndTag, 'nro'),
-            bairro: getText(destEndTag, 'xBairro'),
-            municipio: getText(destEndTag, 'xMun'),
-            codigoIbge: getText(destEndTag, 'cMun'),
-            uf: getText(destEndTag, 'UF'),
-            cep: getText(destEndTag, 'CEP')
-          }
-        };
+        if (destTag) {
+            const destEndTag = destTag.getElementsByTagName('enderDest')[0];
+            destinatario = {
+                cnpj: getText(destTag, 'CNPJ') || getText(destTag, 'CPF'),
+                razaoSocial: getText(destTag, 'xNome'),
+                inscricaoEstadual: getText(destTag, 'IE'),
+                endereco: destEndTag ? {
+                    logradouro: getText(destEndTag, 'xLgr'),
+                    numero: getText(destEndTag, 'nro'),
+                    bairro: getText(destEndTag, 'xBairro'),
+                    municipio: getText(destEndTag, 'xMun'),
+                    codigoIbge: getText(destEndTag, 'cMun'),
+                    uf: getText(destEndTag, 'UF'),
+                    cep: getText(destEndTag, 'CEP')
+                } : emitente.endereco, // Fallback se não tiver endereço
+                email: getText(destTag, 'email')
+            };
+        }
 
-        // 4. Products
+        // --- 4. Produtos ---
         const detTags = xmlDoc.getElementsByTagName('det');
         const produtos: Product[] = [];
-
+        
         for (let i = 0; i < detTags.length; i++) {
-          const det = detTags[i];
-          const prodTag = det.getElementsByTagName('prod')[0];
-          const qtd = parseFloat(getText(prodTag, 'qCom'));
-          const vUnit = parseFloat(getText(prodTag, 'vUnCom'));
-          const vProd = parseFloat(getText(prodTag, 'vProd'));
-          
-          // Parse Taxes
-          const imposto = det.getElementsByTagName('imposto')[0];
-          let tax: TaxDetails = {
-              origem: '0',
-              baseCalculoIcms: 0, aliquotaIcms: 0, valorIcms: 0,
-              cstPis: '07', baseCalculoPis: 0, aliquotaPis: 0, valorPis: 0,
-              cstCofins: '07', baseCalculoCofins: 0, aliquotaCofins: 0, valorCofins: 0
-          };
+            const prod = detTags[i].getElementsByTagName('prod')[0];
+            const imposto = detTags[i].getElementsByTagName('imposto')[0];
+            const icmsTag = imposto?.getElementsByTagName('ICMS')[0];
+            
+            // Tenta encontrar o grupo de ICMS (ICMS00, ICMS20, ICMSSN101, etc)
+            let icmsGroup = null;
+            if (icmsTag && icmsTag.children.length > 0) {
+                icmsGroup = icmsTag.children[0];
+            }
 
-          if (imposto) {
-              // ICMS
-              const icmsTag = imposto.getElementsByTagName('ICMS')[0];
-              if (icmsTag && icmsTag.children.length > 0) {
-                  const icmsInfo = icmsTag.children[0];
-                  tax.origem = getText(icmsInfo, 'orig') || '0';
-                  tax.cst = getText(icmsInfo, 'CST');
-                  tax.csosn = getText(icmsInfo, 'CSOSN');
-                  tax.baseCalculoIcms = parseFloat(getText(icmsInfo, 'vBC')) || 0;
-                  tax.aliquotaIcms = parseFloat(getText(icmsInfo, 'pICMS')) || 0;
-                  tax.valorIcms = parseFloat(getText(icmsInfo, 'vICMS')) || 0;
-              }
-
-              // PIS
-              const pisTag = imposto.getElementsByTagName('PIS')[0];
-              if (pisTag && pisTag.children.length > 0) {
-                  const pisInfo = pisTag.children[0];
-                  tax.cstPis = getText(pisInfo, 'CST') || '07';
-                  tax.baseCalculoPis = parseFloat(getText(pisInfo, 'vBC')) || 0;
-                  tax.aliquotaPis = parseFloat(getText(pisInfo, 'pPIS')) || 0;
-                  tax.valorPis = parseFloat(getText(pisInfo, 'vPIS')) || 0;
-              }
-
-              // COFINS
-              const cofinsTag = imposto.getElementsByTagName('COFINS')[0];
-              if (cofinsTag && cofinsTag.children.length > 0) {
-                  const cofinsInfo = cofinsTag.children[0];
-                  tax.cstCofins = getText(cofinsInfo, 'CST') || '07';
-                  tax.baseCalculoCofins = parseFloat(getText(cofinsInfo, 'vBC')) || 0;
-                  tax.aliquotaCofins = parseFloat(getText(cofinsInfo, 'pCOFINS')) || 0;
-                  tax.valorCofins = parseFloat(getText(cofinsInfo, 'vCOFINS')) || 0;
-              }
-          }
-
-          produtos.push({
-            id: crypto.randomUUID(),
-            codigo: getText(prodTag, 'cProd'),
-            descricao: getText(prodTag, 'xProd'),
-            gtin: getText(prodTag, 'cEAN') || 'SEM GTIN',
-            ncm: getText(prodTag, 'NCM'),
-            cfop: getText(prodTag, 'CFOP'),
-            unidade: getText(prodTag, 'uCom'),
-            quantidade: qtd,
-            valorUnitario: vUnit,
-            valorTotal: vProd,
-            tax: tax
-          });
+            produtos.push({
+                id: crypto.randomUUID(),
+                codigo: getText(prod, 'cProd'),
+                descricao: getText(prod, 'xProd'),
+                ncm: getText(prod, 'NCM'),
+                cest: getText(prod, 'CEST'),
+                cfop: getText(prod, 'CFOP'),
+                unidade: getText(prod, 'uCom'),
+                quantidade: parseFloat(getText(prod, 'qCom')),
+                valorUnitario: parseFloat(getText(prod, 'vUnCom')),
+                valorTotal: parseFloat(getText(prod, 'vProd')),
+                taxs: {
+                    icms: {
+                        origem: getText(icmsGroup, 'orig'),
+                        cst: getText(icmsGroup, 'CST') || getText(icmsGroup, 'CSOSN'),
+                        aliquota: parseFloat(getText(icmsGroup, 'pICMS')) || 0,
+                        baseCalculo: parseFloat(getText(icmsGroup, 'vBC')) || 0,
+                    },
+                    ipi: {
+                        cst: getText(imposto, 'CST'),
+                        aliquota: parseFloat(getText(imposto, 'pIPI')) || 0
+                    },
+                    pis: {
+                        cst: getText(imposto, 'CST'),
+                        aliquota: parseFloat(getText(imposto, 'pPIS')) || 0
+                    },
+                    cofins: {
+                        cst: getText(imposto, 'CST'),
+                        aliquota: parseFloat(getText(imposto, 'pCOFINS')) || 0
+                    }
+                }
+            });
         }
 
-        // 5. Totals
-        const totalTag = xmlDoc.getElementsByTagName('ICMSTot')[0];
+        // --- 5. Totais e Pagamentos ---
+        // AQUI ESTAVA O ERRO: Busca ICMSTot onde quer que ele esteja
+        const icmsTot = xmlDoc.getElementsByTagName('ICMSTot')[0];
         
-        // 6. Payments
-        const pagTags = xmlDoc.getElementsByTagName('detPag');
-        const pagamento: PaymentMethod[] = [];
-        for(let i=0; i<pagTags.length; i++) {
-             pagamento.push({
-                 tPag: getText(pagTags[i], 'tPag'),
-                 vPag: parseFloat(getText(pagTags[i], 'vPag')) || 0
-             });
-        }
-        
-        // 7. InfAdic
+        // Pagamento
+        const pagTag = xmlDoc.getElementsByTagName('pag')[0];
+        const detPag = pagTag ? pagTag.getElementsByTagName('detPag')[0] : null;
+        const pagamento: PaymentMethod = {
+            tipo: detPag ? getText(detPag, 'tPag') : '90', // 90 = Sem pagamento
+            valor: detPag ? parseFloat(getText(detPag, 'vPag')) : 0
+        };
+
+        // Info Adicional
         const infAdic = xmlDoc.getElementsByTagName('infAdic')[0];
-        const informacoesComplementares = infAdic ? getText(infAdic, 'infCpl') : '';
+        const informacoesComplementares = getText(infAdic, 'infCpl');
+        
+        // --- 6. Identificação de Status e Protocolo ---
+        let status: 'editing' | 'authorized' | 'canceled' | 'denied' = 'editing';
+        let protocoloAutorizacao = '';
+        
+        // Procura por protNFe (Protocolo de Autorização)
+        const protNFe = xmlDoc.getElementsByTagName('protNFe')[0];
+        if (protNFe) {
+            const infProt = protNFe.getElementsByTagName('infProt')[0];
+            const cStat = getText(infProt, 'cStat');
+            // cStat 100 = Autorizado o uso da NF-e
+            if (cStat === '100') {
+                status = 'authorized';
+                protocoloAutorizacao = getText(infProt, 'nProt');
+            }
+        }
 
-        // Extract Access Key
-        const infNFe = xmlDoc.getElementsByTagName('infNFe')[0];
-        const rawId = infNFe.getAttribute('Id') || '';
-        const chaveAcesso = rawId.replace('NFe', '');
+        const chaveAcesso = infNFe.getAttribute('Id')?.replace('NFe', '') || '';
 
-        // Extract Global Values and Modalidade Frete
-        const transpTag = xmlDoc.getElementsByTagName('transp')[0];
-        const modFrete = (transpTag ? getText(transpTag, 'modFrete') : '9') as '0' | '1' | '9';
-
-        const vFrete = parseFloat(getText(totalTag, 'vFrete')) || 0;
-        const vSeg = parseFloat(getText(totalTag, 'vSeg')) || 0;
-        const vDesc = parseFloat(getText(totalTag, 'vDesc')) || 0;
-        const vOutro = parseFloat(getText(totalTag, 'vOutro')) || 0;
-
-        // Construct InvoiceData
+        // Monta o objeto final
         const invoice: InvoiceData = {
           id: crypto.randomUUID(),
           numero,
@@ -182,29 +170,30 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
           destinatario,
           produtos,
           totais: {
-              vBC: parseFloat(getText(totalTag, 'vBC')) || 0,
-              vICMS: parseFloat(getText(totalTag, 'vICMS')) || 0,
-              vProd: parseFloat(getText(totalTag, 'vProd')) || 0,
-              vFrete: vFrete,
-              vSeg: vSeg,
-              vDesc: vDesc,
-              vIPI: parseFloat(getText(totalTag, 'vIPI')) || 0,
-              vPIS: parseFloat(getText(totalTag, 'vPIS')) || 0,
-              vCOFINS: parseFloat(getText(totalTag, 'vCOFINS')) || 0,
-              vOutro: vOutro,
-              vNF: parseFloat(getText(totalTag, 'vNF')) || 0,
+              vBC: icmsTot ? parseFloat(getText(icmsTot, 'vBC')) : 0,
+              vICMS: icmsTot ? parseFloat(getText(icmsTot, 'vICMS')) : 0,
+              vProd: icmsTot ? parseFloat(getText(icmsTot, 'vProd')) : 0,
+              vFrete: icmsTot ? parseFloat(getText(icmsTot, 'vFrete')) : 0,
+              vSeg: icmsTot ? parseFloat(getText(icmsTot, 'vSeg')) : 0,
+              vDesc: icmsTot ? parseFloat(getText(icmsTot, 'vDesc')) : 0,
+              vIPI: icmsTot ? parseFloat(getText(icmsTot, 'vIPI')) : 0,
+              vPIS: icmsTot ? parseFloat(getText(icmsTot, 'vPIS')) : 0,
+              vCOFINS: icmsTot ? parseFloat(getText(icmsTot, 'vCOFINS')) : 0,
+              vOutro: icmsTot ? parseFloat(getText(icmsTot, 'vOutro')) : 0,
+              vNF: icmsTot ? parseFloat(getText(icmsTot, 'vNF')) : 0,
           },
           globalValues: {
-            frete: vFrete,
-            seguro: vSeg,
-            desconto: vDesc,
-            outrasDespesas: vOutro,
-            modalidadeFrete: modFrete
+            frete: icmsTot ? parseFloat(getText(icmsTot, 'vFrete')) : 0,
+            seguro: icmsTot ? parseFloat(getText(icmsTot, 'vSeg')) : 0,
+            desconto: icmsTot ? parseFloat(getText(icmsTot, 'vDesc')) : 0,
+            outrasDespesas: icmsTot ? parseFloat(getText(icmsTot, 'vOutro')) : 0,
+            modalidadeFrete: getText(xmlDoc.getElementsByTagName('transp')[0], 'modFrete') || '9'
           },
           pagamento,
           informacoesComplementares,
-          status: 'authorized', 
+          status, // Agora define 'authorized' se achar o protocolo
           chaveAcesso,
+          protocoloAutorizacao, // Salva o número do protocolo
           xmlAssinado: xmlText, 
           finalidade
         };
@@ -213,10 +202,10 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
 
       } catch (err) {
         console.error(err);
-        reject(new Error("Erro ao processar estrutura do XML. Verifique se é uma NFe válida."));
+        reject(new Error("Erro ao ler o arquivo XML. Verifique se é uma NFe válida."));
       }
     };
-    reader.onerror = () => reject(new Error("Erro ao ler arquivo."));
+    reader.onerror = (error) => reject(error);
     reader.readAsText(file);
   });
 };
