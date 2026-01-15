@@ -10,6 +10,7 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(xmlText, "text/xml");
 
+        // Helper para pegar texto de forma segura
         const getText = (parent: Element | Document | null, tag: string): string => {
           if (!parent) return '';
           const collection = parent.getElementsByTagName(tag);
@@ -26,10 +27,9 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
         
         const infNFe = infNFeList[0]; 
 
-        // --- VERIFICAÇÃO DE STATUS (NOVO) ---
-        // Se tiver a tag protNFe, significa que é uma nota processada/autorizada
+        // --- VERIFICAÇÃO DE STATUS (Se nota já processada) ---
         const protNFe = xmlDoc.getElementsByTagName('protNFe');
-        let statusNota: any = 'editing'; // Padrão
+        let statusNota: any = 'editing';
         let protocoloAutorizacao = '';
         let dataAutorizacao = '';
 
@@ -43,7 +43,6 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
                 dataAutorizacao = getText(infProt, 'dhRecbto');
             }
         }
-        // -------------------------------------
 
         // 1. Dados Básicos
         const ide = infNFe.getElementsByTagName('ide')[0];
@@ -53,6 +52,7 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
         const serie = getText(ide, 'serie');
         const dataEmissaoRaw = getText(ide, 'dhEmi') || new Date().toISOString();
         const finalidade = getText(ide, 'finNFe') as '1'|'2'|'3'|'4';
+        const natOp = getText(ide, 'natOp'); // ✅ Agora suportado pelo types.ts
         
         // 2. Emitente
         const emitTag = infNFe.getElementsByTagName('emit')[0];
@@ -97,7 +97,7 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
               }
             };
         } else {
-            destinatario = { ...emitente, id: crypto.randomUUID(), razaoSocial: 'CONSUMIDOR', cnpj: '', inscricaoEstadual: '' }; 
+            destinatario = { ...emitente, id: crypto.randomUUID(), razaoSocial: 'CONSUMIDOR (SEM CADASTRO)', cnpj: '', inscricaoEstadual: '' }; 
         }
 
         // 4. Produtos
@@ -168,9 +168,18 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
         if (detPagList) {
             for(let i=0; i< detPagList.length; i++) {
                 const p = detPagList[i];
+                // Tentativa básica de pegar dados do cartão se existirem
+                const cardTag = p.getElementsByTagName('card')[0];
+                const cardData = cardTag ? {
+                  tBand: getText(cardTag, 'tBand'),
+                  cAut: getText(cardTag, 'cAut'),
+                  cnpj: getText(cardTag, 'CNPJ')
+                } : undefined;
+
                 pagamento.push({
                     tPag: getText(p, 'tPag'),
                     vPag: parseFloat(getText(p, 'vPag')) || 0,
+                    card: cardData // ✅ Agora suportado pelo types.ts
                 });
             }
         }
@@ -179,11 +188,11 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
         const informacoesComplementares = getText(infAdic, 'infCpl');
         const chaveAcesso = infNFe.getAttribute('Id')?.replace('NFe', '') || '';
 
-        // Monta o objeto final com o status correto e eventos se houver
         const invoice: InvoiceData = {
           id: crypto.randomUUID(),
           numero,
           serie,
+          natOp, // ✅ Agora suportado
           dataEmissao: dataEmissaoRaw,
           emitente,
           destinatario,
@@ -210,11 +219,11 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
           },
           pagamento,
           informacoesComplementares,
-          status: statusNota, // 'authorized' ou 'editing'
+          status: statusNota, 
           chaveAcesso,
           xmlAssinado: xmlText, 
           finalidade,
-          // Se autorizada, preenche o histórico
+          // ✅ Agora suportado oficialmente
           protocoloAutorizacao: protocoloAutorizacao || undefined,
           historicoEventos: statusNota === 'authorized' ? [{
               tipo: 'autorizacao' as any,
