@@ -372,49 +372,60 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     document.getElementById('hiddenXmlInput')?.click();
   };
 
-// --- SUBSTIUA APENAS ESTA FUNÇÃO ---
+// Substitua a função handleFileChange antiga por esta:
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Limpa mensagens anteriores
-    setEventProcessing('Lendo XML...');
+    setEventProcessing('Analisando XML...');
     setErrorMsg(null);
 
     try {
-      // 1. Usa o importador local (xmlImporter.ts) em vez de enviar para o servidor
+      // 1. Processa o XML localmente
       const parsedInvoice = await parseNfeXml(file);
-      
-      // 2. Cria um objeto para edição (remove ID para não sobrescrever nota existente no banco)
-      const invoiceToEdit: InvoiceData = {
-          ...parsedInvoice,
-          id: undefined, // Garante que será salvo como um novo rascunho/nota
-          status: 'editing'
-      };
 
-      // 3. Atualiza o estado da nota na tela
-      setInvoice(invoiceToEdit);
+      // --- LÓGICA DE DECISÃO ---
       
-      // 4. Atualiza configurações (série/número) com base no XML importado
-      setConfig(prev => ({ 
-          ...prev, 
-          proximoNumeroNota: parsedInvoice.numero, 
-          serie: parsedInvoice.serie 
-      }));
+      if (parsedInvoice.status === 'authorized') {
+          // CENÁRIO A: Nota Autorizada (XML com protocolo) -> Salvar e ir para Histórico
+          setEventProcessing('Salvando no Histórico...');
 
-      // 5. Força a mudança para a tela de edição
-      setViewMode('nota');
-      setCurrentStep(Step.CONFIG);
-      setStatus('editing');
-      
-      alert('✅ XML carregado com sucesso! Verifique os dados antes de salvar.');
+          // Salva no banco de dados via API
+          await api.post('/api/nfe/notas', parsedInvoice);
+          
+          alert('✅ Nota fiscal importada para o Histórico com sucesso!');
+          
+          // Força atualização da lista de notas e vai para a aba Histórico
+          setInvoiceCount(prev => prev + 1); // Incremento visual rápido
+          setViewMode('painel'); 
+          setTimeout(() => setViewMode('historico'), 50);
+
+      } else {
+          // CENÁRIO B: Nota sem validade jurídica (Rascunho) -> Abrir para Edição
+          const invoiceToEdit: InvoiceData = {
+              ...parsedInvoice,
+              id: undefined, // Novo ID para novo rascunho
+              status: 'editing'
+          };
+  
+          setInvoice(invoiceToEdit);
+          setConfig(prev => ({ 
+              ...prev, 
+              proximoNumeroNota: parsedInvoice.numero, 
+              serie: parsedInvoice.serie 
+          }));
+  
+          setViewMode('nota');
+          setCurrentStep(Step.CONFIG);
+          setStatus('editing');
+          alert('📝 Rascunho importado! Você pode editar e transmitir agora.');
+      }
 
     } catch (error: any) {
       console.error(error);
-      alert('Erro ao ler XML: ' + (error.message || "Formato inválido"));
+      alert('Erro ao importar XML: ' + (error.message || "Formato inválido"));
     } finally {
       setEventProcessing(null);
-      // Limpa o input para permitir selecionar o mesmo arquivo novamente se falhar
       event.target.value = ''; 
     }
   };
