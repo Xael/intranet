@@ -351,6 +351,12 @@ export interface TaxDetails {
   aliquotaIpi?: number;
   valorIpi?: number;
   codigoEnquadramento?: string;
+
+  // Reforma Tributária 2026 (Preparação)
+  valorIbs?: number;
+  aliquotaIbs?: number;
+  valorCbs?: number;
+  aliquotaCbs?: number;
 }
 
 export interface Product {
@@ -371,6 +377,12 @@ export interface Product {
 export interface PaymentMethod {
   tPag: string;
   vPag: number;
+  // ✅ ADICIONADO: Suporte a cartão para importação de XML
+  card?: {
+    cnpj?: string;
+    tBand?: string;
+    cAut?: string;
+  }; 
 }
 
 export interface InvoiceTotals {
@@ -385,6 +397,10 @@ export interface InvoiceTotals {
   vCOFINS: number;
   vOutro?: number;
   vNF: number;
+
+  // Totais Reforma (Opcional)
+  vIBS?: number; 
+  vCBS?: number; 
 }
 
 export type EnvironmentType = '1' | '2';
@@ -408,7 +424,8 @@ export interface GlobalValues {
 export type InvoiceStatus = 'editing' | 'draft' | 'signing' | 'transmitting' | 'authorized' | 'rejected' | 'cancelled' | 'error' | 'processing';
 
 export interface InvoiceEvent {
-  tipo: 'cancelamento' | 'cce';
+  // ✅ ADICIONADO: 'autorizacao' para histórico de importação
+  tipo: 'cancelamento' | 'cce' | 'autorizacao';
   data: string;
   detalhe: string;
   protocolo: string;
@@ -434,6 +451,10 @@ export interface InvoiceData {
   finalidade: '1' | '2' | '3' | '4'; 
   refNFe?: string;
   historicoEventos?: InvoiceEvent[];
+
+  // ✅ ADICIONADO: Campos que o xmlImporter tenta preencher
+  protocoloAutorizacao?: string;
+  natOp?: string;
 }
 
 export enum Step {
