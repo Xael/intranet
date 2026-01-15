@@ -5,52 +5,41 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const xmlText = e.target?.result as string;
+        let xmlText = e.target?.result as string;
+
+        // === 1. LIMPEZA DE NAMESPACE (A CORREÇÃO DEFINITIVA) ===
+        // Remove xmlns="..." para que o parser trate como XML comum.
+        // Isso resolve o problema de não encontrar tags como 'infNFe', 'ICMSTot', etc.
+        xmlText = xmlText.replace(/ xmlns(:[a-z0-9]+)?="[^"]*"/g, ' ');
+
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(xmlText, "text/xml");
 
-        // === HELPER PODEROSO PARA IGNORAR NAMESPACES ===
-        // Isso resolve o problema de não encontrar tags por causa do xmlns
-        const findTag = (parent: Document | Element | null, tagName: string): Element | null => {
-          if (!parent) return null;
-          
-          // 1. Tenta busca padrão
-          const collection = parent.getElementsByTagName(tagName);
-          if (collection.length > 0) return collection[0];
-
-          // 2. Tenta busca pelo 'localName' (ignora prefixos como nfe:)
-          const allElements = parent.getElementsByTagName('*');
-          for (let i = 0; i < allElements.length; i++) {
-            if (allElements[i].localName === tagName) {
-              return allElements[i];
-            }
-          }
-          return null;
+        // Helper simples (agora funciona 100% pois o XML está limpo)
+        const getText = (parent: Element | Document | null, tag: string): string => {
+          if (!parent) return '';
+          const els = parent.getElementsByTagName(tag);
+          if (els.length > 0) return els[0].textContent || '';
+          return '';
         };
 
-        // Helper para pegar texto usando a busca segura acima
-        const getText = (parent: Document | Element | null, tagName: string): string => {
-          const el = findTag(parent, tagName);
-          return el ? el.textContent || '' : '';
-        };
-
-        // Verifica se é um XML de NFe válido
-        const infNFe = findTag(xmlDoc, 'infNFe');
-        if (!infNFe) {
-          throw new Error("Arquivo XML inválido ou não é uma NF-e (infNFe não encontrado).");
+        // Verifica validade
+        const infNFeList = xmlDoc.getElementsByTagName('infNFe');
+        if (!infNFeList.length) {
+          throw new Error("XML inválido: tag infNFe não encontrada.");
         }
-        
-        // --- 1. Dados Básicos ---
-        const ide = findTag(xmlDoc, 'ide');
+        const infNFe = infNFeList[0];
+
+        // --- DADOS BÁSICOS ---
+        const ide = xmlDoc.getElementsByTagName('ide')[0];
         const numero = getText(ide, 'nNF');
         const serie = getText(ide, 'serie');
         const dataEmissaoRaw = getText(ide, 'dhEmi');
         const finalidade = (getText(ide, 'finNFe') || '1') as '1'|'2'|'3'|'4';
-        
-        // --- 2. Emitente ---
-        const emitTag = findTag(xmlDoc, 'emit');
-        const emitEndTag = findTag(emitTag, 'enderEmit');
-        
+
+        // --- EMITENTE ---
+        const emitTag = xmlDoc.getElementsByTagName('emit')[0];
+        const emitEndTag = emitTag.getElementsByTagName('enderEmit')[0];
         const emitente: Entity = {
           cnpj: getText(emitTag, 'CNPJ'),
           razaoSocial: getText(emitTag, 'xNome'),
@@ -67,13 +56,12 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
           }
         };
 
-        // --- 3. Destinatário ---
-        const destTag = findTag(xmlDoc, 'dest');
-        // Cria um destinatário padrão caso a tag não exista
-        let destinatario: Entity = { ...emitente, cnpj: '', razaoSocial: 'CONSUMIDOR', inscricaoEstadual: '', crt: '1' as CRT }; 
+        // --- DESTINATÁRIO ---
+        const destTag = xmlDoc.getElementsByTagName('dest')[0];
+        let destinatario: Entity = { ...emitente, cnpj: '', razaoSocial: 'CONSUMIDOR', inscricaoEstadual: '', crt: '1' as CRT };
         
         if (destTag) {
-            const destEndTag = findTag(destTag, 'enderDest');
+            const destEndTag = destTag.getElementsByTagName('enderDest')[0];
             destinatario = {
                 cnpj: getText(destTag, 'CNPJ') || getText(destTag, 'CPF'),
                 razaoSocial: getText(destTag, 'xNome'),
@@ -92,60 +80,23 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
             };
         }
 
-        // --- 4. Produtos ---
-        // Aqui usamos getElementsByTagName('*') filtrando por localName 'det' para pegar todos os itens
-        const allElements = xmlDoc.getElementsByTagName('*');
-        const detTags: Element[] = [];
-        for (let i = 0; i < allElements.length; i++) {
-            if (allElements[i].localName === 'det') detTags.push(allElements[i]);
-        }
-
+        // --- PRODUTOS ---
+        const detTags = xmlDoc.getElementsByTagName('det');
         const produtos: Product[] = [];
-        
-        for (const det of detTags) {
-            const prod = findTag(det, 'prod');
-            const imposto = findTag(det, 'imposto');
+
+        for (let i = 0; i < detTags.length; i++) {
+            const prod = detTags[i].getElementsByTagName('prod')[0];
+            const imposto = detTags[i].getElementsByTagName('imposto')[0];
+
+            // Busca grupos de imposto (agora sem namespace, é direto)
+            const icmsGroup = imposto?.getElementsByTagName('ICMS')[0]?.firstElementChild; 
+            const pisGroup = imposto?.getElementsByTagName('PIS')[0]?.firstElementChild;
+            const cofinsGroup = imposto?.getElementsByTagName('COFINS')[0]?.firstElementChild;
             
-            // --- Extração de Impostos ---
-            // A função findTag resolve a busca mesmo aninhada
-            const icmsGroup = findTag(findTag(imposto, 'ICMS'), '*'); // Pega o primeiro filho do ICMS (ICMS00, ICMS20, etc)
-            const pisGroup = findTag(findTag(imposto, 'PIS'), '*');
-            const cofinsGroup = findTag(findTag(imposto, 'COFINS'), '*');
+            // IPI pode ser IPITrib ou IPINT
+            let ipiGroup = imposto?.getElementsByTagName('IPITrib')[0];
+            if (!ipiGroup) ipiGroup = imposto?.getElementsByTagName('IPINT')[0];
             
-            // IPI é mais chato pois pode ser IPITrib ou IPINT
-            let ipiGroup = findTag(imposto, 'IPITrib');
-            if (!ipiGroup) ipiGroup = findTag(imposto, 'IPINT');
-            const ipiParent = findTag(imposto, 'IPI');
-
-            const taxDetails: TaxDetails = {
-                // ICMS
-                origem: getText(icmsGroup, 'orig') || '0',
-                cst: getText(icmsGroup, 'CST'),
-                csosn: getText(icmsGroup, 'CSOSN'),
-                aliquotaIcms: parseFloat(getText(icmsGroup, 'pICMS')) || 0,
-                baseCalculoIcms: parseFloat(getText(icmsGroup, 'vBC')) || 0,
-                valorIcms: parseFloat(getText(icmsGroup, 'vICMS')) || 0,
-
-                // PIS
-                cstPis: getText(pisGroup, 'CST') || '01',
-                aliquotaPis: parseFloat(getText(pisGroup, 'pPIS')) || 0,
-                baseCalculoPis: parseFloat(getText(pisGroup, 'vBC')) || 0,
-                valorPis: parseFloat(getText(pisGroup, 'vPIS')) || 0,
-
-                // COFINS
-                cstCofins: getText(cofinsGroup, 'CST') || '01',
-                aliquotaCofins: parseFloat(getText(cofinsGroup, 'pCOFINS')) || 0,
-                baseCalculoCofins: parseFloat(getText(cofinsGroup, 'vBC')) || 0,
-                valorCofins: parseFloat(getText(cofinsGroup, 'vCOFINS')) || 0,
-
-                // IPI
-                cstIpi: getText(ipiGroup, 'CST'),
-                aliquotaIpi: parseFloat(getText(ipiGroup, 'pIPI')) || 0,
-                baseCalculoIpi: parseFloat(getText(ipiGroup, 'vBC')) || 0,
-                valorIpi: parseFloat(getText(ipiGroup, 'vIPI')) || 0,
-                codigoEnquadramento: getText(ipiParent, 'cEnq') || '999'
-            };
-
             produtos.push({
                 id: crypto.randomUUID(),
                 codigo: getText(prod, 'cProd'),
@@ -156,13 +107,35 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
                 quantidade: parseFloat(getText(prod, 'qCom')),
                 valorUnitario: parseFloat(getText(prod, 'vUnCom')),
                 valorTotal: parseFloat(getText(prod, 'vProd')),
-                tax: taxDetails
+                tax: {
+                    origem: getText(icmsGroup, 'orig') || '0',
+                    cst: getText(icmsGroup, 'CST') || getText(icmsGroup, 'CSOSN'),
+                    csosn: getText(icmsGroup, 'CSOSN'),
+                    aliquotaIcms: parseFloat(getText(icmsGroup, 'pICMS')) || 0,
+                    baseCalculoIcms: parseFloat(getText(icmsGroup, 'vBC')) || 0,
+                    valorIcms: parseFloat(getText(icmsGroup, 'vICMS')) || 0,
+                    
+                    cstPis: getText(pisGroup, 'CST') || '01',
+                    aliquotaPis: parseFloat(getText(pisGroup, 'pPIS')) || 0,
+                    baseCalculoPis: parseFloat(getText(pisGroup, 'vBC')) || 0,
+                    valorPis: parseFloat(getText(pisGroup, 'vPIS')) || 0,
+
+                    cstCofins: getText(cofinsGroup, 'CST') || '01',
+                    aliquotaCofins: parseFloat(getText(cofinsGroup, 'pCOFINS')) || 0,
+                    baseCalculoCofins: parseFloat(getText(cofinsGroup, 'vBC')) || 0,
+                    valorCofins: parseFloat(getText(cofinsGroup, 'vCOFINS')) || 0,
+
+                    cstIpi: getText(ipiGroup, 'CST'),
+                    aliquotaIpi: parseFloat(getText(ipiGroup, 'pIPI')) || 0,
+                    baseCalculoIpi: parseFloat(getText(ipiGroup, 'vBC')) || 0,
+                    valorIpi: parseFloat(getText(ipiGroup, 'vIPI')) || 0,
+                    codigoEnquadramento: getText(imposto, 'cEnq') || '999'
+                }
             });
         }
 
-        // --- 5. Totais e Pagamentos ---
-        const icmsTot = findTag(xmlDoc, 'ICMSTot');
-        
+        // --- TOTAIS ---
+        const icmsTot = xmlDoc.getElementsByTagName('ICMSTot')[0];
         const totais: InvoiceTotals = {
             vBC: icmsTot ? parseFloat(getText(icmsTot, 'vBC')) : 0,
             vICMS: icmsTot ? parseFloat(getText(icmsTot, 'vICMS')) : 0,
@@ -177,41 +150,36 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
             vNF: icmsTot ? parseFloat(getText(icmsTot, 'vNF')) : 0,
         };
 
-        // Pagamento
-        // Usamos a mesma logica de busca manual para arrays
-        const pagTags: Element[] = [];
-        const allPags = xmlDoc.getElementsByTagName('*');
-        for (let i = 0; i < allPags.length; i++) {
-            if (allPags[i].localName === 'detPag') pagTags.push(allPags[i]);
-        }
-
+        // --- PAGAMENTO ---
+        const pagTags = xmlDoc.getElementsByTagName('detPag');
         const pagamento: PaymentMethod[] = [];
-        
         if (pagTags.length > 0) {
-            for(const p of pagTags) {
+            for (let i = 0; i < pagTags.length; i++) {
                 pagamento.push({
-                    tPag: getText(p, 'tPag'),
-                    vPag: parseFloat(getText(p, 'vPag')) || 0
+                    tPag: getText(pagTags[i], 'tPag'),
+                    vPag: parseFloat(getText(pagTags[i], 'vPag')) || 0
                 });
             }
         } else {
-             pagamento.push({ tPag: '90', vPag: 0 });
+            pagamento.push({ tPag: '90', vPag: 0 });
         }
 
-        const infAdic = findTag(xmlDoc, 'infAdic');
+        // --- INFO ADICIONAL ---
+        const infAdic = xmlDoc.getElementsByTagName('infAdic')[0];
         const informacoesComplementares = getText(infAdic, 'infCpl');
-        
-        // --- 6. Identificação de Status e Protocolo ---
-        // AQUI ESTAVA O PROBLEMA DO STATUS: namespace do nfeProc escondia o protNFe
+
+        // --- STATUS E PROTOCOLO (CORREÇÃO: Busca global por protNFe) ---
         let status: 'editing' | 'authorized' | 'cancelled' = 'editing';
         let protocoloAutorizacao = '';
+
+        // Como limpamos o namespace, agora getElementsByTagName('protNFe') funciona
+        // mesmo se ele estiver fora da tag NFe (o que é padrão no nfeProc)
+        const protNFe = xmlDoc.getElementsByTagName('protNFe')[0];
         
-        // Busca infProt diretamente, ignorando hierarquia complexa
-        const infProt = findTag(xmlDoc, 'infProt');
-        
-        if (infProt) {
+        if (protNFe) {
+            const infProt = protNFe.getElementsByTagName('infProt')[0];
             const cStat = getText(infProt, 'cStat');
-            // cStat 100 = Autorizado, 101 = Cancelado (mas aprovado)
+            
             if (cStat === '100') {
                 status = 'authorized';
                 protocoloAutorizacao = getText(infProt, 'nProt');
@@ -222,12 +190,11 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
         }
 
         const chaveAcesso = infNFe.getAttribute('Id')?.replace('NFe', '') || '';
-        
-        const transp = findTag(xmlDoc, 'transp');
+        const transp = xmlDoc.getElementsByTagName('transp')[0];
         const modFreteRaw = getText(transp, 'modFrete');
         const modalidadeFrete = (['0','1','9'].includes(modFreteRaw) ? modFreteRaw : '9') as "0"|"1"|"9";
 
-        // Objeto final com casting para evitar erro de build se faltar propriedade no Type
+        // Objeto final
         const invoiceObj = {
           id: crypto.randomUUID(),
           numero,
@@ -248,16 +215,17 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
           informacoesComplementares,
           status,
           chaveAcesso,
-          protocoloAutorizacao, 
-          xmlAssinado: xmlText, 
+          protocoloAutorizacao, // O arquivo Types.ts não tem isso, mas precisamos passar pro Danfe
+          xmlAssinado: e.target?.result as string, // Salva o ORIGINAL (com namespace) para assinatura válida
           finalidade
         };
 
+        // Casting "as unknown" para o TypeScript não reclamar do campo extra protocoloAutorizacao
         resolve(invoiceObj as unknown as InvoiceData);
 
       } catch (err) {
-        console.error(err);
-        reject(new Error("Erro ao ler o arquivo XML."));
+        console.error("Erro ao importar XML:", err);
+        reject(new Error("Erro ao ler o arquivo XML. Verifique o console para detalhes."));
       }
     };
     reader.onerror = (error) => reject(error);
