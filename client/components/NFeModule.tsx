@@ -10,6 +10,7 @@ import { ProfileSelector } from './ProfileSelector';
 import { PaymentAndObsForm } from './PaymentAndObsForm';
 import { Danfe } from './Danfe';
 import { generateNfeXml, generateAccessKey } from '../services/xmlGenerator';
+import { parseNfeXml } from '../services/xmlImporter'; // <--- IMPORTANTE: Importar o parser
 import { validateCNPJ, validateRequired } from '../utils/validators';
 import { calculateInvoiceTotals } from '../utils/taxCalculations';
 import { api } from '../utils/api';
@@ -48,7 +49,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     try { localStorage.setItem(key, value); } catch { /* ignore */ }
   };
 
-  // ✅ Função para pegar a hora local para o input datetime-local
+  // Função para pegar a hora local para o input datetime-local
   const getLocalNowForInput = (isoDate?: string) => {
     const d = isoDate ? new Date(isoDate) : new Date();
     // Ajusta o fuso horário manualmente para formato YYYY-MM-DDTHH:mm local
@@ -64,11 +65,11 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
   // Flatten external data into Products (Intranet)
   const [externalProducts, setExternalProducts] = useState<Product[]>([]);
 
-  // ✅ Produtos internos (Cadastros > Produtos)
+  // Produtos internos (Cadastros > Produtos)
   const [internalProducts, setInternalProducts] = useState<Product[]>([]);
   const [internalProductsLoaded, setInternalProductsLoaded] = useState(false);
 
-  // ✅ Função central para recarregar emissores e manter activeProfile atualizado
+  // Função central para recarregar emissores e manter activeProfile atualizado
   const reloadProfiles = async (preferId?: string | null) => {
     try {
       const profiles = await api.get('/api/issuers');
@@ -92,13 +93,10 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     }
   };
 
-  // 1. CARREGAR PERFIS (EMISSORES) VIA API
   useEffect(() => {
     reloadProfiles();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 2. CARREGAR ESTATÍSTICAS (CONTAGEM DE NOTAS) VIA API
   useEffect(() => {
     const loadStats = async () => {
       if (activeProfile) {
@@ -118,7 +116,6 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     loadStats();
   }, [activeProfile, viewMode]);
 
-  // Processamento de dados externos da Intranet
   useEffect(() => {
     if (externalData) {
       const flatProducts: Product[] = [];
@@ -152,12 +149,10 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     }
   }, [externalData]);
 
-  // ✅ Carregar produtos internos (Cadastros > Produtos) quando o seletor abrir
   const loadInternalProducts = async () => {
     try {
       const res = await api.get('/api/products');
       const arr = Array.isArray(res) ? res : [];
-      // Garante que valores numéricos não venham quebrados
       const normalized: Product[] = arr.map((p: any) => ({
         ...p,
         valorUnitario: Number(p.valorUnitario || 0),
@@ -173,46 +168,37 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     }
   };
 
-  // ⚠️ Mantido por compatibilidade com ConfigForm existente.
-  // ✅ Certificado/senha NÃO devem ser usados aqui. A fonte correta agora é o Emitente (activeProfile).
-  // ✅ Padrão: PRODUÇÃO (ambiente = '1')
   const [config, setConfig] = useState<ConfigData>(() => {
     const serieLS = safeLocalStorageGet('nfe_serie');
     const proxLS = safeLocalStorageGet('nfe_proximo_numero');
 
     return {
-      // ✅ padrão sempre em PRODUÇÃO
       ambiente: '1',
       proximoNumeroNota: proxLS || '1001',
       serie: serieLS || '1',
-      certificado: null,        // legado (não usado)
-      senhaCertificado: ''      // legado (não usado)
+      certificado: null,
+      senhaCertificado: ''
     };
   });
 
-  // Se o usuário editar manualmente o número, evitamos sobrescrever automaticamente.
   const [numeroFoiEditadoManual, setNumeroFoiEditadoManual] = useState(false);
 
   const handleConfigChange = (next: ConfigData) => {
-    // Qualquer alteração vinda do formulário é considerada ação do usuário.
     if (next.proximoNumeroNota !== config.proximoNumeroNota) {
       setNumeroFoiEditadoManual(true);
     }
     setConfig(next);
   };
 
-  // Persistir configurações básicas (ambiente/série/próximo número)
   useEffect(() => {
     safeLocalStorageSet('nfe_ambiente', config.ambiente);
     safeLocalStorageSet('nfe_serie', config.serie);
     safeLocalStorageSet('nfe_proximo_numero', config.proximoNumeroNota);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.ambiente, config.serie, config.proximoNumeroNota]);
 
   const [invoice, setInvoice] = useState<InvoiceData>({
     numero: '1001',
     serie: '1',
-    // ✅ CORREÇÃO: Usar ISO completo para suportar Hora
     dataEmissao: new Date().toISOString(),
     emitente: { ...initialEntity },
     destinatario: { ...initialEntity },
@@ -233,7 +219,6 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
   const [printInvoice, setPrintInvoice] = useState<InvoiceData | null>(null);
   const [savedRecipients, setSavedRecipients] = useState<Entity[]>([]);
 
-  // 3. CARREGAR DESTINATÁRIOS VIA API
   useEffect(() => {
     if (currentStep === Step.DESTINATARIO) {
       const fetchRecipients = async () => {
@@ -258,15 +243,10 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     }
   }, [activeProfile, status]);
 
-  // ✅ Auto: calcular próximo número de NF-e com base no histórico do emitente
   const calcularProximoNumeroPorHistorico = async (opts?: { force?: boolean }) => {
     const force = !!opts?.force;
     if (!activeProfile) return;
-
-    // Se estiver editando um rascunho existente, não sobrescrever.
     if (invoice?.id) return;
-
-    // Se o usuário já editou manualmente, só recalcula quando forçado.
     if (numeroFoiEditadoManual && !force) return;
 
     try {
@@ -294,13 +274,10 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     }
   };
 
-  // Recalcula automaticamente quando troca de emitente ou de série
   useEffect(() => {
     if (!activeProfile) return;
-    // Ao trocar de emitente, libera o auto novamente.
     setNumeroFoiEditadoManual(false);
     calcularProximoNumeroPorHistorico();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProfile?.id, config.serie]);
 
   useEffect(() => {
@@ -339,15 +316,13 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     config.ambiente,
     viewMode,
     status,
-    invoice.dataEmissao // ✅ Agora reage à data também
+    invoice.dataEmissao 
   ]);
 
-  // ✅ quando abrir o seletor, carrega produtos internos também
   useEffect(() => {
     if (showProductSelector && !internalProductsLoaded) {
       loadInternalProducts();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showProductSelector]);
 
   const handleProfileSelect = (profile: Entity) => {
@@ -366,44 +341,53 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     setShowProfileSelector(true);
   };
 
-  // --- LÓGICA DE IMPORTAÇÃO DE XML ---
   const triggerImport = () => {
     document.getElementById('hiddenXmlInput')?.click();
   };
 
+  // --- ALTERAÇÃO PRINCIPAL: USAR O PARSER DO FRONTEND ---
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const xmlContent = e.target?.result as string;
-      if (!xmlContent) return;
+    try {
+      setEventProcessing('Lendo XML...');
+      
+      // Usa o parser local (xmlImporter.ts) ao invés do backend
+      const parsedInvoice = await parseNfeXml(file);
+      
+      // Reseta ID para evitar conflito se a nota já existir no banco (cria como nova cópia/rascunho)
+      const invoiceToEdit: InvoiceData = {
+          ...parsedInvoice,
+          id: undefined, // undefined faz criar um novo ID ao salvar
+          status: 'editing'
+      };
 
-      try {
-        setEventProcessing('Importando XML...');
-        // Chama a rota que criamos no server.js
-        const res = await api.post('/api/nfe/importar', { xmlContent });
-        
-        alert('✅ XML Importado com sucesso!');
-        
-        // Se estivermos no histórico, força recarregar
-        if (viewMode === 'historico') {
-           setViewMode('painel');
-           setTimeout(() => setViewMode('historico'), 50);
-        } else {
-            setViewMode('historico');
-        }
+      setInvoice(invoiceToEdit);
+      
+      // Atualiza config com os dados importados
+      setConfig(prev => ({ 
+          ...prev, 
+          proximoNumeroNota: parsedInvoice.numero, 
+          serie: parsedInvoice.serie 
+      }));
 
-      } catch (error: any) {
-        alert('Erro ao importar: ' + (error.response?.data?.erro || error.message));
-      } finally {
-        setEventProcessing(null);
-        event.target.value = ''; // Limpa para permitir selecionar o mesmo arquivo
-      }
-    };
-    reader.readAsText(file);
+      // Muda para tela de edição
+      setViewMode('nota');
+      setCurrentStep(Step.CONFIG);
+      setStatus('editing');
+      
+      alert('✅ XML carregado! Verifique os dados e clique em "Salvar Rascunho" ou "Transmitir".');
+
+    } catch (error: any) {
+      console.error(error);
+      alert('Erro ao ler XML: ' + error.message);
+    } finally {
+      setEventProcessing(null);
+      event.target.value = ''; 
+    }
   };
+  // ----------------------------------------------------
 
   const validateStep = (): boolean => {
     setErrorMsg(null);
@@ -413,7 +397,6 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
         setErrorMsg("Defina o número e a série da nota.");
         return false;
       }
-      // ✅ Valida se tem data
       if (!invoice.dataEmissao) {
         setErrorMsg("Data de emissão é obrigatória.");
         return false;
@@ -445,7 +428,6 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
         return false;
       }
 
-      // ✅ PRODUÇÃO: evitar rejeição 232 (IE não informada)
       if (config.ambiente === '1') {
         const ieRaw = (invoice.destinatario.inscricaoEstadual || '').trim().toUpperCase();
         const ieDigits = ieRaw.replace(/\D/g, '');
@@ -525,7 +507,6 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     if (selected) setInvoice(prev => ({ ...prev, destinatario: selected }));
   };
 
-  // 4. SALVAR RASCUNHO (POST/PUT API)
   const saveDraft = async () => {
     const draftInvoice: InvoiceData = {
       ...invoice,
@@ -551,22 +532,20 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     setStatus('editing');
   };
 
-  // ✅ 5. TRANSMISSÃO (CERTIFICADO VEM DO EMITENTE, NÃO DA CONFIG)
   const transmitNfe = async () => {
     if (!activeProfile) {
       alert("ERRO: Nenhum emitente selecionado.");
       return;
     }
 
-    const issuerHasCert = !!activeProfile.certificadoArquivo; // "Presente" conta
-    const issuerHasSenha = !!activeProfile.certificadoSenha;  // normalmente vem "***" quando existe
+    const issuerHasCert = !!activeProfile.certificadoArquivo;
+    const issuerHasSenha = !!activeProfile.certificadoSenha;
 
     if (!issuerHasCert || !issuerHasSenha) {
       alert("ERRO: Certificado e/ou senha não cadastrados no Emitente. Vá em Cadastros > Emissores e cadastre o A1 e a senha.");
       return;
     }
 
-    // ✅ PRODUÇÃO: reforço contra rejeição 232
     if (config.ambiente === '1') {
       const ieRaw = (invoice.destinatario.inscricaoEstadual || '').trim().toUpperCase();
       const ieDigits = ieRaw.replace(/\D/g, '');
@@ -585,16 +564,13 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     setStatus('transmitting');
 
     try {
-      // Backend busca cert+senha do emitente via CNPJ e assina antes de transmitir
       const response = await api.post('/api/nfe/transmitir', { id: invoice.id });
-
       const newStatus = response.status as InvoiceStatus;
 
       setInvoice(prev => ({
         ...prev,
         status: newStatus,
         xmlAssinado: response.xml || prev.xmlAssinado,
-        // ✅ chave oficial vem do backend
         chaveAcesso: response.chNFe || prev.chaveAcesso,
         protocoloAutorizacao: response.protocolo || (prev as any).protocoloAutorizacao,
         historicoEventos: [
@@ -626,9 +602,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     }
   };
 
-  // ✅ 6. PROCESSAR EVENTO (CANCELAMENTO REAL VIA API)
   const processEvent = async (inv: InvoiceData, type: 'cancelamento' | 'cce', payload: string) => {
-    // Validação de Rascunho
     if (inv.status === 'draft' && type === 'cancelamento') {
       if (confirm("Deseja realmente excluir este rascunho permanentemente?")) {
         if (inv.id) {
@@ -648,7 +622,6 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     
     try {
       if (type === 'cancelamento') {
-        // Chamada ao Backend Real
         const response = await api.post('/api/nfe/cancelar', {
           id: inv.id,
           justificativa: payload
@@ -656,12 +629,10 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
 
         if (response.sucesso || response.data?.sucesso) {
             alert('✅ Nota Cancelada com Sucesso!');
-             // Força atualização da lista ou recarrega a view
              setViewMode('painel'); 
              setTimeout(() => setViewMode('historico'), 100); 
         }
       } else {
-        // Implementação futura para Carta de Correção (CCe)
         alert('Funcionalidade de CCe (Carta de Correção) ainda pendente no Backend.');
       }
 
@@ -685,7 +656,6 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
       status: 'editing',
       finalidade: '1',
       refNFe: undefined,
-      // ✅ CORREÇÃO: Data completa
       dataEmissao: new Date().toISOString()
     });
     setViewMode('nota');
@@ -705,7 +675,6 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
       status: 'editing',
       finalidade: '2',
       refNFe: source.chaveAcesso,
-      // ✅ CORREÇÃO: Data completa
       dataEmissao: new Date().toISOString(),
       produtos: []
     });
@@ -743,17 +712,8 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
   };
 
   const renderRegistry = () => {
-    const EntityWrapper = ({
-      initial,
-      onSave,
-      onCancel
-    }: {
-      initial: Entity | null,
-      onSave: (i: Entity) => Promise<void> | void,
-      onCancel: () => void
-    }) => {
+    const EntityWrapper = ({ initial, onSave, onCancel }: any) => {
       const [data, setData] = useState<Entity>(initial || { ...initialEntity, id: '' });
-
       return (
         <div>
           <EntityForm title="Dados do Cadastro" data={data} onChange={setData} />
@@ -765,15 +725,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
       );
     };
 
-    const ProductWrapper = ({
-      initial,
-      onSave,
-      onCancel
-    }: {
-      initial: Product | null,
-      onSave: (i: Product) => void,
-      onCancel: () => void
-    }) => {
+    const ProductWrapper = ({ initial, onSave, onCancel }: any) => {
       const [tempList] = useState<Product[]>([]);
       return (
         <div>
@@ -812,7 +764,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
           renderForm={(item, onSave, onCancel) => (
             <EntityWrapper
               initial={item}
-              onSave={async (e) => {
+              onSave={async (e: any) => {
                 await onSave(e);
                 await reloadProfiles(e.id || null);
                 setShowProfileSelector(true);
@@ -859,7 +811,6 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     return null;
   };
 
-  // ✅ mesclar produtos internos + intranet, evitando duplicados óbvios
   const mergedSelectableProducts = (() => {
     const map = new Map<string, Product>();
     const keyOf = (p: Product) => {
@@ -867,7 +818,6 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
       const desc = (p.descricao || '').trim().toUpperCase();
       return `${cod}::${desc}`;
     };
-    // prioridade: internos primeiro
     internalProducts.forEach(p => map.set(keyOf(p), p));
     externalProducts.forEach(p => {
       const k = keyOf(p);
@@ -881,58 +831,33 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
       case Step.CONFIG:
         {
           const certOk = !!activeProfile?.certificadoArquivo && !!activeProfile?.certificadoSenha;
-          const ambienteLabel = config.ambiente === '1'
-            ? 'Produção (com validade jurídica)'
-            : 'Homologação (testes)';
+          const ambienteLabel = config.ambiente === '1' ? 'Produção' : 'Homologação';
 
           return (
             <div className="space-y-4">
               <div className={`p-4 rounded-lg border ${certOk ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3">
-                    {certOk ? (
-                      <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
-                    ) : (
-                      <AlertCircle className="w-5 h-5 text-yellow-700 mt-0.5" />
-                    )}
+                    {certOk ? <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" /> : <AlertCircle className="w-5 h-5 text-yellow-700 mt-0.5" />}
                     <div>
                       <p className={`font-bold ${certOk ? 'text-green-800' : 'text-yellow-800'}`}>
                         {certOk ? 'Certificado já configurado' : 'Certificado não configurado'}
                       </p>
                       <p className={`text-sm ${certOk ? 'text-green-700' : 'text-yellow-700'}`}>
-                        {activeProfile
-                          ? `Emitente: ${activeProfile.razaoSocial} (CNPJ: ${activeProfile.cnpj})`
-                          : 'Selecione um emitente para verificar o certificado.'}
-                      </p>
-                      <p className={`text-xs mt-1 ${certOk ? 'text-green-700' : 'text-yellow-700'}`}>
-                        Observação: o A1 utilizado na transmissão é o do cadastro do Emitente.
+                        {activeProfile ? `Emitente: ${activeProfile.razaoSocial}` : 'Selecione um emitente.'}
                       </p>
                     </div>
                   </div>
-
                   <div className="text-right">
-                    <p className="text-xs text-gray-600">Ambiente de emissão</p>
+                    <p className="text-xs text-gray-600">Ambiente</p>
                     <p className="font-bold text-gray-800">{ambienteLabel}</p>
                   </div>
                 </div>
-
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className="px-3 py-2 rounded-md bg-white border border-gray-200 hover:bg-gray-50 text-sm"
-                    onClick={() => {
-                      setNumeroFoiEditadoManual(false);
-                      calcularProximoNumeroPorHistorico({ force: true });
-                    }}
-                  >
+                  <button type="button" className="px-3 py-2 rounded-md bg-white border border-gray-200 hover:bg-gray-50 text-sm" onClick={() => { setNumeroFoiEditadoManual(false); calcularProximoNumeroPorHistorico({ force: true }); }}>
                     Recalcular próximo número
                   </button>
-
-                  <button
-                    type="button"
-                    className="px-3 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 text-sm"
-                    onClick={() => setViewMode('emissores')}
-                  >
+                  <button type="button" className="px-3 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 text-sm" onClick={() => setViewMode('emissores')}>
                     Gerenciar Emitente / Certificado
                   </button>
                 </div>
@@ -940,7 +865,6 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
 
               <ConfigForm data={config} onChange={handleConfigChange} />
 
-              {/* ✅ CAMPO DE DATA E HORA DE EMISSÃO (NOVO) */}
               <div className="mt-4 bg-white p-4 rounded-lg border border-gray-200">
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
                   <Calendar className="w-4 h-4 mr-2 text-blue-600" />
@@ -953,10 +877,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
                         value={getLocalNowForInput(invoice.dataEmissao)}
                         onChange={(e) => {
                             const val = e.target.value;
-                            if (val) {
-                                // Converte o valor do input (local) de volta para ISO completo (UTC/Offset)
-                                setInvoice(prev => ({ ...prev, dataEmissao: new Date(val).toISOString() }));
-                            }
+                            if (val) setInvoice(prev => ({ ...prev, dataEmissao: new Date(val).toISOString() }));
                         }}
                     />
                     <button
@@ -967,9 +888,6 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
                         Agora
                     </button>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
-                    Esta data será enviada no XML. Se estiver no passado, certifique-se de que é permitido pela SEFAZ (limite ~30 dias).
-                </p>
               </div>
 
             </div>
@@ -984,10 +902,9 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
                 <Building2 className="w-5 h-5 text-blue-600 mr-2" />
                 <div>
                   <span className="text-blue-800 font-bold block">{activeProfile?.razaoSocial}</span>
-                  <span className="text-blue-600 text-sm">CNPJ: {activeProfile?.cnpj} | Regime: {activeProfile?.crt === '1' ? 'Simples Nacional' : 'Regime Normal'}</span>
+                  <span className="text-blue-600 text-sm">CNPJ: {activeProfile?.cnpj}</span>
                 </div>
               </div>
-              <div className="text-xs bg-blue-200 text-blue-800 px-2 py-1 rounded">Emitente Automático</div>
             </div>
             <div className="opacity-70 pointer-events-none">
               <EntityForm title="Dados do Emitente" data={invoice.emitente} onChange={() => { }} />
@@ -1002,18 +919,13 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
               <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 flex items-center">
                 <Box className="w-5 h-5 text-blue-600 mr-2" />
                 <span className="text-blue-800 font-medium mr-3">Selecionar:</span>
-                <select
-                  className="flex-1 px-3 py-2 border rounded-md"
-                  onChange={selectRecipientFromDB}
-                  defaultValue=""
-                >
+                <select className="flex-1 px-3 py-2 border rounded-md" onChange={selectRecipientFromDB} defaultValue="">
                   <option value="" disabled>Selecione...</option>
                   {savedRecipients.map(i => <option key={i.id} value={i.id}>{i.razaoSocial}</option>)}
                 </select>
               </div>
             )}
             <EntityForm title="Dados do Destinatário" data={invoice.destinatario} onChange={(destinatario) => setInvoice(prev => ({ ...prev, destinatario }))} />
-
             {config.ambiente === '1' && (
               <div className="p-3 rounded-md bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm">
                 Em <b>PRODUÇÃO</b>, informe a <b>IE</b> do destinatário (ou <b>ISENTO</b>) para evitar rejeição <b>232</b>.
@@ -1026,11 +938,8 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
         return (
           <>
             <div className="mb-4 flex justify-end">
-              <button
-                onClick={() => setShowProductSelector(true)}
-                className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-              >
-                <Search className="w-4 h-4 mr-2" /> Buscar (Cadastros / Banco / Intranet)
+              <button onClick={() => setShowProductSelector(true)} className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">
+                <Search className="w-4 h-4 mr-2" /> Buscar
               </button>
             </div>
 
@@ -1074,33 +983,16 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
               </div>
             )}
 
-            {status === 'signing' && (
-              <div className="h-[350px] flex flex-col items-center justify-center bg-gray-50 rounded-md border border-gray-100">
-                <Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-4" />
-                <p className="text-gray-700 font-medium">Assinando XML...</p>
-              </div>
-            )}
-
-            {status === 'transmitting' && (
-              <div className="h-[350px] flex flex-col items-center justify-center bg-gray-50 rounded-md border border-gray-100">
-                <Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-4" />
-                <p className="text-gray-700 font-medium">Transmitindo para SEFAZ...</p>
-              </div>
-            )}
+            {status === 'signing' && <div className="h-[350px] flex flex-col items-center justify-center bg-gray-50 rounded-md border border-gray-100"><Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-4" /><p className="text-gray-700 font-medium">Assinando XML...</p></div>}
+            {status === 'transmitting' && <div className="h-[350px] flex flex-col items-center justify-center bg-gray-50 rounded-md border border-gray-100"><Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-4" /><p className="text-gray-700 font-medium">Transmitindo...</p></div>}
 
             {status === 'authorized' && (
               <div className="h-[350px] flex flex-col items-center justify-center bg-green-50 rounded-md border border-green-100">
-                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
-                  <CheckCircle className="w-8 h-8 text-green-600" />
-                </div>
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4"><CheckCircle className="w-8 h-8 text-green-600" /></div>
                 <h3 className="text-xl font-bold text-green-800 mb-2">Nota Autorizada!</h3>
                 <div className="flex gap-4">
-                  <button onClick={downloadXml} className="flex items-center px-4 py-2 bg-white border border-green-300 text-green-700 rounded-md">
-                    <Download className="w-4 h-4 mr-2" /> Baixar XML
-                  </button>
-                  <button onClick={() => handlePrint(invoice)} className="flex items-center px-4 py-2 bg-green-600 text-white rounded-md">
-                    <Printer className="w-4 h-4 mr-2" /> Imprimir DANFE
-                  </button>
+                  <button onClick={downloadXml} className="flex items-center px-4 py-2 bg-white border border-green-300 text-green-700 rounded-md"><Download className="w-4 h-4 mr-2" /> Baixar XML</button>
+                  <button onClick={() => handlePrint(invoice)} className="flex items-center px-4 py-2 bg-green-600 text-white rounded-md"><Printer className="w-4 h-4 mr-2" /> Imprimir DANFE</button>
                 </div>
               </div>
             )}
@@ -1115,12 +1007,11 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
           </div>
         );
 
-      default:
-        return null;
+      default: return null;
     }
   };
 
-  const NavButton = ({ mode, icon: Icon, label }: { mode: ViewMode, icon: any, label: string }) => (
+  const NavButton = ({ mode, icon: Icon, label }: any) => (
     <button
       onClick={() => {
         setViewMode(mode);
@@ -1139,12 +1030,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
       </div>
 
       {showProfileSelector && (
-        <ProfileSelector
-          profiles={profilesList}
-          activeProfileId={activeProfile?.id || null}
-          onSelect={handleProfileSelect}
-          onCreateNew={handleCreateProfile}
-        />
+        <ProfileSelector profiles={profilesList} activeProfileId={activeProfile?.id || null} onSelect={handleProfileSelect} onCreateNew={handleCreateProfile} />
       )}
 
       {eventProcessing && (
@@ -1156,29 +1042,20 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
         </div>
       )}
 
-      {/* Internal NFe Header */}
       <div className="bg-white border-b border-gray-200 print:hidden p-4 flex items-center justify-between shadow-sm">
-        <div className="flex items-center space-x-3">
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Módulo NFe</h1>
-        </div>
-
+        <div className="flex items-center space-x-3"><h1 className="text-2xl font-bold text-gray-900 tracking-tight">Módulo NFe</h1></div>
         <div className="flex items-center space-x-4">
           {activeProfile ? (
             <div className="flex items-center px-3 py-1.5 bg-blue-50 rounded-full border border-blue-100">
               <Building2 className="w-4 h-4 text-blue-600 mr-2" />
               <span className="text-sm font-medium text-blue-900 mr-3">{activeProfile.razaoSocial}</span>
-              <button onClick={handleLogoutProfile} title="Trocar Empresa" className="text-blue-400 hover:text-blue-700">
-                <LogOut className="w-4 h-4" />
-              </button>
+              <button onClick={handleLogoutProfile} title="Trocar Empresa" className="text-blue-400 hover:text-blue-700"><LogOut className="w-4 h-4" /></button>
             </div>
-          ) : (
-            <span className="text-sm text-red-500 font-medium">Nenhuma Empresa Selecionada</span>
-          )}
+          ) : <span className="text-sm text-red-500 font-medium">Nenhuma Empresa Selecionada</span>}
         </div>
       </div>
 
       <div className="flex flex-1 w-full mx-auto print:hidden mt-4">
-        {/* Internal Sidebar for NFe Actions */}
         <aside className="w-64 px-4 hidden md:block">
           <div className="mb-6">
             <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 px-4">Menu NFe</p>
@@ -1211,9 +1088,7 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
                   </div>
                   <div onClick={() => setViewMode('historico')} className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm cursor-pointer hover:border-blue-300 transition-colors">
                     <h3 className="text-lg font-bold text-gray-800">Histórico</h3>
-                    <div className="mt-4 text-2xl font-bold text-gray-900">
-                      {invoiceCount} Notas
-                    </div>
+                    <div className="mt-4 text-2xl font-bold text-gray-900">{invoiceCount} Notas</div>
                   </div>
                 </div>
               )}
@@ -1231,7 +1106,6 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
                   onRequestCancel={handleRequestCancel}
                   onRequestCorrection={handleRequestCorrection}
                   onEditDraft={handleEditDraft}
-                  // 👇 AQUI ESTÁ A CONEXÃO COM O BOTÃO IMPORTAR
                   onImportClick={triggerImport} 
                 />
               )}
@@ -1303,7 +1177,6 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
         </main>
       </div>
 
-      {/* 👇 INPUT INVISÍVEL PARA IMPORTAÇÃO DE XML */}
       <input 
         type="file" 
         id="hiddenXmlInput" 
