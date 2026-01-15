@@ -1,3 +1,4 @@
+import { parseNfeXml } from '../services/xmlImporter';
 import React, { useState, useEffect } from 'react';
 import { Entity, InvoiceData, Product, Step, ConfigData, InvoiceStatus } from '../types';
 import { EntityForm } from './EntityForm';
@@ -371,38 +372,51 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     document.getElementById('hiddenXmlInput')?.click();
   };
 
+// --- SUBSTIUA APENAS ESTA FUNÇÃO ---
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const xmlContent = e.target?.result as string;
-      if (!xmlContent) return;
+    // Limpa mensagens anteriores
+    setEventProcessing('Lendo XML...');
+    setErrorMsg(null);
 
-      try {
-        setEventProcessing('Importando XML...');
-        // Chama a rota que criamos no server.js
-        const res = await api.post('/api/nfe/importar', { xmlContent });
-        
-        alert('✅ XML Importado com sucesso!');
-        
-        // Se estivermos no histórico, força recarregar
-        if (viewMode === 'historico') {
-           setViewMode('painel');
-           setTimeout(() => setViewMode('historico'), 50);
-        } else {
-            setViewMode('historico');
-        }
+    try {
+      // 1. Usa o importador local (xmlImporter.ts) em vez de enviar para o servidor
+      const parsedInvoice = await parseNfeXml(file);
+      
+      // 2. Cria um objeto para edição (remove ID para não sobrescrever nota existente no banco)
+      const invoiceToEdit: InvoiceData = {
+          ...parsedInvoice,
+          id: undefined, // Garante que será salvo como um novo rascunho/nota
+          status: 'editing'
+      };
 
-      } catch (error: any) {
-        alert('Erro ao importar: ' + (error.response?.data?.erro || error.message));
-      } finally {
-        setEventProcessing(null);
-        event.target.value = ''; // Limpa para permitir selecionar o mesmo arquivo
-      }
-    };
-    reader.readAsText(file);
+      // 3. Atualiza o estado da nota na tela
+      setInvoice(invoiceToEdit);
+      
+      // 4. Atualiza configurações (série/número) com base no XML importado
+      setConfig(prev => ({ 
+          ...prev, 
+          proximoNumeroNota: parsedInvoice.numero, 
+          serie: parsedInvoice.serie 
+      }));
+
+      // 5. Força a mudança para a tela de edição
+      setViewMode('nota');
+      setCurrentStep(Step.CONFIG);
+      setStatus('editing');
+      
+      alert('✅ XML carregado com sucesso! Verifique os dados antes de salvar.');
+
+    } catch (error: any) {
+      console.error(error);
+      alert('Erro ao ler XML: ' + (error.message || "Formato inválido"));
+    } finally {
+      setEventProcessing(null);
+      // Limpa o input para permitir selecionar o mesmo arquivo novamente se falhar
+      event.target.value = ''; 
+    }
   };
 
   const validateStep = (): boolean => {
