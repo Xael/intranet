@@ -3,42 +3,48 @@ import { InvoiceData, Entity, Product, TaxDetails, PaymentMethod } from '../type
 export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
+    
     reader.onload = (e) => {
       try {
         const xmlText = e.target?.result as string;
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(xmlText, "text/xml");
 
-        // Helper para pegar texto de forma segura
+        // Helper para pegar texto de forma segura (previne erro se a tag não existir)
         const getText = (parent: Element | Document | null, tag: string): string => {
           if (!parent) return '';
-          const el = parent.getElementsByTagName(tag)[0];
-          return el ? el.textContent || '' : '';
+          const collection = parent.getElementsByTagName(tag);
+          if (collection.length > 0) {
+            return collection[0].textContent || '';
+          }
+          return '';
         };
 
-        // Verifica se é uma NFe válida (procura por infNFe em qualquer nível)
+        // Verifica se é uma NFe válida (procura por infNFe em qualquer nível, funciona para nfeProc)
         const infNFeList = xmlDoc.getElementsByTagName('infNFe');
         if (!infNFeList.length) {
-          throw new Error("Arquivo XML inválido ou não é uma NF-e.");
+          throw new Error("Arquivo XML inválido: Tag <infNFe> não encontrada.");
         }
         
-        // Pega o primeiro infNFe encontrado (funciona para nfeProc ou NFe pura)
+        // Usa o primeiro infNFe encontrado como raiz para buscas
         const infNFe = infNFeList[0]; 
 
-        // 1. Dados Básicos (Ide)
-        // Precisamos buscar 'ide' dentro do contexto do infNFe para evitar pegar de outros lugares se houver
+        // 1. Dados Básicos (Ide) - Busca dentro de infNFe para evitar conflito
         const ide = infNFe.getElementsByTagName('ide')[0];
+        if (!ide) throw new Error("Tag <ide> não encontrada no XML.");
+
         const numero = getText(ide, 'nNF');
         const serie = getText(ide, 'serie');
-        const dataEmissaoRaw = getText(ide, 'dhEmi');
+        const dataEmissaoRaw = getText(ide, 'dhEmi') || new Date().toISOString();
         const finalidade = getText(ide, 'finNFe') as '1'|'2'|'3'|'4';
         const natOp = getText(ide, 'natOp');
         
         // 2. Emitente
         const emitTag = infNFe.getElementsByTagName('emit')[0];
-        const emitEndTag = emitTag.getElementsByTagName('enderEmit')[0];
+        const emitEndTag = emitTag?.getElementsByTagName('enderEmit')[0];
+        
         const emitente: Entity = {
-          id: crypto.randomUUID(), // ID temporário
+          id: crypto.randomUUID(),
           cnpj: getText(emitTag, 'CNPJ'),
           razaoSocial: getText(emitTag, 'xNome'),
           inscricaoEstadual: getText(emitTag, 'IE'),
@@ -76,8 +82,8 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
               }
             };
         } else {
-            // Caso seja consumidor final sem cadastro ou algo atípico
-            destinatario = { ...emitente, id: crypto.randomUUID(), razaoSocial: 'CONSUMIDOR', cnpj: '' }; 
+            // Fallback para consumidor final/sem cadastro
+            destinatario = { ...emitente, id: crypto.randomUUID(), razaoSocial: 'CONSUMIDOR (SEM CADASTRO)', cnpj: '', inscricaoEstadual: '' }; 
         }
 
         // 4. Produtos
@@ -89,16 +95,15 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
           const prod = det.getElementsByTagName('prod')[0];
           const imposto = det.getElementsByTagName('imposto')[0];
 
-          // Tenta pegar ICMS, PIS, COFINS, IPI
-          // A estrutura do ICMS muda (ICMS00, ICMS20, ICMSSN102...), então pegamos o primeiro filho da tag ICMS
+          // Logica robusta para impostos (pega o primeiro filho de ICMS, PIS, etc.)
           const icmsGroup = imposto?.getElementsByTagName('ICMS')[0];
-          const icmsTag = icmsGroup?.children[0]; // Pega o primeiro filho (ex: ICMSSN102)
+          const icmsTag = icmsGroup?.firstElementChild; // Ex: ICMSSN102, ICMS00
 
           const pisGroup = imposto?.getElementsByTagName('PIS')[0];
-          const pisTag = pisGroup?.children[0]; 
+          const pisTag = pisGroup?.firstElementChild; 
 
           const cofinsGroup = imposto?.getElementsByTagName('COFINS')[0];
-          const cofinsTag = cofinsGroup?.children[0];
+          const cofinsTag = cofinsGroup?.firstElementChild;
           
           const ipiGroup = imposto?.getElementsByTagName('IPI')[0];
           const ipiTag = ipiGroup?.getElementsByTagName('IPITrib')[0];
@@ -139,13 +144,12 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
             quantidade: parseFloat(getText(prod, 'qCom')),
             valorUnitario: parseFloat(getText(prod, 'vUnCom')),
             valorTotal: parseFloat(getText(prod, 'vProd')),
-            gtin: getText(prod, 'cEAN'),
+            gtin: getText(prod, 'cEAN') || 'SEM GTIN',
             tax: taxDetails
           });
         }
 
         // 5. Totais
-        // Busca 'total' dentro de infNFe
         const totalTag = infNFe.getElementsByTagName('total')[0]?.getElementsByTagName('ICMSTot')[0];
         
         // 6. Pagamento
@@ -159,7 +163,7 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
                 pagamento.push({
                     tPag: getText(p, 'tPag'),
                     vPag: parseFloat(getText(p, 'vPag')) || 0,
-                    card: undefined // XML geralmente não traz detalhes do cartão de forma simples aqui
+                    card: undefined 
                 });
             }
         }
@@ -177,7 +181,7 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
           numero,
           serie,
           natOp,
-          dataEmissao: dataEmissaoRaw, // Mantém o formato ISO original do XML
+          dataEmissao: dataEmissaoRaw,
           emitente,
           destinatario,
           produtos,
@@ -203,7 +207,7 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
           },
           pagamento,
           informacoesComplementares,
-          status: 'editing', // Importa como Editando para o usuário conferir
+          status: 'editing',
           chaveAcesso,
           xmlAssinado: xmlText, 
           finalidade
