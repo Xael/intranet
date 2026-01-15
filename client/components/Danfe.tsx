@@ -5,314 +5,353 @@ interface DanfeProps {
   invoice: InvoiceData;
 }
 
-// ============================================================================
-// CONFIGURAÇÃO: 22 ITENS POR PÁGINA (Conforme solicitado)
-// ============================================================================
-const ITENS_POR_PAGINA = 22; 
-
-// Utilitários
-const formatCurrency = (val: any) => {
-  const n = typeof val === 'number' ? val : Number(String(val ?? '0').replace(',', '.'));
-  return Number.isFinite(n) ? n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 }) : '0,00';
-};
-
-const formatDate = (dateStr?: string) => {
-  if (!dateStr) return '';
-  try { return new Date(dateStr).toLocaleDateString('pt-BR'); } catch { return dateStr; }
-};
-
-const formatChave = (ch44: string) => ch44 ? ch44.replace(/(\d{4})/g, '$1 ').trim() : '';
 const onlyDigits = (v?: string) => String(v ?? '').replace(/\D/g, '');
 
-const renderBarcode = () => (
-  <div className="h-8 w-full flex items-center justify-center overflow-hidden my-1">
-    <div className="tracking-[3px] font-bold text-black scale-y-[2.5] text-[10px] select-none whitespace-nowrap">
-        || |||||| |||| || ||||| |||| || |||||||| |||| | ||| || |||
-    </div>
-  </div>
-);
+const formatChave = (ch44: string) =>
+  ch44 ? ch44.replace(/(\d{4})/g, '$1 ').trim() : '';
 
-// Componente de Campo Reutilizável
-const Campo = ({ label, value, className = "", align = "left", boldVal = true }: { label: string, value: string | number, className?: string, align?: "left"|"right"|"center", boldVal?: boolean }) => (
-  <div className={`flex flex-col border-r border-black px-1 h-full justify-center ${className} ${align === 'right' ? 'items-end' : align === 'center' ? 'items-center' : 'items-start'}`}>
-    <span className="text-[5px] font-bold text-gray-600 uppercase leading-none mb-0.5 w-full">{label}</span>
-    <span className={`text-[8px] leading-none uppercase w-full truncate ${boldVal ? 'font-bold' : ''} ${align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'}`}>
-      {value}
-    </span>
-  </div>
-);
-
-// ============================================================================
-// CABEÇALHO (Repete em todas as páginas)
-// ============================================================================
-const DanfeHeader = ({ invoice, pageIndex, totalPages }: { invoice: InvoiceData, pageIndex: number, totalPages: number }) => {
-  const chave44 = onlyDigits(invoice.chaveAcesso || '').padEnd(44, '0').slice(0, 44);
-  const natOp = invoice.natOp || 'VENDA DE MERCADORIA';
-  const protocolo = invoice.protocoloAutorizacao 
-    ? `${invoice.protocoloAutorizacao} - ${formatDate(invoice.historicoEventos?.find(e => e.tipo === 'autorizacao')?.data)}` 
-    : '';
-
+const renderBarcode = (chaveAcesso44: string) => {
+  // Placeholder visual (para produção, use JsBarcode / bwip-js etc.)
   return (
-    <>
-      {/* CANHOTO (Altura reduzida para economizar espaço) */}
-      <div className="border border-black flex h-7 mb-1 text-[7px] break-inside-avoid">
-        <div className="w-[20%] border-r border-black p-0.5 flex flex-col justify-center">
-           <span className="font-bold">RECEBEMOS DE</span>
-           <span className="truncate">{invoice.emitente.razaoSocial.substring(0, 20)}</span>
-        </div>
-        <div className="w-[60%] border-r border-black p-0.5 flex items-center justify-center text-center font-bold uppercase">
-          OS PRODUTOS/SERVIÇOS CONSTANTES DA NOTA FISCAL INDICADA AO LADO
-        </div>
-        <div className="w-[20%] flex flex-col items-center justify-center font-bold bg-gray-100">
-           <span className="text-sm leading-none">NF-e</span>
-           <span>Nº {invoice.numero}</span>
-           <span>SÉRIE {invoice.serie}</span>
-        </div>
+    <div className="h-10 w-full flex items-center justify-center bg-white">
+      <div className="text-[10px] text-gray-500 font-mono tracking-widest overflow-hidden">
+        {chaveAcesso44
+          ? formatChave(chaveAcesso44)
+          : 'CHAVE DE ACESSO (MOCK)'}
       </div>
-
-      {/* DADOS PRINCIPAIS */}
-      <div className="border border-black flex mb-1 h-28 break-inside-avoid">
-        {/* Emitente */}
-        <div className="w-[38%] border-r border-black p-1 flex flex-col justify-center">
-          <div className="font-bold text-xs uppercase mb-1 leading-tight">{invoice.emitente.razaoSocial}</div>
-          <div className="text-[7px] leading-tight">
-            {invoice.emitente.endereco.logradouro}, {invoice.emitente.endereco.numero}<br/>
-            {invoice.emitente.endereco.bairro} - {invoice.emitente.endereco.municipio} / {invoice.emitente.endereco.uf}<br/>
-            CEP: {invoice.emitente.endereco.cep}<br/>
-          </div>
-        </div>
-
-        {/* DANFE Box */}
-        <div className="w-[12%] border-r border-black flex flex-col items-center p-0.5 justify-center">
-          <h1 className="font-bold text-lg leading-none">DANFE</h1>
-          <div className="text-[5px] text-center leading-none mb-1">Documento Auxiliar<br/>da Nota Fiscal<br/>Eletrônica</div>
-          <div className="flex w-full justify-around text-[6px] mb-0.5"><span>0-Entrada</span><span>1-Saída</span></div>
-          <div className="border border-black px-2 py-0 text-md font-bold mb-0.5">1</div>
-          <div className="text-[7px] font-bold text-center leading-tight">
-            Nº {invoice.numero}<br/>SÉRIE {invoice.serie}<br/>FL {pageIndex + 1}/{totalPages}
-          </div>
-        </div>
-
-        {/* Chave e Consulta */}
-        <div className="w-[50%] p-1 flex flex-col justify-between">
-           {renderBarcode()}
-           <div className="mb-0.5">
-             <div className="text-[6px] font-bold">CHAVE DE ACESSO</div>
-             <div className="bg-gray-50 border border-black text-[8px] font-mono text-center px-1 tracking-tighter font-bold">
-                {formatChave(chave44)}
-             </div>
-           </div>
-           <div className="text-[7px] text-center leading-tight">
-              Consulta de autenticidade no portal nacional da NF-e<br/>www.nfe.fazenda.gov.br/portal
-           </div>
-        </div>
-      </div>
-
-      {/* NATUREZA E PROTOCOLO (Linha única compacta) */}
-      <div className="border border-black flex mb-1 h-7 bg-gray-50">
-         <div className="w-[55%] border-r border-black"><Campo label="NATUREZA DA OPERAÇÃO" value={natOp} /></div>
-         <div className="w-[45%]"><Campo label="PROTOCOLO DE AUTORIZAÇÃO DE USO" value={protocolo} /></div>
-      </div>
-
-      {/* INSCRIÇÕES */}
-      <div className="border border-black flex mb-1 h-7">
-         <div className="w-[33%]"><Campo label="INSCRIÇÃO ESTADUAL" value={invoice.emitente.inscricaoEstadual || ''} /></div>
-         <div className="w-[33%]"><Campo label="INSC. ESTADUAL SUBST. TRIB." value="" /></div>
-         <div className="w-[34%] border-r-0"><Campo label="CNPJ" value={invoice.emitente.cnpj} /></div>
-      </div>
-
-      {/* DESTINATÁRIO */}
-      <div className="bg-gray-200 border border-black border-b-0 px-1 py-px font-bold text-[7px] uppercase">Destinatário / Remetente</div>
-      <div className="border border-black flex flex-col mb-1">
-         <div className="flex border-b border-black h-7">
-            <div className="w-[55%]"><Campo label="NOME / RAZÃO SOCIAL" value={invoice.destinatario.razaoSocial} /></div>
-            <div className="w-[30%]"><Campo label="CNPJ / CPF" value={invoice.destinatario.cnpj} /></div>
-            <div className="w-[15%] border-r-0"><Campo label="DATA DA EMISSÃO" value={formatDate(invoice.dataEmissao)} align="center" /></div>
-         </div>
-         <div className="flex h-7">
-            <div className="w-[45%]"><Campo label="ENDEREÇO" value={`${invoice.destinatario.endereco.logradouro}, ${invoice.destinatario.endereco.numero}`} /></div>
-            <div className="w-[25%]"><Campo label="BAIRRO / DISTRITO" value={invoice.destinatario.endereco.bairro} /></div>
-            <div className="w-[5%]"><Campo label="UF" value={invoice.destinatario.endereco.uf} align="center" /></div>
-            <div className="w-[15%]"><Campo label="INSCRIÇÃO ESTADUAL" value={invoice.destinatario.inscricaoEstadual || 'ISENTO'} /></div>
-            <div className="w-[10%] border-r-0"><Campo label="DATA SAÍDA" value={formatDate(invoice.dataEmissao)} align="center" /></div>
-         </div>
-      </div>
-    </>
+    </div>
   );
 };
 
-// ============================================================================
-// RODAPÉ (TOTAIS + TRANSPORTE + DADOS ADICIONAIS) - Repete em todas
-// ============================================================================
-const DanfeFooter = ({ invoice, t }: { invoice: InvoiceData, t: InvoiceTotals }) => (
-  <div className="mt-auto"> {/* mt-auto empurra para o final do container flex */}
-     
-     {/* CÁLCULO DO IMPOSTO */}
-     <div className="bg-gray-200 border border-black border-b-0 px-1 py-px font-bold text-[7px] uppercase">Cálculo do Imposto</div>
-     <div className="border border-black flex mb-1 h-7 bg-gray-50">
-        <div className="w-[14%]"><Campo label="BASE CÁLC. ICMS" value={formatCurrency(t.vBC)} align="right" /></div>
-        <div className="w-[14%]"><Campo label="VALOR DO ICMS" value={formatCurrency(t.vICMS)} align="right" /></div>
-        <div className="w-[14%]"><Campo label="BASE CÁLC. ICMS ST" value="0,00" align="right" /></div>
-        <div className="w-[14%]"><Campo label="VALOR DO ICMS ST" value="0,00" align="right" /></div>
-        <div className="w-[12%]"><Campo label="V. PIS" value={formatCurrency(t.vPIS)} align="right" /></div>
-        <div className="w-[12%]"><Campo label="V. COFINS" value={formatCurrency(t.vCOFINS)} align="right" /></div>
-        <div className="w-[20%] border-r-0"><Campo label="TOTAL PRODUTOS" value={formatCurrency(t.vProd)} align="right" /></div>
-     </div>
-     <div className="border border-black flex mb-1 h-7 -mt-1 border-t-0 bg-gray-50">
-        <div className="w-[14%]"><Campo label="VALOR FRETE" value={formatCurrency(t.vFrete)} align="right" /></div>
-        <div className="w-[14%]"><Campo label="VALOR SEGURO" value={formatCurrency(t.vSeg)} align="right" /></div>
-        <div className="w-[14%]"><Campo label="DESCONTO" value={formatCurrency(t.vDesc)} align="right" /></div>
-        <div className="w-[14%]"><Campo label="OUTRAS DESP." value={formatCurrency(t.vOutro)} align="right" /></div>
-        <div className="w-[12%]"><Campo label="VALOR IPI" value={formatCurrency(t.vIPI)} align="right" /></div>
-        <div className="w-[32%] border-r-0 bg-gray-200"><Campo label="VALOR TOTAL DA NOTA" value={formatCurrency(t.vNF)} align="right" className="text-sm" /></div>
-     </div>
-
-     {/* TRANSPORTADORA */}
-     <div className="bg-gray-200 border border-black border-b-0 px-1 py-px font-bold text-[7px] uppercase">Transportador / Volumes</div>
-     <div className="border border-black flex mb-1 h-7">
-        <div className="w-[35%]"><Campo label="RAZÃO SOCIAL" value={invoice.globalValues.modalidadeFrete === '0' ? invoice.emitente.razaoSocial : invoice.globalValues.modalidadeFrete === '1' ? invoice.destinatario.razaoSocial : ''} /></div>
-        <div className="w-[15%]"><Campo label="FRETE POR CONTA" value={invoice.globalValues.modalidadeFrete === '9' ? '9-SEM FRETE' : invoice.globalValues.modalidadeFrete === '0' ? '0-EMITENTE' : '1-DESTINAT.'} /></div>
-        <div className="w-[10%]"><Campo label="CÓDIGO ANTT" value="" /></div>
-        <div className="w-[15%]"><Campo label="PLACA" value="" /></div>
-        <div className="w-[5%]"><Campo label="UF" value="" /></div>
-        <div className="w-[20%] border-r-0"><Campo label="CNPJ/CPF" value="" /></div>
-     </div>
-
-     {/* DADOS ADICIONAIS */}
-     <div className="bg-gray-200 border border-black border-b-0 px-1 py-px font-bold text-[7px] uppercase">Dados Adicionais</div>
-     <div className="border border-black h-16 p-1 flex flex-col justify-start">
-        <span className="text-[5px] font-bold text-gray-600 uppercase mb-0.5">INFORMAÇÕES COMPLEMENTARES</span>
-        <span className="text-[7px] font-mono leading-tight whitespace-pre-wrap">
-            {invoice.informacoesComplementares || 'Sem informações adicionais.'}
-            {invoice.finalidade === '2' && ` REF NF: ${invoice.refNFe}`}
-        </span>
-     </div>
-  </div>
-);
-
-// ============================================================================
-// COMPONENTE PRINCIPAL
-// ============================================================================
 export const Danfe: React.FC<DanfeProps> = ({ invoice }) => {
-  // Lógica de Paginação (22 itens)
-  const items = invoice.produtos || [];
-  const chunks = [];
-  
-  if (items.length === 0) {
-    chunks.push([]);
-  } else {
-    for (let i = 0; i < items.length; i += ITENS_POR_PAGINA) {
-      chunks.push(items.slice(i, i + ITENS_POR_PAGINA));
-    }
-  }
+  const formatCurrency = (val: any) => {
+    const n = typeof val === 'number' ? val : Number(String(val ?? '0').replace(',', '.'));
+    return Number.isFinite(n)
+      ? n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+      : 'R$ 0,00';
+  };
 
-  // Totais
-  const defaults: InvoiceTotals = { vBC: 0, vICMS: 0, vProd: 0, vIPI: 0, vPIS: 0, vCOFINS: 0, vNF: 0, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0 } as any;
-  const t = { ...defaults, ...(invoice.totais || {}) };
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return '';
+    try {
+      return new Date(dateStr).toLocaleDateString('pt-BR');
+    } catch {
+      return String(dateStr);
+    }
+  };
+
+  // ✅ Pega a chave oficial por prioridade (backend pode devolver chNFe / fullData)
+  const chave44 =
+    onlyDigits((invoice as any)?.chaveAcesso) ||
+    onlyDigits((invoice as any)?.chNFe) ||
+    onlyDigits((invoice as any)?.fullData?.chaveAcesso) ||
+    '';
+
+  const chave = chave44.slice(0, 44);
+
+  const protocolo =
+    (invoice as any).protocoloAutorizacao ||
+    (invoice as any).fullData?.protocoloAutorizacao ||
+    (invoice as any).historicoEventos?.find((e: any) => e.tipo === 'autorizacao')?.protocolo ||
+    '';
+
+  const natOp =
+    (invoice as any).natOp ||
+    (invoice as any).fullData?.natOp ||
+    'VENDA DE MERCADORIA';
+
+  // Totais (fallback seguro)
+  const totaisDefaults: InvoiceTotals = {
+    vBC: 0,
+    vICMS: 0,
+    vProd: 0,
+    vIPI: 0,
+    vPIS: 0,
+    vCOFINS: 0,
+    vNF: 0,
+    vFrete: 0,
+    vSeg: 0,
+    vDesc: 0,
+    vOutro: 0,
+  } as InvoiceTotals;
+
+  const totais: InvoiceTotals = ({ ...totaisDefaults, ...(invoice.totais || {}) } as InvoiceTotals);
+
+  const {
+    vBC, vICMS, vPIS, vCOFINS, vProd, vNF, vFrete, vSeg, vDesc, vOutro, vIPI
+  } = totais;
 
   return (
-    // Wrapper que controla a visualização na tela vs impressão
-    <div id="danfe-root" className="bg-gray-500 p-8 flex flex-col items-center gap-4 min-h-screen">
-      
-      {/* CSS CRÍTICO PARA IMPRESSÃO CORRETA 
-         Isso sobrescreve qualquer estilo do Dashboard
-      */}
-      <style>{`
-        @media print {
-          @page { size: A4 portrait; margin: 0; }
-          
-          /* Esconde TUDO no navegador */
-          body > * { display: none !important; }
-          
-          /* Mostra APENAS o DANFE */
-          #danfe-root { 
-            display: block !important; 
-            position: absolute !important;
-            top: 0; left: 0; 
-            width: 210mm;
-            margin: 0 !important; 
-            padding: 0 !important; 
-            background: white !important;
-          }
-
-          /* Cada página deve ser um bloco separado */
-          .danfe-page {
-            width: 210mm !important;
-            height: 297mm !important;
-            page-break-after: always !important;
-            break-after: page !important;
-            margin: 0 !important;
-            border: none !important;
-            box-shadow: none !important;
-            padding: 5mm !important; /* Margem interna de segurança da impressora */
-            position: relative !important;
-          }
-          
-          /* Remove a última quebra de página para não gerar folha em branco */
-          .danfe-page:last-child {
-            page-break-after: avoid !important;
-            break-after: avoid !important;
-          }
-        }
-      `}</style>
-
-      {chunks.map((chunk, index) => (
-        <div key={index} className="danfe-page bg-white w-[210mm] h-[297mm] p-[5mm] text-black border shadow-2xl flex flex-col justify-between box-border">
-          
-          {/* TOPO DA PÁGINA (Cabeçalho + Produtos) */}
-          <div className="flex flex-col flex-1 h-full">
-              <DanfeHeader invoice={invoice} pageIndex={index} totalPages={chunks.length} />
-
-              {/* Tabela de Produtos */}
-              <div className="bg-gray-200 border border-black border-b-0 px-1 py-px font-bold text-[7px] uppercase mt-1">Dados do Produto / Serviço</div>
-              <div className="border border-black flex-1 relative flex flex-col">
-                <table className="w-full table-fixed border-collapse">
-                  <thead>
-                    <tr className="border-b border-black text-[6px] h-3 bg-gray-50">
-                      <th className="w-[10%] border-r border-black px-1 text-left">CÓDIGO</th>
-                      <th className="w-[35%] border-r border-black px-1 text-left">DESCRIÇÃO</th>
-                      <th className="w-[8%] border-r border-black text-center">NCM</th>
-                      <th className="w-[5%] border-r border-black text-center">CST</th>
-                      <th className="w-[5%] border-r border-black text-center">CFOP</th>
-                      <th className="w-[5%] border-r border-black text-center">UN</th>
-                      <th className="w-[8%] border-r border-black px-1 text-right">QTD</th>
-                      <th className="w-[9%] border-r border-black px-1 text-right">V.UNIT</th>
-                      <th className="w-[9%] border-r border-black px-1 text-right">V.TOTAL</th>
-                      <th className="w-[6%] px-1 text-right">ICMS%</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {chunk.map((prod, i) => {
-                      const tax = prod.tax || {};
-                      const vTot = prod.valorTotal || (prod.quantidade * prod.valorUnitario);
-                      return (
-                        <tr key={i} className="border-b border-gray-300 text-[7px] h-4 align-middle">
-                          <td className="border-r border-black px-1 truncate">{prod.codigo}</td>
-                          <td className="border-r border-black px-1 truncate">{prod.descricao}</td>
-                          <td className="border-r border-black text-center">{prod.ncm}</td>
-                          <td className="border-r border-black text-center">{tax.cst || tax.csosn || '00'}</td>
-                          <td className="border-r border-black text-center">{prod.cfop}</td>
-                          <td className="border-r border-black text-center">{prod.unidade}</td>
-                          <td className="border-r border-black px-1 text-right">{prod.quantidade}</td>
-                          <td className="border-r border-black px-1 text-right">{prod.valorUnitario.toFixed(2)}</td>
-                          <td className="border-r border-black px-1 text-right font-bold">{vTot.toFixed(2)}</td>
-                          <td className="px-1 text-right">{(tax.aliquotaIcms ?? 0) > 0 ? tax.aliquotaIcms : ''}</td>
-                        </tr>
-                      )
-                    })}
-                    {/* Linhas vazias para manter o grid bonito até o final do quadro */}
-                    {Array.from({ length: ITENS_POR_PAGINA - chunk.length }).map((_, k) => (
-                      <tr key={`empty-${k}`} className="border-r border-l border-gray-100 h-4"><td colSpan={10}></td></tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* RODAPÉ (Dentro do flex container principal) */}
-              <DanfeFooter invoice={invoice} t={t} />
+    <div
+      className="bg-white text-black p-8 max-w-[210mm] mx-auto text-[10px] leading-tight font-sans border border-gray-300 print:border-0 print:p-0"
+      id="danfe-area"
+    >
+      {/* Header / Canhoto */}
+      <div className="border border-black mb-2 flex">
+        <div className="flex-1 p-2 border-r border-black">
+          <div className="text-[9px] mb-4">
+            RECEBEMOS DE {invoice.emitente?.razaoSocial?.toUpperCase?.() || ''} OS PRODUTOS CONSTANTES DA NOTA FISCAL INDICADA AO LADO
+          </div>
+          <div className="flex mt-4 items-end">
+            <div className="border-t border-black w-32 mr-4 text-center">DATA DE RECEBIMENTO</div>
+            <div className="border-t border-black flex-1 text-center">IDENTIFICAÇÃO E ASSINATURA DO RECEBEDOR</div>
           </div>
         </div>
-      ))}
+        <div className="w-32 p-2 flex flex-col justify-center items-center">
+          <div className="font-bold text-lg">NF-e</div>
+          <div className="text-sm">Nº {invoice.numero}</div>
+          <div className="text-sm">SÉRIE {invoice.serie}</div>
+        </div>
+      </div>
+
+      <div className="border-b-2 border-dashed border-black my-2"></div>
+
+      {/* Main Header */}
+      <div className="border border-black flex mb-2">
+        <div className="w-5/12 p-2 border-r border-black flex flex-col">
+          <div className="font-bold text-lg mb-1">
+            {invoice.emitente?.razaoSocial?.toUpperCase?.() || ''}
+          </div>
+          <div>
+            {invoice.emitente?.endereco?.logradouro}, {invoice.emitente?.endereco?.numero}
+          </div>
+          <div>
+            {invoice.emitente?.endereco?.bairro} - {invoice.emitente?.endereco?.municipio} / {invoice.emitente?.endereco?.uf}
+          </div>
+          <div>CEP: {invoice.emitente?.endereco?.cep}</div>
+        </div>
+
+        <div className="w-2/12 p-2 border-r border-black flex flex-col items-center justify-center text-center">
+          <div className="font-bold text-xl">DANFE</div>
+          <div className="text-[8px]">DOCUMENTO AUXILIAR DA NOTA FISCAL ELETRÔNICA</div>
+          <div className="flex w-full justify-between px-2 my-2">
+            <div>0 - Entrada<br />1 - Saída</div>
+            <div className="border border-black px-2 py-1 font-bold text-lg">1</div>
+          </div>
+          <div className="font-bold">Nº {invoice.numero}</div>
+          <div className="font-bold">SÉRIE {invoice.serie}</div>
+        </div>
+
+        <div className="w-5/12 p-2 flex flex-col">
+          {renderBarcode(chave)}
+          <div className="font-bold text-center text-xs mt-2 mb-2">CHAVE DE ACESSO</div>
+          <div className="text-center font-mono text-xs bg-gray-100 p-1 border border-gray-200 rounded">
+            {chave ? formatChave(chave) : '0000 0000 0000 0000 0000 0000 0000 0000 0000 0000'}
+          </div>
+          <div className="mt-2 text-center text-[9px]">
+            Consulta de autenticidade no portal nacional da NF-e
+          </div>
+        </div>
+      </div>
+
+      <div className="border border-black flex mb-2">
+        <div className="w-7/12 p-1 border-r border-black">
+          <div className="text-[8px]">NATUREZA DA OPERAÇÃO</div>
+          <div className="font-bold">{String(natOp).toUpperCase()}</div>
+        </div>
+        <div className="w-5/12 p-1">
+          <div className="text-[8px]">PROTOCOLO DE AUTORIZAÇÃO DE USO</div>
+          <div className="font-bold">
+            {protocolo ? protocolo : '—'} {invoice.dataEmissao ? `- ${formatDate(invoice.dataEmissao)}` : ''}
+          </div>
+        </div>
+      </div>
+
+      <div className="border border-black flex mb-2">
+        <div className="w-4/12 p-1 border-r border-black">
+          <div className="text-[8px]">INSCRIÇÃO ESTADUAL</div>
+          <div className="font-bold">{invoice.emitente?.inscricaoEstadual}</div>
+        </div>
+        <div className="w-4/12 p-1 border-r border-black">
+          <div className="text-[8px]">INSC. ESTADUAL DO SUBST. TRIBUTÁRIO</div>
+          <div className="font-bold"></div>
+        </div>
+        <div className="w-4/12 p-1">
+          <div className="text-[8px]">CNPJ</div>
+          <div className="font-bold">{invoice.emitente?.cnpj}</div>
+        </div>
+      </div>
+
+      {/* Destinatario */}
+      <div className="font-bold text-xs bg-gray-200 border border-black border-b-0 p-1">DESTINATÁRIO / REMETENTE</div>
+      <div className="border border-black flex flex-wrap mb-2">
+        <div className="w-7/12 p-1 border-r border-b border-black">
+          <div className="text-[8px]">NOME / RAZÃO SOCIAL</div>
+          <div className="font-bold">{invoice.destinatario?.razaoSocial?.toUpperCase?.() || ''}</div>
+        </div>
+        <div className="w-3/12 p-1 border-r border-b border-black">
+          <div className="text-[8px]">CNPJ / CPF</div>
+          <div className="font-bold">{invoice.destinatario?.cnpj}</div>
+        </div>
+        <div className="w-2/12 p-1 border-b border-black">
+          <div className="text-[8px]">DATA DA EMISSÃO</div>
+          <div className="font-bold">{formatDate(invoice.dataEmissao)}</div>
+        </div>
+
+        <div className="w-6/12 p-1 border-r border-black">
+          <div className="text-[8px]">ENDEREÇO</div>
+          <div className="font-bold">
+            {invoice.destinatario?.endereco?.logradouro}, {invoice.destinatario?.endereco?.numero}
+          </div>
+        </div>
+        <div className="w-3/12 p-1 border-r border-black">
+          <div className="text-[8px]">BAIRRO / DISTRITO</div>
+          <div className="font-bold">{invoice.destinatario?.endereco?.bairro}</div>
+        </div>
+        <div className="w-1/12 p-1 border-r border-black">
+          <div className="text-[8px]">CEP</div>
+          <div className="font-bold">{invoice.destinatario?.endereco?.cep}</div>
+        </div>
+        <div className="w-2/12 p-1">
+          <div className="text-[8px]">DATA DE SAÍDA</div>
+          <div className="font-bold">{formatDate(invoice.dataEmissao)}</div>
+        </div>
+      </div>
+
+      {/* Totais */}
+      <div className="font-bold text-xs bg-gray-200 border border-black border-b-0 p-1">CÁLCULO DO IMPOSTO</div>
+      <div className="border border-black flex mb-2 flex-wrap">
+        <div className="w-[12.5%] p-1 border-r border-b border-black">
+          <div className="text-[8px]">BASE DE CÁLC. DO ICMS</div>
+          <div className="font-bold text-right">{formatCurrency(vBC)}</div>
+        </div>
+        <div className="w-[12.5%] p-1 border-r border-b border-black">
+          <div className="text-[8px]">VALOR DO ICMS</div>
+          <div className="font-bold text-right">{formatCurrency(vICMS)}</div>
+        </div>
+        <div className="w-[12.5%] p-1 border-r border-b border-black">
+          <div className="text-[8px]">BASE CÁLC. ICMS ST</div>
+          <div className="font-bold text-right">R$ 0,00</div>
+        </div>
+        <div className="w-[12.5%] p-1 border-r border-b border-black">
+          <div className="text-[8px]">VALOR DO ICMS ST</div>
+          <div className="font-bold text-right">R$ 0,00</div>
+        </div>
+        <div className="w-[12.5%] p-1 border-r border-b border-black">
+          <div className="text-[8px]">VALOR PIS</div>
+          <div className="font-bold text-right">{formatCurrency(vPIS)}</div>
+        </div>
+        <div className="w-[12.5%] p-1 border-r border-b border-black">
+          <div className="text-[8px]">VALOR COFINS</div>
+          <div className="font-bold text-right">{formatCurrency(vCOFINS)}</div>
+        </div>
+        <div className="w-[12.5%] p-1 border-r border-b border-black">
+          <div className="text-[8px]">VALOR TOTAL PROD.</div>
+          <div className="font-bold text-right">{formatCurrency(vProd)}</div>
+        </div>
+        <div className="w-[12.5%] p-1 border-b border-black">
+          <div className="text-[8px]">VALOR TOTAL NOTA</div>
+          <div className="font-bold text-right">{formatCurrency(vNF)}</div>
+        </div>
+
+        {/* Second Row Totals */}
+        <div className="w-[20%] p-1 border-r border-black">
+          <div className="text-[8px]">VALOR DO FRETE</div>
+          <div className="font-bold text-right">{formatCurrency(vFrete)}</div>
+        </div>
+        <div className="w-[20%] p-1 border-r border-black">
+          <div className="text-[8px]">VALOR DO SEGURO</div>
+          <div className="font-bold text-right">{formatCurrency(vSeg)}</div>
+        </div>
+        <div className="w-[20%] p-1 border-r border-black">
+          <div className="text-[8px]">DESCONTO</div>
+          <div className="font-bold text-right">{formatCurrency(vDesc)}</div>
+        </div>
+        <div className="w-[20%] p-1 border-r border-black">
+          <div className="text-[8px]">OUTRAS DESP.</div>
+          <div className="font-bold text-right">{formatCurrency(vOutro)}</div>
+        </div>
+        <div className="w-[20%] p-1">
+          <div className="text-[8px]">VALOR DO IPI</div>
+          <div className="font-bold text-right">{formatCurrency(vIPI)}</div>
+        </div>
+      </div>
+
+      {/* Produtos */}
+      <div className="font-bold text-xs bg-gray-200 border border-black border-b-0 p-1">DADOS DO PRODUTO / SERVIÇO</div>
+      <div className="border border-black mb-2 min-h-[300px]">
+        <table className="w-full text-left table-fixed">
+          <thead>
+            <tr className="border-b border-black">
+              <th className="text-[8px] font-normal p-1 w-[10%] border-r border-black">CÓDIGO</th>
+              <th className="text-[8px] font-normal p-1 w-[35%] border-r border-black">DESCRIÇÃO</th>
+              <th className="text-[8px] font-normal p-1 w-[6%] border-r border-black">NCM</th>
+              <th className="text-[8px] font-normal p-1 w-[5%] border-r border-black">CST</th>
+              <th className="text-[8px] font-normal p-1 w-[5%] border-r border-black">CFOP</th>
+              <th className="text-[8px] font-normal p-1 w-[5%] border-r border-black">UNID</th>
+              <th className="text-[8px] font-normal p-1 w-[6%] border-r border-black text-right">QTD</th>
+              <th className="text-[8px] font-normal p-1 w-[10%] border-r border-black text-right">V.UNIT</th>
+              <th className="text-[8px] font-normal p-1 w-[10%] text-right border-r border-black">V.TOTAL</th>
+              <th className="text-[8px] font-normal p-1 w-[5%] text-right border-r border-black">ICMS</th>
+              <th className="text-[8px] font-normal p-1 w-[3%] text-right">IPI</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(invoice.produtos || []).map((prod: any, i: number) => {
+              const tax = prod?.tax || {};
+              const crt = String(invoice.emitente?.crt ?? '');
+              const cstOuCsosn = crt === '1' ? (tax.csosn ?? '-') : (tax.cst ?? '-');
+
+              const qtd = typeof prod.quantidade === 'number'
+                ? prod.quantidade
+                : Number(String(prod.quantidade ?? '0').replace(',', '.'));
+
+              const vUnit = typeof prod.valorUnitario === 'number'
+                ? prod.valorUnitario
+                : Number(String(prod.valorUnitario ?? '0').replace(',', '.'));
+
+const vTot = typeof prod.valorTotal === 'number'
+  ? prod.valorTotal
+  : Number(String(prod.valorTotal ?? (qtd * vUnit)).replace(',', '.'));
+
+return (
+  <tr key={i} className="border-b border-gray-300">
+    <td className="p-1 border-r border-gray-300 w-[10%] whitespace-nowrap overflow-hidden text-ellipsis">
+      {prod.codigo}
+    </td>
+    <td className="p-1 border-r border-gray-300 w-[35%] overflow-hidden whitespace-nowrap text-ellipsis">
+      {prod.descricao}
+    </td>
+    <td className="p-1 border-r border-gray-300 w-[6%]">{prod.ncm}</td>
+    <td className="p-1 border-r border-gray-300 w-[5%]">{cstOuCsosn}</td>
+    <td className="p-1 border-r border-gray-300 w-[5%]">{prod.cfop}</td>
+    <td className="p-1 border-r border-gray-300 w-[5%]">{prod.unidade}</td>
+    <td className="p-1 border-r border-gray-300 w-[6%] text-right">{Number.isFinite(qtd) ? qtd : 0}</td>
+    <td className="p-1 border-r border-gray-300 w-[10%] text-right">{Number.isFinite(vUnit) ? vUnit.toFixed(2) : '0.00'}</td>
+    <td className="p-1 border-r border-gray-300 w-[10%] text-right">{Number.isFinite(vTot) ? vTot.toFixed(2) : '0.00'}</td>
+    
+    {/* CORREÇÃO AQUI: Adicionado { } em volta da lógica */}
+    <td className="p-1 border-r border-gray-300 w-[5%] text-right">
+      {(tax.aliquotaIcms ?? 0) > 0 ? `${tax.aliquotaIcms}%` : '-'}
+    </td>
+    
+    {/* CORREÇÃO AQUI TAMBÉM: Adicionado { } para não imprimir o código na tela */}
+    <td className="p-1 w-[3%] text-right">
+      {tax.aliquotaIpi ? `${tax.aliquotaIpi}%` : '-'}
+    </td>
+  </tr>
+);
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Dados Adicionais */}
+      <div className="font-bold text-xs bg-gray-200 border border-black border-b-0 p-1">DADOS ADICIONAIS</div>
+      <div className="border border-black h-24 p-1">
+        <div className="text-[8px]">INFORMAÇÕES COMPLEMENTARES</div>
+        <div className="text-[10px] whitespace-pre-wrap">
+          {(invoice as any).informacoesComplementares || ''}
+          {(invoice as any).finalidade === '2' && ` NOTA FISCAL COMPLEMENTAR REFERENTE À NF ${(invoice as any).refNFe}.`}
+          {(invoice as any).finalidade === '4' && ` NOTA FISCAL DE DEVOLUÇÃO REFERENTE À NF ${(invoice as any).refNFe}.`}
+        </div>
+      </div>
+
+      {(invoice as any).status === 'cancelled' && (
+        <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 border-4 border-red-500 text-red-500 font-bold text-6xl opacity-50 rotate-[-45deg] p-4 pointer-events-none">
+          CANCELADA
+        </div>
+      )}
     </div>
   );
 };
