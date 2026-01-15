@@ -1,234 +1,260 @@
-import { InvoiceData, Entity, Product, TaxDetails, PaymentMethod, CRT, InvoiceTotals } from '../types';
+import { InvoiceData, EnvironmentType, TaxDetails } from '../types';
+import { formatTimezoneDate, getIbgeUfCode } from '../utils/validators';
 
-export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        let xmlText = e.target?.result as string;
+const pad = (num: string | number, size: number): string => {
+  let s = String(num);
+  while (s.length < size) s = "0" + s;
+  return s;
+};
 
-        // === 1. LIMPEZA DE NAMESPACE (A CORREÇÃO DEFINITIVA) ===
-        // Remove xmlns="..." para que o parser trate como XML comum.
-        // Isso resolve o problema de não encontrar tags como 'infNFe', 'ICMSTot', etc.
-        xmlText = xmlText.replace(/ xmlns(:[a-z0-9]+)?="[^"]*"/g, ' ');
+const calculateDV = (baseKey: string): number => {
+  let sum = 0;
+  let weight = 2;
+  for (let i = baseKey.length - 1; i >= 0; i--) {
+    sum += parseInt(baseKey.charAt(i)) * weight;
+    weight++;
+    if (weight > 9) weight = 2;
+  }
+  const remainder = sum % 11;
+  const dv = 11 - remainder;
+  return dv >= 10 ? 0 : dv;
+};
 
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+export const generateAccessKey = (data: InvoiceData, env: EnvironmentType): string => {
+  const cUF = getIbgeUfCode(data.emitente.endereco.uf);
+  const today = new Date();
+  const AAMM = `${String(today.getFullYear()).slice(2)}${pad(today.getMonth() + 1, 2)}`;
+  const CNPJ = data.emitente.cnpj.replace(/\D/g, '');
+  const mod = '55';
+  const serie = pad(data.serie, 3);
+  const nNF = pad(data.numero, 9);
+  const tpEmis = '1';
+  const cNF = pad(Math.floor(Math.random() * 99999999), 8); 
+  
+  const baseKey = `${cUF}${AAMM}${CNPJ}${mod}${serie}${nNF}${tpEmis}${cNF}`;
+  const cDV = calculateDV(baseKey);
+  
+  return `${baseKey}${cDV}`;
+};
 
-        // Helper simples (agora funciona 100% pois o XML está limpo)
-        const getText = (parent: Element | Document | null, tag: string): string => {
-          if (!parent) return '';
-          const els = parent.getElementsByTagName(tag);
-          if (els.length > 0) return els[0].textContent || '';
-          return '';
-        };
+export const generateCancellationXml = (invoice: InvoiceData, reason: string, env: EnvironmentType): string => {
+    const cleanNum = (str: string) => str ? str.replace(/\D/g, '') : '';
+    const sanitize = (str: string) => str ? str.replace(/[&<>"']/g, '').trim() : '';
+    const cOrgao = getIbgeUfCode(invoice.emitente.endereco.uf);
+    const cnpj = cleanNum(invoice.emitente.cnpj);
+    const chNFe = invoice.chaveAcesso || '';
+    const dhEvento = formatTimezoneDate(new Date());
+    const tpEvento = '110111';
+    const nSeqEvento = '1';
+    const idEvento = `ID${tpEvento}${chNFe}${pad(nSeqEvento, 2)}`;
 
-        // Verifica validade
-        const infNFeList = xmlDoc.getElementsByTagName('infNFe');
-        if (!infNFeList.length) {
-          throw new Error("XML inválido: tag infNFe não encontrada.");
-        }
-        const infNFe = infNFeList[0];
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
+  <idLote>1</idLote>
+  <evento versao="1.00">
+    <infEvento Id="${idEvento}">
+      <cOrgao>${cOrgao}</cOrgao>
+      <tpAmb>${env}</tpAmb>
+      <CNPJ>${cnpj}</CNPJ>
+      <chNFe>${chNFe}</chNFe>
+      <dhEvento>${dhEvento}</dhEvento>
+      <tpEvento>${tpEvento}</tpEvento>
+      <nSeqEvento>${nSeqEvento}</nSeqEvento>
+      <verEvento>1.00</verEvento>
+      <detEvento versao="1.00">
+        <descEvento>Cancelamento</descEvento>
+        <nProt>135230000123456</nProt>
+        <xJust>${sanitize(reason)}</xJust>
+      </detEvento>
+    </infEvento>
+  </evento>
+</envEvento>`;
+};
 
-        // --- DADOS BÁSICOS ---
-        const ide = xmlDoc.getElementsByTagName('ide')[0];
-        const numero = getText(ide, 'nNF');
-        const serie = getText(ide, 'serie');
-        const dataEmissaoRaw = getText(ide, 'dhEmi');
-        const finalidade = (getText(ide, 'finNFe') || '1') as '1'|'2'|'3'|'4';
-
-        // --- EMITENTE ---
-        const emitTag = xmlDoc.getElementsByTagName('emit')[0];
-        const emitEndTag = emitTag.getElementsByTagName('enderEmit')[0];
-        const emitente: Entity = {
-          cnpj: getText(emitTag, 'CNPJ'),
-          razaoSocial: getText(emitTag, 'xNome'),
-          inscricaoEstadual: getText(emitTag, 'IE'),
-          crt: (getText(emitTag, 'CRT') || '1') as CRT,
-          endereco: {
-            logradouro: getText(emitEndTag, 'xLgr'),
-            numero: getText(emitEndTag, 'nro'),
-            bairro: getText(emitEndTag, 'xBairro'),
-            municipio: getText(emitEndTag, 'xMun'),
-            codigoIbge: getText(emitEndTag, 'cMun'),
-            uf: getText(emitEndTag, 'UF'),
-            cep: getText(emitEndTag, 'CEP')
-          }
-        };
-
-        // --- DESTINATÁRIO ---
-        const destTag = xmlDoc.getElementsByTagName('dest')[0];
-        let destinatario: Entity = { ...emitente, cnpj: '', razaoSocial: 'CONSUMIDOR', inscricaoEstadual: '', crt: '1' as CRT };
-        
-        if (destTag) {
-            const destEndTag = destTag.getElementsByTagName('enderDest')[0];
-            destinatario = {
-                cnpj: getText(destTag, 'CNPJ') || getText(destTag, 'CPF'),
-                razaoSocial: getText(destTag, 'xNome'),
-                inscricaoEstadual: getText(destTag, 'IE'),
-                crt: '1',
-                endereco: destEndTag ? {
-                    logradouro: getText(destEndTag, 'xLgr'),
-                    numero: getText(destEndTag, 'nro'),
-                    bairro: getText(destEndTag, 'xBairro'),
-                    municipio: getText(destEndTag, 'xMun'),
-                    codigoIbge: getText(destEndTag, 'cMun'),
-                    uf: getText(destEndTag, 'UF'),
-                    cep: getText(destEndTag, 'CEP')
-                } : emitente.endereco,
-                email: getText(destTag, 'email')
-            };
-        }
-
-        // --- PRODUTOS ---
-        const detTags = xmlDoc.getElementsByTagName('det');
-        const produtos: Product[] = [];
-
-        for (let i = 0; i < detTags.length; i++) {
-            const prod = detTags[i].getElementsByTagName('prod')[0];
-            const imposto = detTags[i].getElementsByTagName('imposto')[0];
-
-            // Busca grupos de imposto (agora sem namespace, é direto)
-            const icmsGroup = imposto?.getElementsByTagName('ICMS')[0]?.firstElementChild; 
-            const pisGroup = imposto?.getElementsByTagName('PIS')[0]?.firstElementChild;
-            const cofinsGroup = imposto?.getElementsByTagName('COFINS')[0]?.firstElementChild;
-            
-            // IPI pode ser IPITrib ou IPINT
-            let ipiGroup = imposto?.getElementsByTagName('IPITrib')[0];
-            if (!ipiGroup) ipiGroup = imposto?.getElementsByTagName('IPINT')[0];
-            
-            produtos.push({
-                id: crypto.randomUUID(),
-                codigo: getText(prod, 'cProd'),
-                descricao: getText(prod, 'xProd'),
-                ncm: getText(prod, 'NCM'),
-                cfop: getText(prod, 'CFOP'),
-                unidade: getText(prod, 'uCom'),
-                quantidade: parseFloat(getText(prod, 'qCom')),
-                valorUnitario: parseFloat(getText(prod, 'vUnCom')),
-                valorTotal: parseFloat(getText(prod, 'vProd')),
-                tax: {
-                    origem: getText(icmsGroup, 'orig') || '0',
-                    cst: getText(icmsGroup, 'CST') || getText(icmsGroup, 'CSOSN'),
-                    csosn: getText(icmsGroup, 'CSOSN'),
-                    aliquotaIcms: parseFloat(getText(icmsGroup, 'pICMS')) || 0,
-                    baseCalculoIcms: parseFloat(getText(icmsGroup, 'vBC')) || 0,
-                    valorIcms: parseFloat(getText(icmsGroup, 'vICMS')) || 0,
-                    
-                    cstPis: getText(pisGroup, 'CST') || '01',
-                    aliquotaPis: parseFloat(getText(pisGroup, 'pPIS')) || 0,
-                    baseCalculoPis: parseFloat(getText(pisGroup, 'vBC')) || 0,
-                    valorPis: parseFloat(getText(pisGroup, 'vPIS')) || 0,
-
-                    cstCofins: getText(cofinsGroup, 'CST') || '01',
-                    aliquotaCofins: parseFloat(getText(cofinsGroup, 'pCOFINS')) || 0,
-                    baseCalculoCofins: parseFloat(getText(cofinsGroup, 'vBC')) || 0,
-                    valorCofins: parseFloat(getText(cofinsGroup, 'vCOFINS')) || 0,
-
-                    cstIpi: getText(ipiGroup, 'CST'),
-                    aliquotaIpi: parseFloat(getText(ipiGroup, 'pIPI')) || 0,
-                    baseCalculoIpi: parseFloat(getText(ipiGroup, 'vBC')) || 0,
-                    valorIpi: parseFloat(getText(ipiGroup, 'vIPI')) || 0,
-                    codigoEnquadramento: getText(imposto, 'cEnq') || '999'
-                }
-            });
-        }
-
-        // --- TOTAIS ---
-        const icmsTot = xmlDoc.getElementsByTagName('ICMSTot')[0];
-        const totais: InvoiceTotals = {
-            vBC: icmsTot ? parseFloat(getText(icmsTot, 'vBC')) : 0,
-            vICMS: icmsTot ? parseFloat(getText(icmsTot, 'vICMS')) : 0,
-            vProd: icmsTot ? parseFloat(getText(icmsTot, 'vProd')) : 0,
-            vFrete: icmsTot ? parseFloat(getText(icmsTot, 'vFrete')) : 0,
-            vSeg: icmsTot ? parseFloat(getText(icmsTot, 'vSeg')) : 0,
-            vDesc: icmsTot ? parseFloat(getText(icmsTot, 'vDesc')) : 0,
-            vIPI: icmsTot ? parseFloat(getText(icmsTot, 'vIPI')) : 0,
-            vPIS: icmsTot ? parseFloat(getText(icmsTot, 'vPIS')) : 0,
-            vCOFINS: icmsTot ? parseFloat(getText(icmsTot, 'vCOFINS')) : 0,
-            vOutro: icmsTot ? parseFloat(getText(icmsTot, 'vOutro')) : 0,
-            vNF: icmsTot ? parseFloat(getText(icmsTot, 'vNF')) : 0,
-        };
-
-        // --- PAGAMENTO ---
-        const pagTags = xmlDoc.getElementsByTagName('detPag');
-        const pagamento: PaymentMethod[] = [];
-        if (pagTags.length > 0) {
-            for (let i = 0; i < pagTags.length; i++) {
-                pagamento.push({
-                    tPag: getText(pagTags[i], 'tPag'),
-                    vPag: parseFloat(getText(pagTags[i], 'vPag')) || 0
-                });
-            }
+// Helper to generate Tax XML Block based on CRT/CST/CSOSN
+const generateTaxXml = (tax: TaxDetails, crt: string, itemTotal: number) => {
+    let icmsBlock = '';
+    
+    if (crt === '1') {
+        const csosn = tax.csosn || '102';
+        if (csosn === '101') {
+             icmsBlock = `<ICMSSN101><orig>${tax.origem}</orig><CSOSN>101</CSOSN><pCredSN>${tax.aliquotaIcms.toFixed(2)}</pCredSN><vCredICMSSN>${(itemTotal * tax.aliquotaIcms / 100).toFixed(2)}</vCredICMSSN></ICMSSN101>`;
         } else {
-            pagamento.push({ tPag: '90', vPag: 0 });
+             icmsBlock = `<ICMSSN102><orig>${tax.origem}</orig><CSOSN>${csosn}</CSOSN></ICMSSN102>`;
         }
+    } else {
+        const cst = tax.cst || '00';
+        if (cst === '00') {
+            icmsBlock = `<ICMS00><orig>${tax.origem}</orig><CST>00</CST><modBC>3</modBC><vBC>${tax.baseCalculoIcms.toFixed(2)}</vBC><pICMS>${tax.aliquotaIcms.toFixed(2)}</pICMS><vICMS>${tax.valorIcms.toFixed(2)}</vICMS></ICMS00>`;
+        } else if (cst === '40' || cst === '41') {
+            icmsBlock = `<ICMS40><orig>${tax.origem}</orig><CST>${cst}</CST></ICMS40>`;
+        } else {
+             icmsBlock = `<ICMS90><orig>${tax.origem}</orig><CST>90</CST><modBC>3</modBC><vBC>${tax.baseCalculoIcms.toFixed(2)}</vBC><pICMS>${tax.aliquotaIcms.toFixed(2)}</pICMS><vICMS>${tax.valorIcms.toFixed(2)}</vICMS></ICMS90>`;
+        }
+    }
 
-        // --- INFO ADICIONAL ---
-        const infAdic = xmlDoc.getElementsByTagName('infAdic')[0];
-        const informacoesComplementares = getText(infAdic, 'infCpl');
+    // IPI Block
+    let ipiBlock = '';
+    if (tax.cstIpi && ['00','49','50','99'].includes(tax.cstIpi)) {
+        ipiBlock = `<IPI><cEnq>${tax.codigoEnquadramento || '999'}</cEnq><IPITrib><CST>${tax.cstIpi}</CST><vBC>${(tax.baseCalculoIpi || 0).toFixed(2)}</vBC><pIPI>${(tax.aliquotaIpi || 0).toFixed(2)}</pIPI><vIPI>${(tax.valorIpi || 0).toFixed(2)}</vIPI></IPITrib></IPI>`;
+    } else {
+        ipiBlock = `<IPI><cEnq>${tax.codigoEnquadramento || '999'}</cEnq><IPINT><CST>${tax.cstIpi || '53'}</CST></IPINT></IPI>`;
+    }
 
-        // --- STATUS E PROTOCOLO (CORREÇÃO: Busca global por protNFe) ---
-        let status: 'editing' | 'authorized' | 'cancelled' = 'editing';
-        let protocoloAutorizacao = '';
-
-        // Como limpamos o namespace, agora getElementsByTagName('protNFe') funciona
-        // mesmo se ele estiver fora da tag NFe (o que é padrão no nfeProc)
-        const protNFe = xmlDoc.getElementsByTagName('protNFe')[0];
-        
-        if (protNFe) {
-            const infProt = protNFe.getElementsByTagName('infProt')[0];
-            const cStat = getText(infProt, 'cStat');
-            
-            if (cStat === '100') {
-                status = 'authorized';
-                protocoloAutorizacao = getText(infProt, 'nProt');
-            } else if (cStat === '101') {
-                status = 'cancelled';
-                protocoloAutorizacao = getText(infProt, 'nProt');
+    return `
+    <imposto>
+        <vTotTrib>0.00</vTotTrib>
+        <ICMS>${icmsBlock}</ICMS>
+        ${ipiBlock}
+        <PIS>
+            ${['01','02'].includes(tax.cstPis) ? 
+                `<PISAliq><CST>${tax.cstPis}</CST><vBC>${tax.baseCalculoPis.toFixed(2)}</vBC><pPIS>${tax.aliquotaPis.toFixed(2)}</pPIS><vPIS>${tax.valorPis.toFixed(2)}</vPIS></PISAliq>` : 
+                `<PISNT><CST>${tax.cstPis}</CST></PISNT>`
             }
-        }
+        </PIS>
+        <COFINS>
+            ${['01','02'].includes(tax.cstCofins) ? 
+                `<COFINSAliq><CST>${tax.cstCofins}</CST><vBC>${tax.baseCalculoCofins.toFixed(2)}</vBC><pCOFINS>${tax.aliquotaCofins.toFixed(2)}</pCOFINS><vCOFINS>${tax.valorCofins.toFixed(2)}</vCOFINS></COFINSAliq>` : 
+                `<COFINSNT><CST>${tax.cstCofins}</CST></COFINSNT>`
+            }
+        </COFINS>
+    </imposto>`;
+};
 
-        const chaveAcesso = infNFe.getAttribute('Id')?.replace('NFe', '') || '';
-        const transp = xmlDoc.getElementsByTagName('transp')[0];
-        const modFreteRaw = getText(transp, 'modFrete');
-        const modalidadeFrete = (['0','1','9'].includes(modFreteRaw) ? modFreteRaw : '9') as "0"|"1"|"9";
+export const generateNfeXml = (data: InvoiceData, env: EnvironmentType): string => {
+  const sanitize = (str: string) => str ? str.replace(/[&<>"']/g, '').trim() : '';
+  const cleanNum = (str: string) => str ? str.replace(/\D/g, '') : '';
+  
+  const emitCnpj = cleanNum(data.emitente.cnpj);
+  const destCnpj = cleanNum(data.destinatario.cnpj);
+  const cUF = getIbgeUfCode(data.emitente.endereco.uf);
+  const cMunEmit = cleanNum(data.emitente.endereco.codigoIbge);
+  const cMunDest = cleanNum(data.destinatario.endereco.codigoIbge);
+  
+  const accessKey = data.chaveAcesso || generateAccessKey(data, env);
+  const cNF = accessKey.substring(35, 43);
+  const cDV = accessKey.substring(43, 44);
+  const dhEmi = formatTimezoneDate(new Date());
 
-        // Objeto final
-        const invoiceObj = {
-          id: crypto.randomUUID(),
-          numero,
-          serie,
-          dataEmissao: dataEmissaoRaw,
-          emitente,
-          destinatario,
-          produtos,
-          totais,
-          globalValues: {
-            frete: totais.vFrete || 0,
-            seguro: totais.vSeg || 0,
-            desconto: totais.vDesc || 0,
-            outrasDespesas: totais.vOutro || 0,
-            modalidadeFrete: modalidadeFrete
-          },
-          pagamento,
-          informacoesComplementares,
-          status,
-          chaveAcesso,
-          protocoloAutorizacao, // O arquivo Types.ts não tem isso, mas precisamos passar pro Danfe
-          xmlAssinado: e.target?.result as string, // Salva o ORIGINAL (com namespace) para assinatura válida
-          finalidade
-        };
+  const prodXml = data.produtos.map((prod, index) => `
+        <det nItem="${index + 1}">
+            <prod>
+                <cProd>${sanitize(prod.codigo)}</cProd>
+                <cEAN>${sanitize(prod.gtin) || 'SEM GTIN'}</cEAN>
+                <xProd>${sanitize(prod.descricao)}</xProd>
+                <NCM>${cleanNum(prod.ncm)}</NCM>
+                <CFOP>${cleanNum(prod.cfop)}</CFOP>
+                <uCom>${sanitize(prod.unidade)}</uCom>
+                <qCom>${prod.quantidade.toFixed(4)}</qCom>
+                <vUnCom>${prod.valorUnitario.toFixed(10)}</vUnCom>
+                <vProd>${prod.valorTotal.toFixed(2)}</vProd>
+                <cEANTrib>${sanitize(prod.gtin) || 'SEM GTIN'}</cEANTrib>
+                <uTrib>${sanitize(prod.unidade)}</uTrib>
+                <qTrib>${prod.quantidade.toFixed(4)}</qTrib>
+                <vUnTrib>${prod.valorUnitario.toFixed(10)}</vUnTrib>
+                <indTot>1</indTot>
+            </prod>
+            ${generateTaxXml(prod.tax, data.emitente.crt, prod.valorTotal)}
+        </det>`).join('');
 
-        // Casting "as unknown" para o TypeScript não reclamar do campo extra protocoloAutorizacao
-        resolve(invoiceObj as unknown as InvoiceData);
+  const pagXml = data.pagamento.map(pag => `
+      <detPag>
+        <tPag>${pag.tPag}</tPag>
+        <vPag>${pag.vPag.toFixed(2)}</vPag>
+      </detPag>`).join('');
 
-      } catch (err) {
-        console.error("Erro ao importar XML:", err);
-        reject(new Error("Erro ao ler o arquivo XML. Verifique o console para detalhes."));
-      }
-    };
-    reader.onerror = (error) => reject(error);
-    reader.readAsText(file);
-  });
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<NFe xmlns="http://www.portalfiscal.inf.br/nfe">
+    <infNFe Id="NFe${accessKey}" versao="4.00">
+        <ide>
+            <cUF>${cUF}</cUF>
+            <cNF>${cNF}</cNF>
+            <natOp>VENDA DE MERCADORIA</natOp>
+            <mod>55</mod>
+            <serie>${parseInt(data.serie)}</serie>
+            <nNF>${parseInt(data.numero)}</nNF>
+            <dhEmi>${dhEmi}</dhEmi>
+            <tpNF>1</tpNF>
+            <idDest>${data.destinatario.endereco.uf === 'EX' ? '3' : (data.destinatario.endereco.uf === data.emitente.endereco.uf ? '1' : '2')}</idDest>
+            <cMunFG>${cMunEmit}</cMunFG>
+            <tpImp>1</tpImp>
+            <tpEmis>1</tpEmis>
+            <cDV>${cDV}</cDV>
+            <tpAmb>${env}</tpAmb>
+            <finNFe>${data.finalidade}</finNFe>
+            <indFinal>1</indFinal>
+            <indPres>1</indPres>
+            <indIntermed>0</indIntermed>
+            <procEmi>0</procEmi>
+            <verProc>NFe 1.0</verProc>
+        </ide>
+        <emit>
+            <CNPJ>${emitCnpj}</CNPJ>
+            <xNome>${sanitize(data.emitente.razaoSocial)}</xNome>
+            <enderEmit>
+                <xLgr>${sanitize(data.emitente.endereco.logradouro)}</xLgr>
+                <nro>${sanitize(data.emitente.endereco.numero)}</nro>
+                <xBairro>${sanitize(data.emitente.endereco.bairro)}</xBairro>
+                <cMun>${cMunEmit}</cMun>
+                <xMun>${sanitize(data.emitente.endereco.municipio)}</xMun>
+                <UF>${sanitize(data.emitente.endereco.uf)}</UF>
+                <CEP>${cleanNum(data.emitente.endereco.cep)}</CEP>
+                <cPais>1058</cPais>
+                <xPais>BRASIL</xPais>
+            </enderEmit>
+            <IE>${cleanNum(data.emitente.inscricaoEstadual)}</IE>
+            <CRT>${data.emitente.crt}</CRT>
+        </emit>
+        <dest>
+            <CNPJ>${destCnpj}</CNPJ>
+            <xNome>${sanitize(data.destinatario.razaoSocial)}</xNome>
+            <enderDest>
+                <xLgr>${sanitize(data.destinatario.endereco.logradouro)}</xLgr>
+                <nro>${sanitize(data.destinatario.endereco.numero)}</nro>
+                <xBairro>${sanitize(data.destinatario.endereco.bairro)}</xBairro>
+                <cMun>${cMunDest}</cMun>
+                <xMun>${sanitize(data.destinatario.endereco.municipio)}</xMun>
+                <UF>${sanitize(data.destinatario.endereco.uf)}</UF>
+                <CEP>${cleanNum(data.destinatario.endereco.cep)}</CEP>
+                <cPais>1058</cPais>
+                <xPais>BRASIL</xPais>
+            </enderDest>
+            <indIEDest>1</indIEDest>
+            <IE>${cleanNum(data.destinatario.inscricaoEstadual)}</IE>
+        </dest>
+        ${prodXml}
+        <total>
+            <ICMSTot>
+                <vBC>${data.totais.vBC.toFixed(2)}</vBC>
+                <vICMS>${data.totais.vICMS.toFixed(2)}</vICMS>
+                <vICMSDeson>0.00</vICMSDeson>
+                <vFCP>0.00</vFCP>
+                <vBCST>0.00</vBCST>
+                <vST>0.00</vST>
+                <vFCPST>0.00</vFCPST>
+                <vFCPSTRet>0.00</vFCPSTRet>
+                <vProd>${data.totais.vProd.toFixed(2)}</vProd>
+                <vFrete>${data.totais.vFrete.toFixed(2)}</vFrete>
+                <vSeg>${data.totais.vSeg.toFixed(2)}</vSeg>
+                <vDesc>${data.totais.vDesc.toFixed(2)}</vDesc>
+                <vII>0.00</vII>
+                <vIPI>${data.totais.vIPI.toFixed(2)}</vIPI>
+                <vIPIDevol>0.00</vIPIDevol>
+                <vPIS>${data.totais.vPIS.toFixed(2)}</vPIS>
+                <vCOFINS>${data.totais.vCOFINS.toFixed(2)}</vCOFINS>
+                <vOutro>${data.totais.vOutro.toFixed(2)}</vOutro>
+                <vNF>${data.totais.vNF.toFixed(2)}</vNF>
+            </ICMSTot>
+        </total>
+        <transp>
+            <modFrete>${data.globalValues?.modalidadeFrete || '9'}</modFrete>
+        </transp>
+        <pag>
+            ${pagXml}
+        </pag>
+        <infAdic>
+            <infCpl>${sanitize(data.informacoesComplementares)}</infCpl>
+        </infAdic>
+    </infNFe>
+</NFe>`;
 };
