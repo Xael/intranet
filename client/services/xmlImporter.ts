@@ -10,7 +10,6 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(xmlText, "text/xml");
 
-        // Helper para pegar texto de forma segura (previne erro se a tag não existir)
         const getText = (parent: Element | Document | null, tag: string): string => {
           if (!parent) return '';
           const collection = parent.getElementsByTagName(tag);
@@ -20,16 +19,33 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
           return '';
         };
 
-        // Verifica se é uma NFe válida (procura por infNFe em qualquer nível, funciona para nfeProc)
         const infNFeList = xmlDoc.getElementsByTagName('infNFe');
         if (!infNFeList.length) {
           throw new Error("Arquivo XML inválido: Tag <infNFe> não encontrada.");
         }
         
-        // Usa o primeiro infNFe encontrado como raiz para buscas
         const infNFe = infNFeList[0]; 
 
-        // 1. Dados Básicos (Ide) - Busca dentro de infNFe para evitar conflito
+        // --- VERIFICAÇÃO DE STATUS (NOVO) ---
+        // Se tiver a tag protNFe, significa que é uma nota processada/autorizada
+        const protNFe = xmlDoc.getElementsByTagName('protNFe');
+        let statusNota: any = 'editing'; // Padrão
+        let protocoloAutorizacao = '';
+        let dataAutorizacao = '';
+
+        if (protNFe.length > 0) {
+            const infProt = protNFe[0].getElementsByTagName('infProt')[0];
+            const cStat = getText(infProt, 'cStat');
+            // 100 = Autorizado
+            if (cStat === '100') {
+                statusNota = 'authorized';
+                protocoloAutorizacao = getText(infProt, 'nProt');
+                dataAutorizacao = getText(infProt, 'dhRecbto');
+            }
+        }
+        // -------------------------------------
+
+        // 1. Dados Básicos
         const ide = infNFe.getElementsByTagName('ide')[0];
         if (!ide) throw new Error("Tag <ide> não encontrada no XML.");
 
@@ -37,7 +53,6 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
         const serie = getText(ide, 'serie');
         const dataEmissaoRaw = getText(ide, 'dhEmi') || new Date().toISOString();
         const finalidade = getText(ide, 'finNFe') as '1'|'2'|'3'|'4';
-        // const natOp = getText(ide, 'natOp'); // Removido pois não existe no types.ts
         
         // 2. Emitente
         const emitTag = infNFe.getElementsByTagName('emit')[0];
@@ -82,8 +97,7 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
               }
             };
         } else {
-            // Fallback para consumidor final/sem cadastro
-            destinatario = { ...emitente, id: crypto.randomUUID(), razaoSocial: 'CONSUMIDOR (SEM CADASTRO)', cnpj: '', inscricaoEstadual: '' }; 
+            destinatario = { ...emitente, id: crypto.randomUUID(), razaoSocial: 'CONSUMIDOR', cnpj: '', inscricaoEstadual: '' }; 
         }
 
         // 4. Produtos
@@ -95,9 +109,8 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
           const prod = det.getElementsByTagName('prod')[0];
           const imposto = det.getElementsByTagName('imposto')[0];
 
-          // Logica robusta para impostos (pega o primeiro filho de ICMS, PIS, etc.)
           const icmsGroup = imposto?.getElementsByTagName('ICMS')[0];
-          const icmsTag = icmsGroup?.firstElementChild; // Ex: ICMSSN102, ICMS00
+          const icmsTag = icmsGroup?.firstElementChild; 
 
           const pisGroup = imposto?.getElementsByTagName('PIS')[0];
           const pisTag = pisGroup?.firstElementChild; 
@@ -110,23 +123,19 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
 
           const taxDetails: TaxDetails = {
              origem: getText(icmsTag, 'orig') || '0',
-             // ICMS
              cst: getText(icmsTag, 'CST'),
              csosn: getText(icmsTag, 'CSOSN'),
              baseCalculoIcms: parseFloat(getText(icmsTag, 'vBC')) || 0,
              aliquotaIcms: parseFloat(getText(icmsTag, 'pICMS')) || 0,
              valorIcms: parseFloat(getText(icmsTag, 'vICMS')) || 0,
-             // PIS
              cstPis: getText(pisTag, 'CST'),
              baseCalculoPis: parseFloat(getText(pisTag, 'vBC')) || 0,
              aliquotaPis: parseFloat(getText(pisTag, 'pPIS')) || 0,
              valorPis: parseFloat(getText(pisTag, 'vPIS')) || 0,
-             // COFINS
              cstCofins: getText(cofinsTag, 'CST'),
              baseCalculoCofins: parseFloat(getText(cofinsTag, 'vBC')) || 0,
              aliquotaCofins: parseFloat(getText(cofinsTag, 'pCOFINS')) || 0,
              valorCofins: parseFloat(getText(cofinsTag, 'vCOFINS')) || 0,
-             // IPI
              cstIpi: getText(ipiTag, 'CST'),
              baseCalculoIpi: parseFloat(getText(ipiTag, 'vBC')) || 0,
              aliquotaIpi: parseFloat(getText(ipiTag, 'pIPI')) || 0,
@@ -156,31 +165,25 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
         const pagTag = infNFe.getElementsByTagName('pag')[0];
         const detPagList = pagTag?.getElementsByTagName('detPag');
         const pagamento: PaymentMethod[] = [];
-        
         if (detPagList) {
             for(let i=0; i< detPagList.length; i++) {
                 const p = detPagList[i];
                 pagamento.push({
                     tPag: getText(p, 'tPag'),
                     vPag: parseFloat(getText(p, 'vPag')) || 0,
-                    // card: removido pois não existe no types.ts PaymentMethod
                 });
             }
         }
 
-        // 7. Info Adicional
         const infAdic = infNFe.getElementsByTagName('infAdic')[0];
         const informacoesComplementares = getText(infAdic, 'infCpl');
-        
-        // Chave e ID
         const chaveAcesso = infNFe.getAttribute('Id')?.replace('NFe', '') || '';
 
-        // Monta objeto final
+        // Monta o objeto final com o status correto e eventos se houver
         const invoice: InvoiceData = {
           id: crypto.randomUUID(),
           numero,
           serie,
-          // natOp: removido pois não existe no types.ts InvoiceData
           dataEmissao: dataEmissaoRaw,
           emitente,
           destinatario,
@@ -207,10 +210,18 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
           },
           pagamento,
           informacoesComplementares,
-          status: 'editing',
+          status: statusNota, // 'authorized' ou 'editing'
           chaveAcesso,
           xmlAssinado: xmlText, 
-          finalidade
+          finalidade,
+          // Se autorizada, preenche o histórico
+          protocoloAutorizacao: protocoloAutorizacao || undefined,
+          historicoEventos: statusNota === 'authorized' ? [{
+              tipo: 'autorizacao' as any,
+              data: dataAutorizacao || new Date().toISOString(),
+              detalhe: 'Importado via XML Autorizado',
+              protocolo: protocoloAutorizacao
+          }] : []
         };
 
         resolve(invoice);
