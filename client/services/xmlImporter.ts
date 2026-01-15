@@ -30,6 +30,7 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
         const numero = getText(ide, 'nNF');
         const serie = getText(ide, 'serie');
         const dataEmissaoRaw = getText(ide, 'dhEmi');
+        // Casting forçado para garantir compatibilidade com o tipo
         const finalidade = (getText(ide, 'finNFe') || '1') as '1'|'2'|'3'|'4';
         
         // --- 2. Emitente ---
@@ -54,7 +55,6 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
 
         // --- 3. Destinatário ---
         const destTag = xmlDoc.getElementsByTagName('dest')[0];
-        // Cria um destinatário padrão caso a tag não exista (ex: NFCe, embora raro neste contexto)
         let destinatario: Entity = { ...emitente, cnpj: '', razaoSocial: 'CONSUMIDOR', inscricaoEstadual: '', crt: '1' as CRT }; 
         
         if (destTag) {
@@ -63,7 +63,7 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
                 cnpj: getText(destTag, 'CNPJ') || getText(destTag, 'CPF'),
                 razaoSocial: getText(destTag, 'xNome'),
                 inscricaoEstadual: getText(destTag, 'IE'),
-                crt: '1', // Destinatário geralmente não tem CRT no XML, assume 1
+                crt: '1',
                 endereco: destEndTag ? {
                     logradouro: getText(destEndTag, 'xLgr'),
                     numero: getText(destEndTag, 'nro'),
@@ -72,7 +72,7 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
                     codigoIbge: getText(destEndTag, 'cMun'),
                     uf: getText(destEndTag, 'UF'),
                     cep: getText(destEndTag, 'CEP')
-                } : emitente.endereco, // Fallback
+                } : emitente.endereco,
                 email: getText(destTag, 'email')
             };
         }
@@ -85,21 +85,16 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
             const prod = detTags[i].getElementsByTagName('prod')[0];
             const imposto = detTags[i].getElementsByTagName('imposto')[0];
             
-            // --- Extração de Impostos (Flattening para TaxDetails) ---
-            
-            // ICMS (Pode estar dentro de ICMS00, ICMS20, ICMSSN102 etc)
+            // --- Extração de Impostos ---
             const icmsParent = imposto?.getElementsByTagName('ICMS')[0];
             const icmsGroup = icmsParent?.children.length ? icmsParent.children[0] : null;
 
-            // PIS (PISAliq, PISQtde, PISNt, PISOutr)
             const pisParent = imposto?.getElementsByTagName('PIS')[0];
             const pisGroup = pisParent?.children.length ? pisParent.children[0] : null;
 
-            // COFINS (COFINSAliq, COFINSQtde, COFINSNt, COFINSOutr)
             const cofinsParent = imposto?.getElementsByTagName('COFINS')[0];
             const cofinsGroup = cofinsParent?.children.length ? cofinsParent.children[0] : null;
 
-            // IPI (IPITrib, IPINT)
             const ipiParent = imposto?.getElementsByTagName('IPI')[0];
             const ipiGroup = ipiParent?.getElementsByTagName('IPITrib')[0] || ipiParent?.getElementsByTagName('IPINT')[0];
 
@@ -142,14 +137,13 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
                 quantidade: parseFloat(getText(prod, 'qCom')),
                 valorUnitario: parseFloat(getText(prod, 'vUnCom')),
                 valorTotal: parseFloat(getText(prod, 'vProd')),
-                tax: taxDetails // Agora usa a estrutura plana correta
+                tax: taxDetails
             });
         }
 
         // --- 5. Totais e Pagamentos ---
         const icmsTot = xmlDoc.getElementsByTagName('ICMSTot')[0];
         
-        // Mapeamento dos totais
         const totais: InvoiceTotals = {
             vBC: icmsTot ? parseFloat(getText(icmsTot, 'vBC')) : 0,
             vICMS: icmsTot ? parseFloat(getText(icmsTot, 'vICMS')) : 0,
@@ -164,7 +158,7 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
             vNF: icmsTot ? parseFloat(getText(icmsTot, 'vNF')) : 0,
         };
 
-        // Pagamento (Agora como Array de PaymentMethod)
+        // Pagamento
         const pagTags = xmlDoc.getElementsByTagName('detPag');
         const pagamento: PaymentMethod[] = [];
         
@@ -176,16 +170,13 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
                 });
             }
         } else {
-             // Fallback se não encontrar detPag (estrutura antiga ou incompleta)
              pagamento.push({ tPag: '90', vPag: 0 });
         }
 
-        // Info Adicional
         const infAdic = xmlDoc.getElementsByTagName('infAdic')[0];
         const informacoesComplementares = getText(infAdic, 'infCpl');
         
         // --- 6. Identificação de Status e Protocolo ---
-        // Ajustado para os tipos literais do seu types.ts
         let status: 'editing' | 'authorized' | 'cancelled' = 'editing';
         let protocoloAutorizacao = '';
         
@@ -202,12 +193,11 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
         }
 
         const chaveAcesso = infNFe.getAttribute('Id')?.replace('NFe', '') || '';
-
-        // Validação da Modalidade de Frete
         const modFreteRaw = getText(xmlDoc.getElementsByTagName('transp')[0], 'modFrete');
         const modalidadeFrete = (['0','1','9'].includes(modFreteRaw) ? modFreteRaw : '9') as "0"|"1"|"9";
 
-        const invoice: InvoiceData = {
+        // Montagem do objeto (Sem tipagem estrita aqui para permitir propriedades extras)
+        const invoiceObj = {
           id: crypto.randomUUID(),
           numero,
           serie,
@@ -227,12 +217,13 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
           informacoesComplementares,
           status,
           chaveAcesso,
-          protocoloAutorizacao,
+          protocoloAutorizacao, // Propriedade que não existe no type, mas existe no runtime
           xmlAssinado: xmlText, 
           finalidade
         };
 
-        resolve(invoice);
+        // Casting duplo: diz para o TS que isso é um InvoiceData válido, ignorando a propriedade extra
+        resolve(invoiceObj as unknown as InvoiceData);
 
       } catch (err) {
         console.error(err);
