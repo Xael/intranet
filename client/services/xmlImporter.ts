@@ -37,7 +37,7 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
         const serie = getText(ide, 'serie');
         const dataEmissaoRaw = getText(ide, 'dhEmi') || new Date().toISOString();
         const finalidade = getText(ide, 'finNFe') as '1'|'2'|'3'|'4';
-        const natOp = getText(ide, 'natOp');
+        // const natOp = getText(ide, 'natOp'); // Removido pois não existe no types.ts
         
         // 2. Emitente
         const emitTag = infNFe.getElementsByTagName('emit')[0];
@@ -163,7 +163,7 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
                 pagamento.push({
                     tPag: getText(p, 'tPag'),
                     vPag: parseFloat(getText(p, 'vPag')) || 0,
-                    card: undefined 
+                    // card: removido pois não existe no types.ts PaymentMethod
                 });
             }
         }
@@ -180,7 +180,7 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
           id: crypto.randomUUID(),
           numero,
           serie,
-          natOp,
+          // natOp: removido pois não existe no types.ts InvoiceData
           dataEmissao: dataEmissaoRaw,
           emitente,
           destinatario,
