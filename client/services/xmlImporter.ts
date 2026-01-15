@@ -9,33 +9,47 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(xmlText, "text/xml");
 
-        // Helper seguro para pegar texto de tags (busca em qualquer profundidade dentro do pai)
-        const getText = (parent: Element | Document | null, tag: string): string => {
-          if (!parent) return '';
-          const els = parent.getElementsByTagName(tag);
-          if (els.length > 0) return els[0].textContent || '';
-          return '';
+        // === HELPER PODEROSO PARA IGNORAR NAMESPACES ===
+        // Isso resolve o problema de não encontrar tags por causa do xmlns
+        const findTag = (parent: Document | Element | null, tagName: string): Element | null => {
+          if (!parent) return null;
+          
+          // 1. Tenta busca padrão
+          const collection = parent.getElementsByTagName(tagName);
+          if (collection.length > 0) return collection[0];
+
+          // 2. Tenta busca pelo 'localName' (ignora prefixos como nfe:)
+          const allElements = parent.getElementsByTagName('*');
+          for (let i = 0; i < allElements.length; i++) {
+            if (allElements[i].localName === tagName) {
+              return allElements[i];
+            }
+          }
+          return null;
+        };
+
+        // Helper para pegar texto usando a busca segura acima
+        const getText = (parent: Document | Element | null, tagName: string): string => {
+          const el = findTag(parent, tagName);
+          return el ? el.textContent || '' : '';
         };
 
         // Verifica se é um XML de NFe válido
-        const infNFeList = xmlDoc.getElementsByTagName('infNFe');
-        if (!infNFeList.length) {
-          throw new Error("Arquivo XML inválido ou não é uma NF-e.");
+        const infNFe = findTag(xmlDoc, 'infNFe');
+        if (!infNFe) {
+          throw new Error("Arquivo XML inválido ou não é uma NF-e (infNFe não encontrado).");
         }
         
-        const infNFe = infNFeList[0];
-        
         // --- 1. Dados Básicos ---
-        const ide = xmlDoc.getElementsByTagName('ide')[0];
+        const ide = findTag(xmlDoc, 'ide');
         const numero = getText(ide, 'nNF');
         const serie = getText(ide, 'serie');
         const dataEmissaoRaw = getText(ide, 'dhEmi');
-        // Casting forçado para garantir compatibilidade com o tipo
         const finalidade = (getText(ide, 'finNFe') || '1') as '1'|'2'|'3'|'4';
         
         // --- 2. Emitente ---
-        const emitTag = xmlDoc.getElementsByTagName('emit')[0];
-        const emitEndTag = emitTag.getElementsByTagName('enderEmit')[0];
+        const emitTag = findTag(xmlDoc, 'emit');
+        const emitEndTag = findTag(emitTag, 'enderEmit');
         
         const emitente: Entity = {
           cnpj: getText(emitTag, 'CNPJ'),
@@ -54,11 +68,12 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
         };
 
         // --- 3. Destinatário ---
-        const destTag = xmlDoc.getElementsByTagName('dest')[0];
+        const destTag = findTag(xmlDoc, 'dest');
+        // Cria um destinatário padrão caso a tag não exista
         let destinatario: Entity = { ...emitente, cnpj: '', razaoSocial: 'CONSUMIDOR', inscricaoEstadual: '', crt: '1' as CRT }; 
         
         if (destTag) {
-            const destEndTag = destTag.getElementsByTagName('enderDest')[0];
+            const destEndTag = findTag(destTag, 'enderDest');
             destinatario = {
                 cnpj: getText(destTag, 'CNPJ') || getText(destTag, 'CPF'),
                 razaoSocial: getText(destTag, 'xNome'),
@@ -78,25 +93,29 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
         }
 
         // --- 4. Produtos ---
-        const detTags = xmlDoc.getElementsByTagName('det');
+        // Aqui usamos getElementsByTagName('*') filtrando por localName 'det' para pegar todos os itens
+        const allElements = xmlDoc.getElementsByTagName('*');
+        const detTags: Element[] = [];
+        for (let i = 0; i < allElements.length; i++) {
+            if (allElements[i].localName === 'det') detTags.push(allElements[i]);
+        }
+
         const produtos: Product[] = [];
         
-        for (let i = 0; i < detTags.length; i++) {
-            const prod = detTags[i].getElementsByTagName('prod')[0];
-            const imposto = detTags[i].getElementsByTagName('imposto')[0];
+        for (const det of detTags) {
+            const prod = findTag(det, 'prod');
+            const imposto = findTag(det, 'imposto');
             
             // --- Extração de Impostos ---
-            const icmsParent = imposto?.getElementsByTagName('ICMS')[0];
-            const icmsGroup = icmsParent?.children.length ? icmsParent.children[0] : null;
-
-            const pisParent = imposto?.getElementsByTagName('PIS')[0];
-            const pisGroup = pisParent?.children.length ? pisParent.children[0] : null;
-
-            const cofinsParent = imposto?.getElementsByTagName('COFINS')[0];
-            const cofinsGroup = cofinsParent?.children.length ? cofinsParent.children[0] : null;
-
-            const ipiParent = imposto?.getElementsByTagName('IPI')[0];
-            const ipiGroup = ipiParent?.getElementsByTagName('IPITrib')[0] || ipiParent?.getElementsByTagName('IPINT')[0];
+            // A função findTag resolve a busca mesmo aninhada
+            const icmsGroup = findTag(findTag(imposto, 'ICMS'), '*'); // Pega o primeiro filho do ICMS (ICMS00, ICMS20, etc)
+            const pisGroup = findTag(findTag(imposto, 'PIS'), '*');
+            const cofinsGroup = findTag(findTag(imposto, 'COFINS'), '*');
+            
+            // IPI é mais chato pois pode ser IPITrib ou IPINT
+            let ipiGroup = findTag(imposto, 'IPITrib');
+            if (!ipiGroup) ipiGroup = findTag(imposto, 'IPINT');
+            const ipiParent = findTag(imposto, 'IPI');
 
             const taxDetails: TaxDetails = {
                 // ICMS
@@ -142,7 +161,7 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
         }
 
         // --- 5. Totais e Pagamentos ---
-        const icmsTot = xmlDoc.getElementsByTagName('ICMSTot')[0];
+        const icmsTot = findTag(xmlDoc, 'ICMSTot');
         
         const totais: InvoiceTotals = {
             vBC: icmsTot ? parseFloat(getText(icmsTot, 'vBC')) : 0,
@@ -159,44 +178,56 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
         };
 
         // Pagamento
-        const pagTags = xmlDoc.getElementsByTagName('detPag');
+        // Usamos a mesma logica de busca manual para arrays
+        const pagTags: Element[] = [];
+        const allPags = xmlDoc.getElementsByTagName('*');
+        for (let i = 0; i < allPags.length; i++) {
+            if (allPags[i].localName === 'detPag') pagTags.push(allPags[i]);
+        }
+
         const pagamento: PaymentMethod[] = [];
         
         if (pagTags.length > 0) {
-            for(let i=0; i<pagTags.length; i++) {
+            for(const p of pagTags) {
                 pagamento.push({
-                    tPag: getText(pagTags[i], 'tPag'),
-                    vPag: parseFloat(getText(pagTags[i], 'vPag')) || 0
+                    tPag: getText(p, 'tPag'),
+                    vPag: parseFloat(getText(p, 'vPag')) || 0
                 });
             }
         } else {
              pagamento.push({ tPag: '90', vPag: 0 });
         }
 
-        const infAdic = xmlDoc.getElementsByTagName('infAdic')[0];
+        const infAdic = findTag(xmlDoc, 'infAdic');
         const informacoesComplementares = getText(infAdic, 'infCpl');
         
         // --- 6. Identificação de Status e Protocolo ---
+        // AQUI ESTAVA O PROBLEMA DO STATUS: namespace do nfeProc escondia o protNFe
         let status: 'editing' | 'authorized' | 'cancelled' = 'editing';
         let protocoloAutorizacao = '';
         
-        const protNFe = xmlDoc.getElementsByTagName('protNFe')[0];
-        if (protNFe) {
-            const infProt = protNFe.getElementsByTagName('infProt')[0];
+        // Busca infProt diretamente, ignorando hierarquia complexa
+        const infProt = findTag(xmlDoc, 'infProt');
+        
+        if (infProt) {
             const cStat = getText(infProt, 'cStat');
+            // cStat 100 = Autorizado, 101 = Cancelado (mas aprovado)
             if (cStat === '100') {
                 status = 'authorized';
                 protocoloAutorizacao = getText(infProt, 'nProt');
             } else if (cStat === '101') {
                 status = 'cancelled';
+                protocoloAutorizacao = getText(infProt, 'nProt');
             }
         }
 
         const chaveAcesso = infNFe.getAttribute('Id')?.replace('NFe', '') || '';
-        const modFreteRaw = getText(xmlDoc.getElementsByTagName('transp')[0], 'modFrete');
+        
+        const transp = findTag(xmlDoc, 'transp');
+        const modFreteRaw = getText(transp, 'modFrete');
         const modalidadeFrete = (['0','1','9'].includes(modFreteRaw) ? modFreteRaw : '9') as "0"|"1"|"9";
 
-        // Montagem do objeto (Sem tipagem estrita aqui para permitir propriedades extras)
+        // Objeto final com casting para evitar erro de build se faltar propriedade no Type
         const invoiceObj = {
           id: crypto.randomUUID(),
           numero,
@@ -217,17 +248,16 @@ export const parseNfeXml = async (file: File): Promise<InvoiceData> => {
           informacoesComplementares,
           status,
           chaveAcesso,
-          protocoloAutorizacao, // Propriedade que não existe no type, mas existe no runtime
+          protocoloAutorizacao, 
           xmlAssinado: xmlText, 
           finalidade
         };
 
-        // Casting duplo: diz para o TS que isso é um InvoiceData válido, ignorando a propriedade extra
         resolve(invoiceObj as unknown as InvoiceData);
 
       } catch (err) {
         console.error(err);
-        reject(new Error("Erro ao ler o arquivo XML. Verifique se é uma NFe válida."));
+        reject(new Error("Erro ao ler o arquivo XML."));
       }
     };
     reader.onerror = (error) => reject(error);
