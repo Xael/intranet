@@ -742,7 +742,8 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
   
   const handlePrint = (inv: InvoiceData) => {
     setPrintInvoice(inv);
-    setTimeout(() => window.print(), 100);
+    // 300ms dá o tempo exato para o React montar todos os itens antes da impressora puxar a tela
+    setTimeout(() => window.print(), 300);
   };
 
   const handleRequestCancel = (inv: InvoiceData) => {
@@ -1157,9 +1158,10 @@ const NFeModule: React.FC<NFeModuleProps> = ({ externalData }) => {
     </button>
   );
 
-  return (
+return (
     <div className="min-h-full bg-gray-50 flex flex-col font-sans">
-      <div className="hidden print:block fixed inset-0 z-[9999] bg-white">
+      {/* Removemos o fixed, inset-0 e z-[9999]. Como o resto do app tem print:hidden, só isso já basta! */}
+      <div className="hidden print:block w-full bg-white">
         {printInvoice && <Danfe invoice={printInvoice} />}
       </div>
 
